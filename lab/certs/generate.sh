@@ -27,4 +27,11 @@ openssl x509 -req -in "$OUT/mqtt-server.csr" -CA "$OUT/ca.crt" -CAkey "$OUT/ca.k
   -days 365 -sha256 -out "$OUT/mqtt-server.crt"
 
 rm -f "$OUT"/*.csr "$OUT"/*.srl
+
+# eclipse-mosquitto drops privileges to a non-root "mosquitto" user; the
+# default 600 permissions (root-only) on mqtt-server.key would make the
+# broker fail to start with a permission error. Other keys stay 600 since
+# their consumers (the smart-camera containers) run as root.
+chmod 644 "$OUT/mqtt-server.key"
+
 echo "Certificates generated in $OUT"

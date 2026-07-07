@@ -19,3 +19,5 @@ feed our research report later, so we capture them even when the error is small.
 | [003](003-docker-credstore-fails-over-ssh.md) | Docker `credsStore: desktop` fails over non-interactive SSH session | build PC / Docker Desktop | 2026-07-08 | resolved |
 | [004](004-docker-buildx-attestation-manifest-already-exists.md) | `docker build` succeeds but reports "image already exists" (buildx attestation manifest) | build PC / Docker Desktop | 2026-07-08 | resolved |
 | [005](005-busybox-nc-localhost-ipv6-healthcheck.md) | BusyBox `nc -z localhost <port>` healthcheck fails for an IPv4-only-bound server | lab/telnet-sim | 2026-07-08 | resolved |
+| [006](006-openssl-seclevel-rejects-weak-1024bit-cert.md) | OpenSSL SECLEVEL rejects the intentionally weak 1024-bit cert (`EE_KEY_TOO_SMALL`) | lab/devices/smart-camera | 2026-07-08 | resolved |
+| [007](007-mosquitto-nonroot-cant-read-broker-key.md) | `mqtt-broker-secure` exits (code 13) — non-root mosquitto user can't read the 600-permission broker key | lab/certs, lab/mqtt/secure | 2026-07-08 | resolved |

@@ -1470,8 +1470,18 @@ openssl x509 -req -in "$OUT/mqtt-server.csr" -CA "$OUT/ca.crt" -CAkey "$OUT/ca.k
   -days 365 -sha256 -out "$OUT/mqtt-server.crt"
 
 rm -f "$OUT"/*.csr "$OUT"/*.srl
+chmod 644 "$OUT/mqtt-server.key"
 echo "Certificates generated in $OUT"
 ```
+
+> **Errata (2026-07-08):** the `chmod 644 mqtt-server.key` line was added after discovering
+> `mqtt-broker-secure` fails to start (exit 13/EACCES) — `eclipse-mosquitto:2` drops privileges to a
+> non-root `mosquitto` user that can't read a `600`-permission, root-owned key file. `weak.key` and
+> `strong.key` stay `600` since the smart-camera containers that consume them run as root. See
+> `docs/errors/007-mosquitto-nonroot-cant-read-broker-key.md`. Separately, `device-partial`'s
+> 1024-bit weak cert needs `lab/devices/smart-camera/openssl.cnf` (`SECLEVEL=0`) plus
+> `ENV OPENSSL_CONF=/app/openssl.cnf` in that Dockerfile, or modern OpenSSL refuses to even load the
+> intentionally-weak key (`EE_KEY_TOO_SMALL`) — see `docs/errors/006-openssl-seclevel-rejects-weak-1024bit-cert.md`.
 
 - [ ] **Step 2: Write `lab/certs/Dockerfile`**
 

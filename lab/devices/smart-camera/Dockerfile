@@ -8,7 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY docs ./docs
 COPY entrypoint.sh .
+COPY openssl.cnf .
 RUN chmod +x entrypoint.sh
+
+ENV OPENSSL_CONF=/app/openssl.cnf
 
 EXPOSE 80 443
 
