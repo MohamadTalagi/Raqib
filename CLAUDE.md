@@ -12,18 +12,20 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** design complete → **starting implementation**. Model switched to **Sonnet** for the build.
+**Phase:** implementation plan written → **ready to execute Phase 0**.
+
+**Plan:** `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md` — 31 tasks covering Phases 0-5 (contracts → lab core → profiles/TLS → Day-1 artifacts → manual assessment → policy-as-code). Phases 6-8 (auditor-api/database, Flutter auditor-web, full 11-container polish) are a separate follow-up plan, written after Phases 0-5 are graded.
 
 **Already done (2026-07-07):**
 - Approved design spec → `docs/superpowers/specs/2026-07-07-preliminary-iot-security-lab-design.md`
 - Private git repo → `https://github.com/OSAMAxALHARBI/kaust-iot-security-lab` (branch `main`)
-- Working **ssh-mcp** connection to the 32 GB build PC → host `OSRA-PC2025-V2`, user `osama`, Tailscale `100.99.182.30`, key auth. Tools appear as `mcp__ssh-mcp__*`.
+- Working **ssh-mcp** connection to the 32 GB build PC → host `OSRA-PC2025-V2`, user `osama`, Tailscale `100.99.182.30`, key auth. Tools appear as `mcp__ssh-mcp__*`. Remote shell is **Windows PowerShell 5.1** (no `&&` — use `;`; stderr from git gets wrongly wrapped as a PowerShell error even on success — check actual result, don't trust the error alone).
+- **PC has read-write repo access**: dedicated ed25519 deploy key generated on the PC (`C:\Users\osama\.ssh\kaust_iot_deploy_key`), registered on GitHub as a **read-write** deploy key ("OSRA-PC2025-V2 (build PC, read-write)" — upgraded 2026-07-07 from an initial read-only key, so the PC could commit+push Day-2 evidence files generated on it per the Phase 0-5 plan's Task 26), SSH host alias `github.com-kaust-iot` added to `C:\Users\osama\.ssh\config`. Repo cloned to `C:\Users\osama\Projects\kaust-iot-security-lab`. (gh CLI is NOT installed on the PC — GCM/HTTPS auth doesn't work non-interactively over ssh-mcp, so use this SSH deploy-key path for any future PC git auth needs.)
+- **Implementation is happening in a git worktree**: `.claude/worktrees/phase-0-5-implementation` on branch `worktree-phase-0-5-implementation`, via subagent-driven-development. Progress ledger at `.superpowers/sdd/progress.md` (gitignored, local only) — check it first if resuming this work after a compaction/restart.
 
 **Next steps, in order:**
-1. Confirm ssh-mcp loaded — run `hostname` via an `mcp__ssh-mcp__*` tool.
-2. Give the PC **read access to the private repo** (read-only PAT in Git Credential Manager or a deploy key — ssh-mcp runs non-interactively, so no browser login).
-3. Invoke the **writing-plans** skill to turn the approved spec into a step-by-step implementation plan.
-4. Build in **phase order** (Workflow B: author on laptop → `git push` → PC `git pull` + `docker compose` via ssh-mcp). **Start at Phase 0** (contracts + repo skeleton + compose networks) per spec §10.
+1. Invoke the **writing-plans** skill to turn the approved spec into a step-by-step implementation plan.
+2. Build in **phase order** (Workflow B: author on laptop → `git push` → PC `git pull` + `docker compose` via ssh-mcp). **Start at Phase 0** (contracts + repo skeleton + compose networks) per spec §10.
 
 > Also read the recalled memory notes (project-overview, ssh-pc-connection, error-log-convention).
 > Full history is in §8 changelog; decisions in §9 and the spec's decisions log.
@@ -179,6 +181,7 @@ Kaust IoT Project/
 | 2026-07-07 | **Stack decisions** (see §9): all-Python spine, FastAPI for device + auditor API; sprint needs **no frontend**; LLM stages use the **Claude API (Opus 4.8)**; run the lab in **WSL2**. Adopted the "AI-assisted, not AI-decided" principle — evidence and verdicts are deterministic Python, never LLM output. |
 | 2026-07-07 | Ran a full **brainstorming** pass (Superpowers) on the mentor's 3-day sprint. Decisions: standalone project · full 11-container architecture (Option A) · `auditor-web` = thin Flutter/Dart built last · manual-then-automated assessment · hybrid real/simulated services · target machine = the 32 GB PC · single deliverer. Design approved section-by-section and written to `docs/superpowers/specs/2026-07-07-preliminary-iot-security-lab-design.md`. Created `setup/ssh-mcp/` scripts to remote-control the PC over Tailscale. Next: user reviews spec → set up ssh-mcp + switch Opus→Sonnet → implementation plan. |
 | 2026-07-07 | **Spec approved. Git initialized** (commits `d94853e`, `71343b3`). **ssh-mcp connection to the 32 GB PC is working** (host OSRA-PC2025-V2, user `osama`, Tailscale 100.99.182.30, key auth) — verified `hostname`/`whoami` over SSH; MCP registered at user scope. Hit + fixed + logged the Windows `spawn npx ENOENT` bug (**ERR-001**; use `cmd /c npx`). **Boundary reached:** restart Claude Code + switch Opus→Sonnet to load `mcp__ssh-mcp__*`, then write the implementation plan and build on the PC. Open decision: build directly on the PC vs. author-on-laptop + git-sync + run-via-ssh-mcp. |
+| 2026-07-07 | **Model switched to Sonnet 5, `mcp__ssh-mcp__*` tools confirmed loaded** (`hostname`/`whoami` succeeded over SSH). **Decided Workflow B** (author on laptop → push → PC pulls + runs via ssh-mcp). Set up **read-only repo access on the PC**: generated a dedicated ed25519 deploy key on the PC, registered it read-only on GitHub via local `gh` CLI, added SSH host alias `github.com-kaust-iot`, cloned the repo to `C:\Users\osama\Projects\kaust-iot-security-lab`. (HTTPS + Git Credential Manager doesn't work here — no TTY/browser over non-interactive ssh-mcp, and PC has no `gh` CLI — so SSH deploy key is the pattern going forward.) Confirmed the PC has **Docker Desktop 29.x + Compose v5 with the WSL2 backend already running** — `docker`/`docker compose` work directly from the ssh-mcp PowerShell session, no need to shell into WSL. **Wrote the full Phases 0-5 implementation plan** (31 tasks, TDD throughout for all pure-Python pieces) via the writing-plans skill → `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md`. Next: execute Phase 0 (Task 1 onward). |
 
 ---
 
