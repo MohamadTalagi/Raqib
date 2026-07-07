@@ -10,6 +10,26 @@
 
 ---
 
+## 0. Current Status — RESUME HERE 👈
+
+**Phase:** design complete → **starting implementation**. Model switched to **Sonnet** for the build.
+
+**Already done (2026-07-07):**
+- Approved design spec → `docs/superpowers/specs/2026-07-07-preliminary-iot-security-lab-design.md`
+- Private git repo → `https://github.com/OSAMAxALHARBI/kaust-iot-security-lab` (branch `main`)
+- Working **ssh-mcp** connection to the 32 GB build PC → host `OSRA-PC2025-V2`, user `osama`, Tailscale `100.99.182.30`, key auth. Tools appear as `mcp__ssh-mcp__*`.
+
+**Next steps, in order:**
+1. Confirm ssh-mcp loaded — run `hostname` via an `mcp__ssh-mcp__*` tool.
+2. Give the PC **read access to the private repo** (read-only PAT in Git Credential Manager or a deploy key — ssh-mcp runs non-interactively, so no browser login).
+3. Invoke the **writing-plans** skill to turn the approved spec into a step-by-step implementation plan.
+4. Build in **phase order** (Workflow B: author on laptop → `git push` → PC `git pull` + `docker compose` via ssh-mcp). **Start at Phase 0** (contracts + repo skeleton + compose networks) per spec §10.
+
+> Also read the recalled memory notes (project-overview, ssh-pc-connection, error-log-convention).
+> Full history is in §8 changelog; decisions in §9 and the spec's decisions log.
+
+---
+
 ## 1. What We Are Building
 
 **Project name:** IoTGuard — *AI-Assisted IoT Security Compliance & Risk Assessment Platform (NCA-Aligned)*
