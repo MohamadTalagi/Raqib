@@ -13,4 +13,36 @@ networks:
       config:
         - subnet: 172.31.0.0/24
 
-services: {}
+services:
+  device-insecure:
+    build: ./devices/smart-camera
+    env_file: ./devices/smart-camera/profiles/insecure.env
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  telnet-sim:
+    build: ./telnet-sim
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "23"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  mqtt-broker-insecure:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./mqtt/insecure/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 1883 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
