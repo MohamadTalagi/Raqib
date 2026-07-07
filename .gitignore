@@ -21,3 +21,4 @@ Thumbs.db
 
 # Runtime-generated raw evidence output
 lab/document-store/raw/
+.claude/worktrees/
