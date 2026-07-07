@@ -46,3 +46,9 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+
+  cert-init:
+    build: ./certs
+    volumes:
+      - ./certs:/out
+    profiles: ["init"]
