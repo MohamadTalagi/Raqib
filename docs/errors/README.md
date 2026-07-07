@@ -15,3 +15,4 @@ feed our research report later, so we capture them even when the error is small.
 | ID | Title | Component | Date | Status |
 |----|-------|-----------|------|--------|
 | [001](001-npx-enoent-windows-mcp.md) | `spawn npx ENOENT` on Windows MCP launch | ssh-mcp / MCP servers | 2026-07-07 | resolved |
+| [002](002-pydantic-core-no-py314-wheel.md) | `pydantic-core` has no Python 3.14 wheel, source build fails (no MSVC linker) | lab/devices/smart-camera | 2026-07-08 | resolved |

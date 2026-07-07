@@ -608,13 +608,20 @@ Expected: prints the resolved compose config (two networks, no services) with no
 ```
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-pydantic==2.9.2
+pydantic==2.13.4
 pydantic-settings==2.5.2
 python-multipart==0.0.9
 paho-mqtt==1.6.1
 pytest==8.3.3
 httpx==0.27.2
 ```
+
+> **Errata (2026-07-08):** originally pinned `pydantic==2.9.2`, which depends on `pydantic-core==2.23.4` —
+> no prebuilt wheel exists for Python 3.14 on Windows, and building it from source needs a working
+> Rust+MSVC toolchain that isn't present in this environment. `pydantic==2.13.4` (paired with
+> `pydantic-core==2.46.4`, which does ship a `cp314-win_amd64` wheel) is a drop-in replacement —
+> verified compatible with `fastapi==0.115.0` and `pydantic-settings==2.5.2` with no other version
+> changes needed. See `docs/errors/002-pydantic-core-no-py314-wheel.md`.
 
 - [ ] **Step 2: Install into a dedicated venv for this component (laptop)**
 
