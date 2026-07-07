@@ -23,3 +23,11 @@ Thumbs.db
 lab/document-store/raw/
 .claude/worktrees/
 .superpowers/
+
+# Lab-generated artifacts (regenerable, keep repo lean)
+lab/certs/*.key
+lab/certs/*.crt
+lab/certs/*.csr
+lab/certs/*.srl
+lab/mqtt/secure/passwd
+auditor/worker/firmware/output/
