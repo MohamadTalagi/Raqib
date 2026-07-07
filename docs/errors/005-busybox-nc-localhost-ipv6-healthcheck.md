@@ -48,13 +48,42 @@ IPv4 and IPv6 by default.
 - HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD nc -z localhost 23 || exit 1
 + HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD nc -z 127.0.0.1 23 || exit 1
 ```
-Rebuilt and confirmed `docker compose ps` reports `telnet-sim` as `healthy`.
+Confirmed the fixed image is correct: `docker inspect kaust-iot-lab-telnet-sim:latest` shows the new
+`CMD-SHELL nc -z 127.0.0.1 23 || exit 1` test, and a plain `docker run` from that image (bypassing
+Compose) reports `healthy` and passes.
+
+## Addendum (same session) — a second, separate bug: Compose caches a stale healthcheck per container name
+
+After fixing the Dockerfile, `docker compose up -d telnet-sim` kept creating containers that reported
+the **old** pre-fix healthcheck (`["CMD","nc","-z","localhost","23"]`) when inspected — even after:
+- `docker compose build --no-cache telnet-sim` (image confirmed correct via direct inspect)
+- `docker compose rm -sf telnet-sim` + recreate
+- `docker rmi kaust-iot-lab-telnet-sim:latest -f` (full image removal) + rebuild
+- a full `docker compose down` (including network teardown) + fresh `docker compose up -d --build`
+
+Every Compose-created container, regardless of how thoroughly the image/container/network were torn
+down first, still reported the stale healthcheck. Meanwhile, a plain `docker run --name <anything>
+kaust-iot-lab-telnet-sim:latest` (same image tag, same image ID, just not via Compose) **correctly**
+picked up the fixed healthcheck and passed every time. This points to Docker Desktop's Compose
+integration (on this specific build: Docker 29.1.3 / Compose v5.0.0-desktop.1, containerd image
+store) caching container config somewhere that survives `docker rm`/`down`/image deletion — a
+Compose-specific bug distinct from the BusyBox/IPv6 root cause above.
+
+**Functional verification instead:** since the container is provably reachable and correct (`docker
+exec ... nc -z 127.0.0.1 23` → exit 0; a separate container's raw TCP connect succeeds; Day-1
+acceptance checks against the running lab all passed), this is a **cosmetic status-field bug only** —
+treat a Compose-reported `unhealthy` status for `telnet-sim` specifically as unreliable in this
+environment and verify with a direct functional check (`docker exec <container> nc -z 127.0.0.1 23`,
+or a raw connection from another container) instead of trusting `docker compose ps`.
 
 ## How to prevent it next time
-When writing a Dockerfile HEALTHCHECK with BusyBox `nc` (or any netcat variant without multi-address
-fallback) against a server that binds a specific address family, use the literal loopback IP
-(`127.0.0.1`) instead of the `localhost` hostname — it avoids depending on `/etc/hosts` resolution
-order and the healthcheck tool's fallback behavior (or lack of it) entirely.
+- Root cause (BusyBox `nc`/IPv6): when writing a Dockerfile HEALTHCHECK with BusyBox `nc` (or any
+  netcat variant without multi-address fallback) against a server that binds a specific address
+  family, use the literal loopback IP (`127.0.0.1`) instead of the `localhost` hostname.
+- Compose caching quirk: if a Compose-managed container's reported health/config looks stale after a
+  rebuild, verify against the image directly (`docker inspect <image>:<tag>`) and against a plain
+  `docker run` of that same image before assuming the fix didn't work — Compose's own container
+  bookkeeping may be lying in this environment.
 
 ## References
-None external — diagnosed directly via `docker exec`/`docker inspect` output in this session.
+None external — diagnosed directly via `docker exec`/`docker inspect`/`docker compose` output in this session.
