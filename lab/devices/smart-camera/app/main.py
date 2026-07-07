@@ -2,8 +2,14 @@ from fastapi import FastAPI, Form, HTTPException, Header
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from app.config import settings
+from app.mqtt_publisher import start_mqtt_publisher
 
 app = FastAPI(title="Smart Camera Device Simulator")
+
+
+@app.on_event("startup")
+def _on_startup():
+    start_mqtt_publisher()
 
 LOGIN_PAGE_TEMPLATE = """<!DOCTYPE html>
 <html><head><title>Smart Camera Login</title></head>
