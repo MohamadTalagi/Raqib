@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node / Flutter
+node_modules/
+build/
+.dart_tool/
+.flutter-plugins*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Real local secrets (INTENTIONAL lab secrets are committed on purpose)
+.env
+*.local
+
+# Runtime-generated raw evidence output
+lab/document-store/raw/
