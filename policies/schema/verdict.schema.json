@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VerdictRecord",
+  "type": "object",
+  "required": [
+    "verdict_id", "control_id", "device_id", "status", "severity",
+    "evidence_ids", "matched", "reason", "saudi_source", "remediation", "timestamp"
+  ],
+  "properties": {
+    "verdict_id": {"type": "string", "pattern": "^VD-\\d{4}-\\d{2}-\\d{2}-\\d{4}$"},
+    "control_id": {"type": "string"},
+    "device_id": {"type": "string"},
+    "status": {"type": "string", "enum": ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"]},
+    "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+    "evidence_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "matched": {"type": "string", "enum": ["pass", "fail", "partial", "inconclusive"]},
+    "reason": {"type": "string"},
+    "saudi_source": {"type": "string"},
+    "remediation": {"type": "string"},
+    "timestamp": {"type": "string"}
+  },
+  "additionalProperties": false
+}
