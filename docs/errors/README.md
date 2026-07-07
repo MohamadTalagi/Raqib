@@ -18,3 +18,4 @@ feed our research report later, so we capture them even when the error is small.
 | [002](002-pydantic-core-no-py314-wheel.md) | `pydantic-core` has no Python 3.14 wheel, source build fails (no MSVC linker) | lab/devices/smart-camera | 2026-07-08 | resolved |
 | [003](003-docker-credstore-fails-over-ssh.md) | Docker `credsStore: desktop` fails over non-interactive SSH session | build PC / Docker Desktop | 2026-07-08 | resolved |
 | [004](004-docker-buildx-attestation-manifest-already-exists.md) | `docker build` succeeds but reports "image already exists" (buildx attestation manifest) | build PC / Docker Desktop | 2026-07-08 | resolved |
+| [005](005-busybox-nc-localhost-ipv6-healthcheck.md) | BusyBox `nc -z localhost <port>` healthcheck fails for an IPv4-only-bound server | lab/telnet-sim | 2026-07-08 | resolved |

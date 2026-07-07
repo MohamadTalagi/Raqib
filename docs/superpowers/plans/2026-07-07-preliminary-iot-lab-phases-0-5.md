@@ -1237,9 +1237,15 @@ FROM python:3.12-alpine
 WORKDIR /app
 COPY banner_server.py .
 EXPOSE 23
-HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD nc -z localhost 23 || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD nc -z 127.0.0.1 23 || exit 1
 CMD ["python", "banner_server.py"]
 ```
+
+> **Errata (2026-07-08):** originally used `nc -z localhost 23`. BusyBox `nc` resolves `localhost` and
+> tries `::1` (IPv6) first; `banner_server.py` binds only `0.0.0.0` (IPv4), so the healthcheck failed
+> even though the server was reachable. Fixed by using `127.0.0.1` directly, skipping DNS resolution
+> entirely. See `docs/errors/005-busybox-nc-localhost-ipv6-healthcheck.md`. (Mosquitto's healthchecks
+> elsewhere in this plan are unaffected — the broker listens on both IPv4 and IPv6 by default.)
 
 - [ ] **Step 3: Build and smoke-test (PC via ssh-mcp)**
 
