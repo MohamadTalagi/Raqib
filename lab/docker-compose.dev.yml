@@ -1,0 +1,11 @@
+# Overlay for local development only — exposes device ports to localhost.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Default (docker-compose.yml alone) does NOT expose these, per the brief:
+# "services reachable only inside the lab".
+services:
+  device-insecure:
+    ports:
+      - "8081:80"
+  mqtt-broker-insecure:
+    ports:
+      - "18830:1883"
