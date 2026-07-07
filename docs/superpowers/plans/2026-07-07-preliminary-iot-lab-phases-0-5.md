@@ -20,6 +20,7 @@
 - **No secrets in the repo beyond intentional lab fixtures:** the hardcoded passwords/API keys/private keys baked into `device-insecure` and the firmware archives are **intentional training fixtures** for a sandboxed, non-internet-facing lab — call this out in code comments where it might otherwise look like a real leak.
 - **Container base images:** `python:3.12-slim` for Python services, `alpine:3.20` for tiny utilities (telnet-sim, cert-init), `eclipse-mosquitto:2` for brokers.
 - **Every error hit during implementation gets its own file in `docs/errors/`** per `docs/errors/ERROR_TEMPLATE.md` (CLAUDE.md §6 — mandatory, not optional).
+- **Docker on the PC needs two workarounds (see ERR-003, ERR-004):** (1) the PC's `~/.docker/config.json` has had `credsStore` removed since Docker Desktop's credential helper can't reach the interactive-session credential vault over a headless SSH session — anonymous pulls of public images work fine without it. (2) `docker build`/`docker compose ... --build` may report a spurious `image "...": already exists` error at the final export step even though the image built successfully (a buildx/containerd-store attestation-manifest quirk) — add `--provenance=false` to `docker build` invocations, and after any build "failure," check `docker images`/`docker compose ps` before concluding it actually failed.
 
 ---
 
