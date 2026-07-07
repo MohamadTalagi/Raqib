@@ -60,8 +60,12 @@ If key auth isn't working yet, you can register with a password instead. **Type 
 NOT paste it into any file in this repo. It lands only in your user-scope MCP config, never in the project:
 
 ```powershell
-claude mcp add --scope user --transport stdio ssh-mcp -- npx -y ssh-mcp -- --host=100.99.182.30 --user=<USER> --password=<TYPE_IT_HERE>
+claude mcp add --scope user --transport stdio ssh-mcp -- cmd /c npx -y ssh-mcp -- --host=100.99.182.30 --user=<USER> --password=<TYPE_IT_HERE>
 ```
+
+> **Windows note:** launch via `cmd /c npx`, not bare `npx`. On Windows, `npx` is `npx.cmd`, and
+> Node's `spawn` can't resolve a bare `npx` — you get `spawn npx ENOENT` and the MCP never starts.
+> See `docs/errors/001-npx-enoent-windows-mcp.md`. (Your existing `ssh-pi` MCP has this same bug.)
 
 Switch to key auth as soon as you can, then remove the password entry (`claude mcp remove ssh-mcp`
 and re-run `laptop-setup.ps1`).

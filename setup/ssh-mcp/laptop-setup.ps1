@@ -36,9 +36,11 @@ Write-Host "After installing it, verify:  ssh -i `"$KeyPath`" $PcUser@$PcIp host
 Write-Host ''
 
 # 3. Register ssh-mcp at USER scope (forward slashes so the path parses cleanly)
+#    NOTE (Windows): launch via `cmd /c npx`, NOT bare `npx`. On Windows npx is npx.cmd,
+#    and Node's spawn can't find a bare `npx` -> "spawn npx ENOENT". See docs/errors/001.
 $keyFwd = $KeyPath -replace '\\','/'
 Write-Host 'Registering ssh-mcp in Claude Code (user scope)...' -ForegroundColor Cyan
-claude mcp add --scope user --transport stdio ssh-mcp -- npx -y ssh-mcp -- --host=$PcIp --user=$PcUser --key=$keyFwd
+claude mcp add --scope user --transport stdio ssh-mcp -- cmd /c npx -y ssh-mcp -- --host=$PcIp --user=$PcUser --key=$keyFwd
 
 Write-Host ''
 Write-Host 'Registered. Now RESTART Claude Code, then test the MCP with: hostname / whoami' -ForegroundColor Green

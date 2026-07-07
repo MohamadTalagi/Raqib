@@ -14,4 +14,4 @@ feed our research report later, so we capture them even when the error is small.
 
 | ID | Title | Component | Date | Status |
 |----|-------|-----------|------|--------|
-| _(none yet)_ | | | | |
+| [001](001-npx-enoent-windows-mcp.md) | `spawn npx ENOENT` on Windows MCP launch | ssh-mcp / MCP servers | 2026-07-07 | resolved |
