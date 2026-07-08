@@ -10,6 +10,14 @@ import 'package:http/testing.dart';
 void main() {
   testWidgets('tapping each nav rail destination shows its screen', (tester) async {
     final mockClient = MockClient((request) async {
+      if (request.url.path.endsWith('/devices')) {
+        return http.Response(
+          jsonEncode([
+            {'device_id': 'device-insecure', 'evidence_count': 5, 'verdict_count': 2},
+          ]),
+          200,
+        );
+      }
       return http.Response(
         jsonEncode({
           'total_evidence': 0,
@@ -27,7 +35,7 @@ void main() {
 
     await tester.tap(find.text('Devices').last);
     await tester.pumpAndSettle();
-    expect(find.text('Devices Screen'), findsOneWidget);
+    expect(find.text('device-insecure'), findsOneWidget);
 
     await tester.tap(find.text('Evidence').last);
     await tester.pumpAndSettle();

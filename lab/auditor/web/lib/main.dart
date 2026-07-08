@@ -49,7 +49,7 @@ class _HomeShellState extends State<HomeShell> {
     ));
     _screens = [
       OverviewScreen(apiClient: _apiClient),
-      const DevicesScreen(),
+      DevicesScreen(apiClient: _apiClient),
       const EvidenceScreen(),
       const VerdictsScreen(),
     ];
