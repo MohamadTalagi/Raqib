@@ -55,7 +55,7 @@ When a plan decides to hand-write source files instead of running a framework's 
 (here: `flutter create`, elsewhere: `npm init`/`cargo new`/etc.), explicitly account for every artifact that
 tool would have produced, not just the ones the immediate test suite happens to exercise. `flutter test` and
 `flutter build web` have different minimum-file requirements — passing the former is not evidence the latter
-will work. This is the same class of gap as [ERR-014] (a design change tested by one code path but not
+will work. This is the same class of gap as [014](014-record-evidence-sequence-collision-after-api-migration.md) (a design change tested by one code path but not
 verified against a different, non-obviously-related one) — Task 17's implementer caught it the same
 responsible way: reproduced the failure in isolation, diagnosed the root cause precisely (via a scratchpad
 `flutter create` + rebuild trial), and reported it rather than guessing a fix outside their declared scope.
