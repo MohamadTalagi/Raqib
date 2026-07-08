@@ -18,6 +18,27 @@ void main() {
           200,
         );
       }
+      if (request.url.path.endsWith('/evidence')) {
+        return http.Response(
+          jsonEncode([
+            {
+              'evidence_id': 'EV-2026-07-08-0013',
+              'device_id': 'device-insecure',
+              'test_id': 'TEST-NET-PORTSCAN',
+              'tool': 'nmap',
+              'tool_version': '7.95',
+              'command': 'nmap -sV -p- device-insecure',
+              'timestamp': '2026-07-08T08:06:42Z',
+              'finding': 'Port 80 open',
+              'observations': {'open_ports': [80]},
+              'raw_output_path': 'document-store/raw/EV-2026-07-08-0013.txt',
+              'confidence': 'high',
+              'sha256': 'a' * 64,
+            },
+          ]),
+          200,
+        );
+      }
       return http.Response(
         jsonEncode({
           'total_evidence': 0,
@@ -39,7 +60,7 @@ void main() {
 
     await tester.tap(find.text('Evidence').last);
     await tester.pumpAndSettle();
-    expect(find.text('Evidence Screen'), findsOneWidget);
+    expect(find.text('EV-2026-07-08-0013'), findsOneWidget);
 
     await tester.tap(find.text('Verdicts').last);
     await tester.pumpAndSettle();
