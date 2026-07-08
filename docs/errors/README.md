@@ -21,3 +21,4 @@ feed our research report later, so we capture them even when the error is small.
 | [005](005-busybox-nc-localhost-ipv6-healthcheck.md) | BusyBox `nc -z localhost <port>` healthcheck fails for an IPv4-only-bound server | lab/telnet-sim | 2026-07-08 | resolved |
 | [006](006-openssl-seclevel-rejects-weak-1024bit-cert.md) | OpenSSL SECLEVEL rejects the intentionally weak 1024-bit cert (`EE_KEY_TOO_SMALL`) | lab/devices/smart-camera | 2026-07-08 | resolved |
 | [007](007-mosquitto-nonroot-cant-read-broker-key.md) | `mqtt-broker-secure` exits (code 13) — non-root mosquitto user can't read the 600-permission broker key | lab/certs, lab/mqtt/secure | 2026-07-08 | resolved |
+| [008](008-plan-path-mismatch-auditor-worker.md) | Plan's own test code contradicted its stated file paths (`auditor.worker` vs `lab/auditor/worker`) | implementation plan (Tasks 23-26) | 2026-07-08 | resolved |

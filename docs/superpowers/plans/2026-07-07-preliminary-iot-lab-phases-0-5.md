@@ -2147,11 +2147,18 @@ Expected: device info JSON prints; a second network interface (`eth1` or similar
 
 Create `lab/auditor/worker/tests/test_record_evidence.py`:
 
+> **Errata (2026-07-08):** the import below originally read `from auditor.worker.tests.record_evidence
+> import record_evidence` (missing the `lab.` prefix) — inconsistent with the File Structure section's
+> `lab/auditor/worker/tests/record_evidence.py` path, and with `DOCUMENT_STORE`'s parent-climbing
+> further down (also fixed: `parents[3]` → `parents[4]`, since the file has one more directory level
+> above it — `lab/`, `auditor/`, `worker/`, `tests/` — than a repo-root-adjacent module would). See
+> `docs/errors/008-plan-path-mismatch-auditor-worker.md`.
+
 ```python
 import json
 from pathlib import Path
 
-from auditor.worker.tests.record_evidence import record_evidence
+from lab.auditor.worker.tests.record_evidence import record_evidence
 
 
 def test_record_evidence_writes_valid_json(tmp_path):
@@ -2244,7 +2251,7 @@ from pathlib import Path
 
 from policies.schema.validate import validate_evidence
 
-DOCUMENT_STORE = Path(__file__).resolve().parents[3] / "document-store"
+DOCUMENT_STORE = Path(__file__).resolve().parents[4] / "document-store"
 
 
 def _next_sequence(evidence_dir: Path, date_str: str) -> int:
@@ -2375,7 +2382,7 @@ Create `lab/auditor/worker/firmware/test_generate_firmware.py`:
 ```python
 import tarfile
 
-from auditor.worker.firmware.generate_firmware import build_variant, sha256_of
+from lab.auditor.worker.firmware.generate_firmware import build_variant, sha256_of
 
 
 def test_firmware_build_is_byte_reproducible(tmp_path):
@@ -2576,8 +2583,8 @@ git commit -m "feat(firmware): add deterministic 3-variant firmware generator"
 Create `lab/auditor/worker/firmware/test_scan_firmware.py`:
 
 ```python
-from auditor.worker.firmware.generate_firmware import build_variant
-from auditor.worker.firmware.scan_firmware import scan_archive
+from lab.auditor.worker.firmware.generate_firmware import build_variant
+from lab.auditor.worker.firmware.scan_firmware import scan_archive
 
 
 def test_insecure_firmware_flags_hardcoded_password_and_api_key(tmp_path):
@@ -2878,7 +2885,7 @@ file auditor/worker/firmware/output/*.tar.gz > /tmp/fw_file.txt
 
 python -c "
 from pathlib import Path
-from auditor.worker.firmware.scan_firmware import scan_archive
+from lab.auditor.worker.firmware.scan_firmware import scan_archive
 p = Path('auditor/worker/firmware/output/camera-fw-1.0.0-old-device-insecure.tar.gz')
 for f in scan_archive(p):
     print(f)
