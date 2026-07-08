@@ -572,7 +572,7 @@ docker run --rm --network host -v ${PWD}/../../../policies:/work/policies:ro -e 
 
 (This runs the API's own test suite inside its built image, which already has all dependencies installed, against the throwaway Postgres fixture the tests themselves spin up via `docker run` — note this requires Docker socket access from inside the test container. If `docker run` isn't reachable from inside this container in practice, run the tests directly on the PC's host Python instead: install `lab/auditor/api/requirements.txt` into a venv on the PC, `cd` to `lab/auditor/api`, and run `pytest test_evidence.py test_health.py -v` there — the fixture's own `docker run postgres:16-alpine` calls only need the PC's Docker daemon, not a container-in-container setup.)
 
-Expected: `6 passed` (5 from `test_evidence.py` + 1 from `test_health.py`).
+Expected: `7 passed` (6 from `test_evidence.py` + 1 from `test_health.py`).
 
 - [ ] **Step 5: Commit**
 
