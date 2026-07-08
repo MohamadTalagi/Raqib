@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'api_client.dart';
 import 'screens/devices_screen.dart';
 import 'screens/evidence_screen.dart';
 import 'screens/overview_screen.dart';
@@ -32,13 +33,23 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _selectedIndex = 0;
+  late final ApiClient _apiClient;
+  late final List<Widget> _screens;
 
-  static const _screens = [
-    OverviewScreen(),
-    DevicesScreen(),
-    EvidenceScreen(),
-    VerdictsScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _apiClient = ApiClient(baseUrl: const String.fromEnvironment(
+      'AUDITOR_API_URL',
+      defaultValue: 'http://localhost:8000',
+    ));
+    _screens = [
+      OverviewScreen(apiClient: _apiClient),
+      const DevicesScreen(),
+      const EvidenceScreen(),
+      const VerdictsScreen(),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
