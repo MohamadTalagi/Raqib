@@ -1114,7 +1114,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY docs ./docs
 COPY entrypoint.sh .
+COPY sitecustomize.py .
 RUN chmod +x entrypoint.sh
+
+ENV PYTHONPATH=/app
 
 EXPOSE 80 443
 
@@ -1123,12 +1126,35 @@ import os, ssl, urllib.request; \
 ctx = ssl.create_default_context(); \
 ctx.check_hostname = False; \
 ctx.verify_mode = ssl.CERT_NONE; \
+ctx.set_ciphers('DEFAULT@SECLEVEL=0'); \
 scheme = 'https' if os.environ.get('TRANSPORT') == 'https' else 'http'; \
 port = 443 if scheme == 'https' else 80; \
 urllib.request.urlopen(f'{scheme}://localhost:{port}/health', context=ctx if scheme == 'https' else None, timeout=2)"
 
 ENTRYPOINT ["./entrypoint.sh"]
 ```
+
+> **Errata (2026-07-08, added in Task 16):** `sitecustomize.py` (auto-imported by every Python
+> process via `PYTHONPATH=/app`) monkeypatches `ssl.SSLContext.load_cert_chain` to relax OpenSSL's
+> security level so device-partial's intentionally-weak 1024-bit cert can load, and the healthcheck's
+> client-side context does the same via `set_ciphers`. See
+> `docs/errors/006-openssl-seclevel-rejects-weak-1024bit-cert.md`. `lab/devices/smart-camera/sitecustomize.py`:
+> ```python
+> import ssl
+>
+> _original_load_cert_chain = ssl.SSLContext.load_cert_chain
+>
+>
+> def _relaxed_load_cert_chain(self, certfile, keyfile=None, password=None):
+>     try:
+>         self.set_ciphers("DEFAULT@SECLEVEL=0")
+>     except ssl.SSLError:
+>         pass
+>     return _original_load_cert_chain(self, certfile, keyfile, password)
+>
+>
+> ssl.SSLContext.load_cert_chain = _relaxed_load_cert_chain
+> ```
 
 - [ ] **Step 3: Write `lab/devices/smart-camera/profiles/insecure.env`**
 
@@ -1479,9 +1505,13 @@ echo "Certificates generated in $OUT"
 > non-root `mosquitto` user that can't read a `600`-permission, root-owned key file. `weak.key` and
 > `strong.key` stay `600` since the smart-camera containers that consume them run as root. See
 > `docs/errors/007-mosquitto-nonroot-cant-read-broker-key.md`. Separately, `device-partial`'s
-> 1024-bit weak cert needs `lab/devices/smart-camera/openssl.cnf` (`SECLEVEL=0`) plus
-> `ENV OPENSSL_CONF=/app/openssl.cnf` in that Dockerfile, or modern OpenSSL refuses to even load the
-> intentionally-weak key (`EE_KEY_TOO_SMALL`) — see `docs/errors/006-openssl-seclevel-rejects-weak-1024bit-cert.md`.
+> 1024-bit weak cert needs a Python-level fix, not an `OPENSSL_CONF`/`openssl.cnf` one — CPython's
+> `ssl` module skips OpenSSL's config auto-loading entirely, so that env var has no effect. The real
+> fix: `lab/devices/smart-camera/sitecustomize.py` monkeypatches `ssl.SSLContext.load_cert_chain` to
+> call `self.set_ciphers("DEFAULT@SECLEVEL=0")` first (picked up automatically via
+> `ENV PYTHONPATH=/app` in the Dockerfile), plus the same `set_ciphers` call added to the
+> HEALTHCHECK's client-side context — see
+> `docs/errors/006-openssl-seclevel-rejects-weak-1024bit-cert.md`.
 
 - [ ] **Step 2: Write `lab/certs/Dockerfile`**
 
@@ -1702,7 +1732,7 @@ git commit -m "feat(smart-camera): add device-hardened profile (strong TLS, uniq
     networks:
       - audit-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import ssl, urllib.request; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; urllib.request.urlopen('https://localhost/health', context=ctx, timeout=2)"]
+      test: ["CMD", "python", "-c", "import ssl, urllib.request; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; ctx.set_ciphers('DEFAULT@SECLEVEL=0'); urllib.request.urlopen('https://localhost/health', context=ctx, timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 3

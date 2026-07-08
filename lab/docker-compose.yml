@@ -61,7 +61,7 @@ services:
     networks:
       - audit-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import ssl, urllib.request; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; urllib.request.urlopen('https://localhost/health', context=ctx, timeout=2)"]
+      test: ["CMD", "python", "-c", "import ssl, urllib.request; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; ctx.set_ciphers('DEFAULT@SECLEVEL=0'); urllib.request.urlopen('https://localhost/health', context=ctx, timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 3
