@@ -39,6 +39,25 @@ void main() {
           200,
         );
       }
+      if (request.url.path.endsWith('/verdicts')) {
+        return http.Response(
+          jsonEncode([
+            {
+              'verdict_id': 'VD-2026-07-08-0003',
+              'control_id': 'SA-IOT-002',
+              'device_id': 'device-insecure',
+              'status': 'FAIL',
+              'severity': 'high',
+              'evidence_ids': ['EV-2026-07-08-0015'],
+              'reason': 'Default credentials accepted',
+              'saudi_source': {'framework': 'CGIoT-1:2024', 'reference': '2-2-2'},
+              'remediation': 'Force password change',
+              'timestamp': '2026-07-08T08:06:42Z',
+            },
+          ]),
+          200,
+        );
+      }
       return http.Response(
         jsonEncode({
           'total_evidence': 0,
@@ -64,6 +83,6 @@ void main() {
 
     await tester.tap(find.text('Verdicts').last);
     await tester.pumpAndSettle();
-    expect(find.text('Verdicts Screen'), findsOneWidget);
+    expect(find.text('SA-IOT-002'), findsOneWidget);
   });
 }

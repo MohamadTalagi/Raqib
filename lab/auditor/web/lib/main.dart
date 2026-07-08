@@ -51,7 +51,7 @@ class _HomeShellState extends State<HomeShell> {
       OverviewScreen(apiClient: _apiClient),
       DevicesScreen(apiClient: _apiClient),
       EvidenceScreen(apiClient: _apiClient),
-      const VerdictsScreen(),
+      VerdictsScreen(apiClient: _apiClient),
     ];
   }
 
