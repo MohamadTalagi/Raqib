@@ -1,0 +1,18 @@
+control_id: SA-IOT-004
+title: No insecure/unencrypted communication protocols
+saudi_source:
+  - framework: CGIoT-1:2024
+    reference: "2-4-3"
+    clause: "Use encrypted protocols for all device-to-backend communication."
+applicability:
+  device_type: [smart-camera]
+required_evidence:
+  - test_id: TEST-MQTT-OPEN
+automated_test_ids: [TEST-MQTT-OPEN]
+severity: high
+conditions:
+  pass: { field: "observations.mqtt_tls", op: "equals", value: true }
+  fail: { field: "observations.mqtt_tls", op: "equals", value: false }
+  partial: null
+  inconclusive: { when: "evidence_missing_or_low_confidence" }
+remediation: "Route all MQTT telemetry through the TLS-secured, authenticated broker; retire the plaintext broker."
