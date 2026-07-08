@@ -9,3 +9,6 @@ services:
   mqtt-broker-insecure:
     ports:
       - "18830:1883"
+  auditor-api:
+    ports:
+      - "8000:8000"

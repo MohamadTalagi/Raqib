@@ -142,6 +142,15 @@ services:
       timeout: 3s
       retries: 3
 
+  auditor-web:
+    build: ./auditor/web
+    ports:
+      - "8080:80"
+    networks:
+      - internal-network
+    depends_on:
+      - auditor-api
+
 volumes:
   mqtt-secure-passwd:
   auditor-db-data:
