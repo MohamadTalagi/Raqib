@@ -1342,7 +1342,7 @@ lab/certs/*.crt
 lab/certs/*.csr
 lab/certs/*.srl
 lab/mqtt/secure/passwd
-auditor/worker/firmware/output/
+lab/auditor/worker/firmware/output/
 EOF
 ```
 
@@ -2098,12 +2098,25 @@ CMD ["sleep", "infinity"]
     build: ./auditor/worker
     volumes:
       - ../policies:/work/policies:ro
-      - ./auditor/worker:/work/auditor/worker
+      - ./auditor/worker:/work/lab/auditor/worker
       - ../document-store:/work/document-store
     networks:
       - audit-network
       - internal-network
 ```
+
+> **Errata (2026-07-08, found during Task 25):** the third volume line originally read
+> `./auditor/worker:/work/auditor/worker` (no `lab/` segment). That works fine for shell commands
+> like `python auditor/worker/tests/record_evidence.py` run from `/work` inside the container, but it
+> broke every `from lab.auditor.worker... import ...` statement added by the ERR-008 fix, since inside
+> the container there was no `lab/` directory for that import to resolve against — only `/work/policies`
+> matches the repo-root layout the `lab.`-prefixed imports assume `policies` (a sibling of `lab/`) come
+> from. Mounting at `/work/lab/auditor/worker` instead makes `/work` mirror the repo root exactly
+> (`/work/policies`, `/work/document-store`, `/work/lab/auditor/worker`), so the *same* `lab.`-prefixed
+> import works whether pytest runs locally from the repo root or `python`/`pytest` runs inside this
+> container from `/work`. Every `python auditor/worker/...` invocation in Task 26's runbook below is
+> also updated to `python lab/auditor/worker/...` to match. See
+> `docs/errors/010-container-mount-missing-lab-prefix.md`.
 
 Note the relative paths: `../policies` and `../document-store` climb out of `lab/` to the repo root, matching the top-level layout from the File Structure section.
 
@@ -2745,7 +2758,7 @@ Then from that shell (`/work` is the container's workdir; evidence files land in
 ​```sh
 nmap -sV -p- device-insecure > /tmp/portscan.txt
 cat /tmp/portscan.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-NET-PORTSCAN \
   --tool nmap --tool-version "$(nmap --version | head -1 | awk '{print $3}')" \
   --command "nmap -sV -p- device-insecure" \
@@ -2758,7 +2771,7 @@ python auditor/worker/tests/record_evidence.py \
 
 ​```sh
 nmap -sV -p 23 telnet-sim > /tmp/portscan_telnet.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-NET-PORTSCAN \
   --tool nmap --tool-version "$(nmap --version | head -1 | awk '{print $3}')" \
   --command "nmap -sV -p 23 telnet-sim" \
@@ -2772,7 +2785,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 curl -s -X POST http://device-insecure/login -d "username=admin&password=admin" > /tmp/login.txt
 cat /tmp/login.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-AUTH-DEFAULT-CREDS \
   --tool curl --tool-version "$(curl --version | head -1 | awk '{print $2}')" \
   --command "curl -X POST http://device-insecure/login -d username=admin&password=admin" \
@@ -2786,7 +2799,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 curl -sk -X POST https://device-hardened/login -d "username=admin&password=admin" -o /tmp/login_hardened.txt -w "%{http_code}" > /tmp/login_hardened_code.txt
 cat /tmp/login_hardened_code.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-hardened --test-id TEST-AUTH-DEFAULT-CREDS \
   --tool curl --tool-version "$(curl --version | head -1 | awk '{print $2}')" \
   --command "curl -X POST https://device-hardened/login -d username=admin&password=admin" \
@@ -2799,7 +2812,7 @@ python auditor/worker/tests/record_evidence.py \
 
 ​```sh
 curl -s -o /tmp/admin_reset.txt -w "%{http_code}" http://device-insecure/api/admin/reset > /tmp/admin_reset_code.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-ADMIN-UNAUTH \
   --tool curl --tool-version "$(curl --version | head -1 | awk '{print $2}')" \
   --command "curl http://device-insecure/api/admin/reset" \
@@ -2813,7 +2826,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 curl -sI http://device-insecure/ > /tmp/headers.txt
 cat /tmp/headers.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-HTTP-HEADERS \
   --tool curl --tool-version "$(curl --version | head -1 | awk '{print $2}')" \
   --command "curl -I http://device-insecure/" \
@@ -2827,7 +2840,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 openssl s_client -connect device-partial:443 -brief < /dev/null > /tmp/tls_partial.txt 2>&1
 cat /tmp/tls_partial.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-partial --test-id TEST-TLS-CONFIG \
   --tool openssl --tool-version "$(openssl version | awk '{print $2}')" \
   --command "openssl s_client -connect device-partial:443 -brief" \
@@ -2840,7 +2853,7 @@ python auditor/worker/tests/record_evidence.py \
 
 ​```sh
 openssl s_client -connect device-hardened:443 -brief < /dev/null > /tmp/tls_hardened.txt 2>&1
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-hardened --test-id TEST-TLS-CONFIG \
   --tool openssl --tool-version "$(openssl version | awk '{print $2}')" \
   --command "openssl s_client -connect device-hardened:443 -brief" \
@@ -2854,7 +2867,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 timeout 3 mosquitto_sub -h mqtt-broker-insecure -t 'devices/#' -C 1 -v > /tmp/mqtt_insecure.txt 2>&1
 cat /tmp/mqtt_insecure.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device mqtt-broker-insecure --test-id TEST-MQTT-OPEN \
   --tool mosquitto_sub --tool-version "$(mosquitto_sub --help 2>&1 | head -1)" \
   --command "mosquitto_sub -h mqtt-broker-insecure -t devices/# -C 1" \
@@ -2868,7 +2881,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 timeout 3 mosquitto_sub -h mqtt-broker-secure -p 8883 -t 'devices/#' -C 1 > /tmp/mqtt_secure.txt 2>&1
 cat /tmp/mqtt_secure.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device mqtt-broker-secure --test-id TEST-MQTT-OPEN \
   --tool mosquitto_sub --tool-version "$(mosquitto_sub --help 2>&1 | head -1)" \
   --command "mosquitto_sub -h mqtt-broker-secure -p 8883 -t devices/# -C 1" \
@@ -2880,19 +2893,19 @@ python auditor/worker/tests/record_evidence.py \
 ## TEST-FW-SECRETS + TEST-FW-SBOM (firmware analysis, all 3 variants)
 
 ​```sh
-python auditor/worker/firmware/generate_firmware.py
-file auditor/worker/firmware/output/*.tar.gz > /tmp/fw_file.txt
+python lab/auditor/worker/firmware/generate_firmware.py
+file lab/auditor/worker/firmware/output/*.tar.gz > /tmp/fw_file.txt
 
 python -c "
 from pathlib import Path
 from lab.auditor.worker.firmware.scan_firmware import scan_archive
-p = Path('auditor/worker/firmware/output/camera-fw-1.0.0-old-device-insecure.tar.gz')
+p = Path('lab/auditor/worker/firmware/output/camera-fw-1.0.0-old-device-insecure.tar.gz')
 for f in scan_archive(p):
     print(f)
 " > /tmp/fw_scan_insecure.txt
 cat /tmp/fw_scan_insecure.txt
 
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-FW-SECRETS \
   --tool yara --tool-version "4.5.1" \
   --command "scan_firmware.py camera-fw-1.0.0-old-device-insecure.tar.gz" \
@@ -2900,11 +2913,11 @@ python auditor/worker/tests/record_evidence.py \
   --raw-file /tmp/fw_scan_insecure.txt --confidence high \
   --observations '{"hardcoded_secret": true, "api_key_found": true, "private_key_present": false}'
 
-syft auditor/worker/firmware/output/camera-fw-1.0.0-old-device-insecure.tar.gz -o json > /tmp/fw_sbom_insecure.json
+syft lab/auditor/worker/firmware/output/camera-fw-1.0.0-old-device-insecure.tar.gz -o json > /tmp/fw_sbom_insecure.json
 grype sbom:/tmp/fw_sbom_insecure.json > /tmp/fw_vulns_insecure.txt
 cat /tmp/fw_vulns_insecure.txt
 
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-FW-SBOM \
   --tool grype --tool-version "$(grype version 2>&1 | head -1)" \
   --command "syft ... | grype sbom:-" \

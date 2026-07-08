@@ -30,4 +30,4 @@ lab/certs/*.crt
 lab/certs/*.csr
 lab/certs/*.srl
 lab/mqtt/secure/passwd
-auditor/worker/firmware/output/
+lab/auditor/worker/firmware/output/

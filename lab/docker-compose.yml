@@ -97,7 +97,7 @@ services:
     build: ./auditor/worker
     volumes:
       - ../policies:/work/policies:ro
-      - ./auditor/worker:/work/auditor/worker
+      - ./auditor/worker:/work/lab/auditor/worker
       - ../document-store:/work/document-store
     networks:
       - audit-network

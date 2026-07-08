@@ -23,3 +23,4 @@ feed our research report later, so we capture them even when the error is small.
 | [007](007-mosquitto-nonroot-cant-read-broker-key.md) | `mqtt-broker-secure` exits (code 13) — non-root mosquitto user can't read the 600-permission broker key | lab/certs, lab/mqtt/secure | 2026-07-08 | resolved |
 | [008](008-plan-path-mismatch-auditor-worker.md) | Plan's own test code contradicted its stated file paths (`auditor.worker` vs `lab/auditor/worker`) | implementation plan (Tasks 23-26) | 2026-07-08 | resolved |
 | [009](009-task23-accidentally-deleted-task22-files.md) | Task 23's implementer accidentally deleted Task 22's already-committed files | subagent-driven-development process | 2026-07-08 | resolved |
+| [010](010-container-mount-missing-lab-prefix.md) | `auditor-worker`'s volume mount didn't include the `lab/` segment, breaking `lab.`-prefixed imports | lab/docker-compose.yml | 2026-07-08 | resolved |
