@@ -1,0 +1,17 @@
+Connecting to 172.30.0.2
+Can't use SSL_get_servername
+depth=0 CN=device-partial
+verify error:num=66:EE certificate key too weak
+depth=0 CN=device-partial
+verify error:num=66:EE certificate key too weak
+depth=0 CN=device-partial
+verify error:num=21:unable to verify the first certificate
+CONNECTION ESTABLISHED
+Protocol version: TLSv1.3
+Ciphersuite: TLS_AES_256_GCM_SHA384
+Peer certificate: CN=device-partial
+Hash used: SHA256
+Signature type: rsa_pss_rsae_sha256
+Verification error: unable to verify the first certificate
+Negotiated TLS1.3 group: X25519MLKEM768
+DONE

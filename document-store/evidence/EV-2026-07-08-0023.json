@@ -1,0 +1,18 @@
+{
+  "evidence_id": "EV-2026-07-08-0023",
+  "device_id": "device-insecure",
+  "test_id": "TEST-FW-SECRETS",
+  "tool": "yara",
+  "tool_version": "4.5.1",
+  "command": "scan_firmware.py camera-fw-insecure",
+  "timestamp": "2026-07-08T08:58:49Z",
+  "finding": "Hardcoded admin password and API key found in firmware config",
+  "observations": {
+    "hardcoded_secret": true,
+    "api_key_found": true,
+    "private_key_present": false
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0023.txt",
+  "confidence": "high",
+  "sha256": "02926a98ce411acd4028171a1b63b6f8f48dc879f2269429021ee951100056e6"
+}

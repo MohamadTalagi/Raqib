@@ -1,0 +1,17 @@
+{
+  "evidence_id": "EV-2026-07-08-0022",
+  "device_id": "mqtt-broker-secure",
+  "test_id": "TEST-MQTT-OPEN",
+  "tool": "mosquitto_sub",
+  "tool_version": "2.0.18",
+  "command": "mosquitto_sub secure",
+  "timestamp": "2026-07-08T08:58:49Z",
+  "finding": "Anon rejected TLS+auth required",
+  "observations": {
+    "mqtt_anonymous": false,
+    "mqtt_tls": true
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0022.txt",
+  "confidence": "high",
+  "sha256": "9fde7cfb48fc03ea2e7addd72740d4213d9d205d629209be1e3bdcfbac7af6d9"
+}

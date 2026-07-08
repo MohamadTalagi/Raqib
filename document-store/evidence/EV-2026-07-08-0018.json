@@ -1,0 +1,19 @@
+{
+  "evidence_id": "EV-2026-07-08-0018",
+  "device_id": "device-insecure",
+  "test_id": "TEST-HTTP-HEADERS",
+  "tool": "curl",
+  "tool_version": "8.9.1",
+  "command": "curl -I insecure",
+  "timestamp": "2026-07-08T08:58:45Z",
+  "finding": "Missing security headers",
+  "observations": {
+    "missing_security_headers": [
+      "X-Frame-Options",
+      "CSP"
+    ]
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0018.txt",
+  "confidence": "medium",
+  "sha256": "8fb0860d7e9f46d4eb195888a55e49c445e551ebc98a0c4ca0c6bf2874a9980d"
+}

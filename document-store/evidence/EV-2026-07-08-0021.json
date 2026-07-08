@@ -1,0 +1,17 @@
+{
+  "evidence_id": "EV-2026-07-08-0021",
+  "device_id": "mqtt-broker-insecure",
+  "test_id": "TEST-MQTT-OPEN",
+  "tool": "mosquitto_sub",
+  "tool_version": "2.0.18",
+  "command": "mosquitto_sub insecure",
+  "timestamp": "2026-07-08T08:58:49Z",
+  "finding": "Anon plaintext sub succeeded",
+  "observations": {
+    "mqtt_anonymous": true,
+    "mqtt_tls": false
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0021.txt",
+  "confidence": "high",
+  "sha256": "ae120ed519999630a5e60aa09cf75472e8e36b7a41c4589620f842d3631e8b8d"
+}

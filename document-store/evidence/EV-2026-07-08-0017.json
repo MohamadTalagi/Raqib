@@ -1,0 +1,16 @@
+{
+  "evidence_id": "EV-2026-07-08-0017",
+  "device_id": "device-insecure",
+  "test_id": "TEST-ADMIN-UNAUTH",
+  "tool": "curl",
+  "tool_version": "8.9.1",
+  "command": "curl admin reset",
+  "timestamp": "2026-07-08T08:58:45Z",
+  "finding": "Admin reset reachable no auth",
+  "observations": {
+    "admin_unauthenticated": true
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0017.txt",
+  "confidence": "high",
+  "sha256": "27badc983df1780b60c2b3fa9d3a19a00e46aac798451f0febdca52920faaddf"
+}
