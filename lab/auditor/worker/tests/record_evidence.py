@@ -12,9 +12,11 @@ from policies.schema.validate import validate_evidence
 DOCUMENT_STORE = Path(__file__).resolve().parents[4] / "document-store"
 
 
-def _next_sequence(evidence_dir: Path, date_str: str) -> int:
-    evidence_dir.mkdir(parents=True, exist_ok=True)
-    existing = list(evidence_dir.glob(f"EV-{date_str}-*.json"))
+def _next_sequence(api_url: str, date_str: str) -> int:
+    response = requests.get(f"{api_url}/evidence", timeout=10)
+    response.raise_for_status()
+    prefix = f"EV-{date_str}-"
+    existing = [e for e in response.json() if e["evidence_id"].startswith(prefix)]
     return len(existing) + 1
 
 
@@ -38,12 +40,13 @@ def record_evidence(
     observations: dict,
     document_store: Path = DOCUMENT_STORE,
 ) -> dict:
-    evidence_dir = document_store / "evidence"
     raw_dir = document_store / "raw"
+
+    api_url = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
 
     now = datetime.now(timezone.utc)
     date_str = now.strftime("%Y-%m-%d")
-    seq = _next_sequence(evidence_dir, date_str)
+    seq = _next_sequence(api_url, date_str)
     evidence_id = f"EV-{date_str}-{seq:04d}"
 
     raw_path = Path(raw_file)
@@ -69,7 +72,6 @@ def record_evidence(
     }
     validate_evidence(record)
 
-    api_url = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
     response = requests.post(f"{api_url}/evidence", json=record, timeout=10)
     response.raise_for_status()
 

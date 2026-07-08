@@ -3,11 +3,22 @@ from datetime import datetime, timezone
 from lab.auditor.worker.tests.record_evidence import record_evidence
 
 
-class FakeResponse:
+class FakePostResponse:
     status_code = 201
 
     def raise_for_status(self):
         pass
+
+
+class FakeGetResponse:
+    def __init__(self, existing_evidence):
+        self._existing_evidence = existing_evidence
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._existing_evidence
 
 
 def _fake_post(posted):
@@ -15,15 +26,25 @@ def _fake_post(posted):
         posted["url"] = url
         posted["json"] = json
         posted["timeout"] = timeout
-        return FakeResponse()
+        return FakePostResponse()
 
     return _post
+
+
+def _fake_get(existing_evidence=()):
+    def _get(url, timeout):
+        return FakeGetResponse(existing_evidence)
+
+    return _get
 
 
 def test_record_evidence_posts_valid_json_payload(monkeypatch, tmp_path):
     posted = {}
     monkeypatch.setattr(
         "lab.auditor.worker.tests.record_evidence.requests.post", _fake_post(posted)
+    )
+    monkeypatch.setattr(
+        "lab.auditor.worker.tests.record_evidence.requests.get", _fake_get()
     )
     monkeypatch.setenv("AUDITOR_API_URL", "http://auditor-api:8000")
 
@@ -59,6 +80,9 @@ def test_record_evidence_copies_raw_output(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "lab.auditor.worker.tests.record_evidence.requests.post", _fake_post(posted)
     )
+    monkeypatch.setattr(
+        "lab.auditor.worker.tests.record_evidence.requests.get", _fake_get()
+    )
 
     raw_file = tmp_path / "raw.txt"
     raw_file.write_text("raw tool output")
@@ -82,28 +106,28 @@ def test_record_evidence_copies_raw_output(monkeypatch, tmp_path):
     assert posted["json"]["raw_output_path"] == f"document-store/raw/{record['evidence_id']}.txt"
 
 
-def test_sequence_reflects_existing_evidence_dir_contents(monkeypatch, tmp_path):
+def test_sequence_reflects_existing_evidence_in_the_api(monkeypatch, tmp_path):
     # record_evidence() no longer writes the evidence JSON to
     # document-store/evidence/ itself (that data now lives in the
-    # auditor-api/database instead), so two back-to-back calls in the same
-    # process no longer naturally advance the on-disk counter the way they
-    # did pre-refactor. What IS unchanged is the sequence-number *formula*:
-    # _next_sequence() still derives the next number from however many
-    # EV-{date}-*.json files already exist in document-store/evidence/ (e.g.
-    # legacy entries from Phase 4, or files placed there by some other
-    # process). Simulate that pre-existing state directly and verify the
-    # formula still produces the correctly incremented ID.
+    # auditor-api/database instead), so the sequence number can no longer be
+    # derived from a local directory listing -- a local-file count would
+    # never advance since nothing writes there anymore, causing every
+    # invocation on the same day to collide on the same evidence_id.
+    # _next_sequence() now queries GET /evidence and counts existing records
+    # whose evidence_id already carries today's date prefix.
     posted = {}
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    existing_evidence = [
+        {"evidence_id": f"EV-{today}-0001"},
+        {"evidence_id": f"EV-{today}-0002"},
+    ]
     monkeypatch.setattr(
         "lab.auditor.worker.tests.record_evidence.requests.post", _fake_post(posted)
     )
-
-    store = tmp_path / "document-store"
-    evidence_dir = store / "evidence"
-    evidence_dir.mkdir(parents=True)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    (evidence_dir / f"EV-{today}-0001.json").write_text("{}")
-    (evidence_dir / f"EV-{today}-0002.json").write_text("{}")
+    monkeypatch.setattr(
+        "lab.auditor.worker.tests.record_evidence.requests.get",
+        _fake_get(existing_evidence),
+    )
 
     raw_file = tmp_path / "raw.txt"
     raw_file.write_text("x")
@@ -118,7 +142,7 @@ def test_sequence_reflects_existing_evidence_dir_contents(monkeypatch, tmp_path)
         raw_file=str(raw_file),
         confidence="high",
         observations={},
-        document_store=store,
+        document_store=tmp_path / "document-store",
     )
 
     assert record["evidence_id"] == f"EV-{today}-0003"
@@ -146,6 +170,7 @@ def test_record_evidence_posts_to_api(monkeypatch, tmp_path):
         return FakeResponse()
 
     monkeypatch.setattr(record_evidence.requests, "post", fake_post)
+    monkeypatch.setattr(record_evidence.requests, "get", _fake_get())
     monkeypatch.setenv("AUDITOR_API_URL", "http://auditor-api:8000")
 
     raw_file = tmp_path / "raw.txt"
