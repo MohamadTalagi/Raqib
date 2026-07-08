@@ -95,6 +95,8 @@ services:
 
   auditor-worker:
     build: ./auditor/worker
+    environment:
+      - PYTHONPATH=/work
     volumes:
       - ../policies:/work/policies:ro
       - ./auditor/worker:/work/lab/auditor/worker

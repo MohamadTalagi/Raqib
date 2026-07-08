@@ -2096,6 +2096,8 @@ CMD ["sleep", "infinity"]
 ```yaml
   auditor-worker:
     build: ./auditor/worker
+    environment:
+      - PYTHONPATH=/work
     volumes:
       - ../policies:/work/policies:ro
       - ./auditor/worker:/work/lab/auditor/worker
@@ -2117,6 +2119,15 @@ CMD ["sleep", "infinity"]
 > container from `/work`. Every `python auditor/worker/...` invocation in Task 26's runbook below is
 > also updated to `python lab/auditor/worker/...` to match. See
 > `docs/errors/010-container-mount-missing-lab-prefix.md`.
+
+> **Errata (2026-07-08, found during Task 26):** added `environment: - PYTHONPATH=/work`. Without it,
+> `python lab/auditor/worker/tests/record_evidence.py ...` (run as a plain script, per Task 26's
+> runbook) fails with `ModuleNotFoundError: No module named 'policies'` — plain `python script.py`
+> adds the *script's own directory* to `sys.path`, not the current working directory, so `/work`
+> (where `policies/` lives) was never on the path for that invocation style. (`python -m pytest` and
+> `python -c "..."` both add the cwd automatically, which is why Tasks 23-25's pytest-based
+> verification never hit this.) Setting `PYTHONPATH=/work` fixes every invocation style uniformly.
+> See `docs/errors/011-record-evidence-script-invocation-needs-pythonpath.md`.
 
 Note the relative paths: `../policies` and `../document-store` climb out of `lab/` to the repo root, matching the top-level layout from the File Structure section.
 
