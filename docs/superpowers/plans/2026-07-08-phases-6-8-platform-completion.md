@@ -608,9 +608,9 @@ VALID_VERDICT = {
     "status": "FAIL",
     "severity": "high",
     "evidence_ids": ["EV-2026-07-08-9001"],
-    "matched": {"default_creds": True},
-    "reason": "Default credentials accepted",
-    "saudi_source": {"framework": "CGIoT-1:2024", "reference": "2-2-2"},
+    "matched": "fail",
+    "reason": "observations.default_creds equals True",
+    "saudi_source": "CGIoT-1:2024 §2-2-2",
     "remediation": "Force password change on first boot",
     "timestamp": "2026-07-08T08:06:42Z",
 }
@@ -922,14 +922,14 @@ EVIDENCE_B = dict(EVIDENCE_A, evidence_id="EV-2026-07-08-9002", device_id="devic
 VERDICT_FAIL = {
     "verdict_id": "VD-2026-07-08-9001", "control_id": "SA-IOT-002",
     "device_id": "device-insecure", "status": "FAIL", "severity": "high",
-    "evidence_ids": ["EV-2026-07-08-9001"], "matched": {"default_creds": True},
-    "reason": "Default credentials accepted",
-    "saudi_source": {"framework": "CGIoT-1:2024", "reference": "2-2-2"},
+    "evidence_ids": ["EV-2026-07-08-9001"], "matched": "fail",
+    "reason": "observations.default_creds equals True",
+    "saudi_source": "CGIoT-1:2024 §2-2-2",
     "remediation": "Force password change", "timestamp": "2026-07-08T08:06:42Z",
 }
 VERDICT_PASS = dict(
     VERDICT_FAIL, verdict_id="VD-2026-07-08-9002", device_id="device-hardened",
-    status="PASS", matched={"default_creds": False},
+    status="PASS", matched="pass",
 )
 
 
@@ -1241,11 +1241,14 @@ def test_generate_verdicts_produces_fail_and_pass_across_devices(tmp_path):
 control_id: SA-IOT-002
 title: No default or hard-coded credentials
 saudi_source:
-  framework: CGIoT-1:2024
-  reference: "2-2-2"
-applicability: all
+  - framework: CGIoT-1:2024
+    reference: "2-2-2"
+    clause: "Prevent the users from using default and hard-coded passwords."
+applicability:
+  device_type: [smart-camera]
 required_evidence:
-  - TEST-AUTH-DEFAULT-CREDS
+  - test_id: TEST-AUTH-DEFAULT-CREDS
+severity: high
 conditions:
   fail:
     field: observations.default_creds
@@ -1256,7 +1259,7 @@ conditions:
     op: equals
     value: false
   partial: null
-severity: high
+  inconclusive: { when: "evidence_missing_or_low_confidence" }
 remediation: Force password change on first boot
 """
     )
@@ -1270,6 +1273,8 @@ remediation: Force password change on first boot
     post_calls = [c for c in responses.calls if c.request.method == "POST"]
     assert len(post_calls) == 2
 ```
+
+**Important context on `evaluate()`'s real contract** (from `policies/engine/policy_engine.py`, written in Phase 0-5's Task 28 — read the actual file before writing this task's code, don't rely solely on this summary): `evaluate(control: dict, evidence: dict, verdict_id: Optional[str] = None) -> dict` returns the **complete** verdict dict already assembled — `control_id`, `device_id`, `status` (uppercase, via an internal `STATUS_MAP`), `severity`, `evidence_ids` (a one-element list built from `evidence["evidence_id"]`), `matched` (the lowercase status string, e.g. `"fail"`), `reason`, `saudi_source` (formatted as a string, `f"{control['saudi_source'][0]['framework']} §{control['saudi_source'][0]['reference']}"` — note `control["saudi_source"]` is a **list**, `evaluate()` uses only its first entry), `remediation`, and `timestamp`. If `verdict_id` is passed, it's prepended to the returned dict. **`generate_verdicts()` does not need to reassemble any of these fields itself — it only needs to compute the `verdict_id` and pass it to `evaluate()`.** Also note `control["required_evidence"]` is a list of `{"test_id": ...}` dicts, not plain strings (matches the real committed control YAML files, e.g. `policies/controls/SA-IOT-002.yaml`).
 
 - [ ] **Step 2: Add the `responses` test dependency**
 
@@ -1286,7 +1291,7 @@ Expected: FAIL (`generate_verdicts` doesn't accept `api_url`/`controls_dir` keyw
 
 - [ ] **Step 4: Rewrite `generate_verdicts.py` to use the API**
 
-Read the current `policies/engine/generate_verdicts.py` in full first (from Task 30) — it currently has a `generate_verdicts(evidence_dir, controls_dir, output_dir)` function using `load_evidence`/`load_control`/`evaluate` from `policy_engine.py`, plus a `main()`. Replace the whole file with:
+Read the current `policies/engine/generate_verdicts.py` in full first (from Task 30) — it currently has a `generate_verdicts(evidence_dir, controls_dir, output_dir)` function that reads evidence/controls from local files, calls `evaluate(control, evidence, verdict_id=verdict_id)` (which returns the **complete** verdict dict, see the note above Step 1's test), validates with `validate_verdict()`, and writes each result to a local JSON file — plus a `main()`. Replace the whole file with:
 
 ```python
 import sys
@@ -1311,24 +1316,13 @@ def generate_verdicts(api_url: str, controls_dir: str) -> list[dict]:
     seq_by_date: dict[str, int] = {}
     for evidence in evidence_records:
         for control in controls:
-            if evidence["test_id"] not in control["required_evidence"]:
+            required_test_ids = {req["test_id"] for req in control["required_evidence"]}
+            if evidence["test_id"] not in required_test_ids:
                 continue
-            result = evaluate(control, evidence)
             date_str = evidence["timestamp"][:10]
             seq_by_date[date_str] = seq_by_date.get(date_str, 0) + 1
-            verdict = {
-                "verdict_id": f"VD-{date_str}-{seq_by_date[date_str]:04d}",
-                "control_id": control["control_id"],
-                "device_id": evidence["device_id"],
-                "status": result["status"],
-                "severity": control["severity"],
-                "evidence_ids": [evidence["evidence_id"]],
-                "matched": result.get("matched"),
-                "reason": result["reason"],
-                "saudi_source": control["saudi_source"],
-                "remediation": control["remediation"],
-                "timestamp": evidence["timestamp"],
-            }
+            verdict_id = f"VD-{date_str}-{seq_by_date[date_str]:04d}"
+            verdict = evaluate(control, evidence, verdict_id=verdict_id)
             post_response = requests.post(f"{api_url}/verdicts", json=verdict, timeout=10)
             post_response.raise_for_status()
             verdicts.append(verdict)
@@ -1348,7 +1342,7 @@ if __name__ == "__main__":
     sys.exit(main() or 0)
 ```
 
-(Check `policy_engine.py`'s `evaluate()` return shape from Task 28/29 before finalizing this — if it returns a different key than `"matched"`/`"reason"`/`"status"`, adjust the field names above to match exactly what `evaluate()` actually returns; don't guess, read the real function.)
+`evaluate()` already returns every field the API's `POST /verdicts` schema requires (`matched` as the lowercase status string, `saudi_source` as a formatted string, `status` as the uppercase enum via `STATUS_MAP`) — `generate_verdicts()` only computes the `verdict_id` and passes it through, it does not reassemble any other field. This matches the real, already-approved `policies/engine/policy_engine.py` from Phase 0-5 exactly — read that file before writing this task's code to confirm, don't guess from this summary alone.
 
 - [ ] **Step 5: Add `responses` and `requests` where needed, run tests to verify they pass**
 

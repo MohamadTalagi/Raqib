@@ -26,3 +26,4 @@ feed our research report later, so we capture them even when the error is small.
 | [010](010-container-mount-missing-lab-prefix.md) | `auditor-worker`'s volume mount didn't include the `lab/` segment, breaking `lab.`-prefixed imports | lab/docker-compose.yml | 2026-07-08 | resolved |
 | [011](011-record-evidence-script-invocation-needs-pythonpath.md) | `record_evidence.py` fails with `ModuleNotFoundError` when run as a plain script (needs `PYTHONPATH`) | lab/docker-compose.yml, record_evidence.py | 2026-07-08 | resolved |
 | [012](012-psycopg-binary-3-2-3-no-wheel.md) | `psycopg[binary]==3.2.3` has no available wheel on PyPI | lab/auditor/api | 2026-07-08 | resolved |
+| [013](013-plan-verdict-shape-mismatch-with-real-schema.md) | Plan's verdict test fixtures used dict-shaped `matched`/`saudi_source`, contradicting the real committed schema and `evaluate()`'s actual contract | Phases 6-8 plan (Tasks 4, 6, 8) | 2026-07-08 | resolved |
