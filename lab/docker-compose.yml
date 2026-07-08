@@ -93,5 +93,15 @@ services:
       timeout: 3s
       retries: 3
 
+  auditor-worker:
+    build: ./auditor/worker
+    volumes:
+      - ../policies:/work/policies:ro
+      - ./auditor/worker:/work/auditor/worker
+      - ../document-store:/work/document-store
+    networks:
+      - audit-network
+      - internal-network
+
 volumes:
   mqtt-secure-passwd:
