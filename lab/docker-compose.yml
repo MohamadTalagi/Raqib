@@ -35,6 +35,16 @@ services:
       timeout: 3s
       retries: 3
 
+  traffic-capture:
+    build: ./traffic-capture
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ../document-store/pcap:/pcap
+    networks:
+      - audit-network
+
   mqtt-broker-insecure:
     image: eclipse-mosquitto:2
     volumes:

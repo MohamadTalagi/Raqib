@@ -21,6 +21,7 @@ Thumbs.db
 
 # Runtime-generated raw evidence output
 lab/document-store/raw/
+document-store/pcap/*.pcap
 .claude/worktrees/
 .superpowers/
 
