@@ -96,3 +96,86 @@ def get_evidence_by_id(evidence_id: str):
     if row is None:
         raise HTTPException(status_code=404, detail="evidence not found")
     return _row_to_evidence(row)
+
+
+VERDICT_SCHEMA_PATH = Path("/work/policies/schema/verdict.schema.json")
+
+
+def _load_verdict_schema() -> dict:
+    return json.loads(VERDICT_SCHEMA_PATH.read_text())
+
+
+@app.post("/verdicts", status_code=201)
+def post_verdict(verdict: dict):
+    schema = _load_verdict_schema()
+    try:
+        jsonschema.validate(verdict, schema)
+    except jsonschema.ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc.message))
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO verdicts (
+                verdict_id, control_id, device_id, status, severity,
+                evidence_ids, matched, reason, saudi_source, remediation, timestamp
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                verdict["verdict_id"], verdict["control_id"], verdict["device_id"],
+                verdict["status"], verdict["severity"],
+                json.dumps(verdict["evidence_ids"]), json.dumps(verdict.get("matched")),
+                verdict["reason"], json.dumps(verdict["saudi_source"]),
+                verdict["remediation"], verdict["timestamp"],
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return verdict
+
+
+def _row_to_verdict(row: tuple) -> dict:
+    (verdict_id, control_id, device_id, status, severity,
+     evidence_ids, matched, reason, saudi_source, remediation, timestamp) = row
+    return {
+        "verdict_id": verdict_id, "control_id": control_id, "device_id": device_id,
+        "status": status, "severity": severity, "evidence_ids": evidence_ids,
+        "matched": matched, "reason": reason, "saudi_source": saudi_source,
+        "remediation": remediation, "timestamp": timestamp.isoformat(),
+    }
+
+
+@app.get("/verdicts")
+def get_verdicts(control_id: str | None = None, device_id: str | None = None):
+    conn = get_connection()
+    try:
+        query = "SELECT verdict_id, control_id, device_id, status, severity, evidence_ids, matched, reason, saudi_source, remediation, timestamp FROM verdicts WHERE 1=1"
+        params: list = []
+        if control_id is not None:
+            query += " AND control_id = %s"
+            params.append(control_id)
+        if device_id is not None:
+            query += " AND device_id = %s"
+            params.append(device_id)
+        query += " ORDER BY verdict_id"
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+    return [_row_to_verdict(row) for row in rows]
+
+
+@app.get("/verdicts/{verdict_id}")
+def get_verdict_by_id(verdict_id: str):
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT verdict_id, control_id, device_id, status, severity, evidence_ids, matched, reason, saudi_source, remediation, timestamp FROM verdicts WHERE verdict_id = %s",
+            (verdict_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="verdict not found")
+    return _row_to_verdict(row)
