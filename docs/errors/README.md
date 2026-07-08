@@ -25,3 +25,4 @@ feed our research report later, so we capture them even when the error is small.
 | [009](009-task23-accidentally-deleted-task22-files.md) | Task 23's implementer accidentally deleted Task 22's already-committed files | subagent-driven-development process | 2026-07-08 | resolved |
 | [010](010-container-mount-missing-lab-prefix.md) | `auditor-worker`'s volume mount didn't include the `lab/` segment, breaking `lab.`-prefixed imports | lab/docker-compose.yml | 2026-07-08 | resolved |
 | [011](011-record-evidence-script-invocation-needs-pythonpath.md) | `record_evidence.py` fails with `ModuleNotFoundError` when run as a plain script (needs `PYTHONPATH`) | lab/docker-compose.yml, record_evidence.py | 2026-07-08 | resolved |
+| [012](012-psycopg-binary-3-2-3-no-wheel.md) | `psycopg[binary]==3.2.3` has no available wheel on PyPI | lab/auditor/api | 2026-07-08 | resolved |

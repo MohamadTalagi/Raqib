@@ -163,7 +163,7 @@ Create `lab/auditor/api/requirements.txt`:
 ```
 fastapi==0.115.6
 uvicorn==0.34.0
-psycopg[binary]==3.2.3
+psycopg[binary]==3.2.10
 pyyaml==6.0.2
 jsonschema==4.23.0
 pytest==8.3.4
