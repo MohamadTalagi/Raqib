@@ -2,6 +2,18 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 # Default (docker-compose.yml alone) does NOT expose these, per the brief:
 # "services reachable only inside the lab".
+#
+# internal-network is marked internal:true in the base file (its whole point
+# is that the trusted backend has no route out) — but that same isolation
+# also blocks Docker Desktop's host-port-forwarding proxy from reaching any
+# container whose only network is internal-network, even for ports declared
+# as published. auditor-api and auditor-web live only on internal-network, so
+# their dev-published ports (8000, 8080) silently never bind on Windows/Mac
+# Docker Desktop. Relaxing internal:true here (dev overlay only, never in the
+# base file) is what actually makes the publish take effect.
+networks:
+  internal-network:
+    internal: false
 services:
   device-insecure:
     ports:
