@@ -6,7 +6,7 @@ from pathlib import Path
 
 from policies.schema.validate import validate_evidence
 
-DOCUMENT_STORE = Path(__file__).resolve().parents[3] / "document-store"
+DOCUMENT_STORE = Path(__file__).resolve().parents[4] / "document-store"
 
 
 def _next_sequence(evidence_dir: Path, date_str: str) -> int:

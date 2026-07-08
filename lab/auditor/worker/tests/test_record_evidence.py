@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from auditor.worker.tests.record_evidence import record_evidence
+from lab.auditor.worker.tests.record_evidence import record_evidence
 
 
 def test_record_evidence_writes_valid_json(tmp_path):
