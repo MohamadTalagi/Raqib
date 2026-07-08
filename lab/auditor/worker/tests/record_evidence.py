@@ -1,8 +1,11 @@
 import argparse
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
+
+import requests
 
 from policies.schema.validate import validate_evidence
 
@@ -24,7 +27,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def record_evidence(
-    device_id: str,
+    device: str,
     test_id: str,
     tool: str,
     tool_version: str,
@@ -52,7 +55,7 @@ def record_evidence(
 
     record = {
         "evidence_id": evidence_id,
-        "device_id": device_id,
+        "device_id": device,
         "test_id": test_id,
         "tool": tool,
         "tool_version": tool_version,
@@ -66,9 +69,10 @@ def record_evidence(
     }
     validate_evidence(record)
 
-    evidence_dir.mkdir(parents=True, exist_ok=True)
-    out_path = evidence_dir / f"{evidence_id}.json"
-    out_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    api_url = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
+    response = requests.post(f"{api_url}/evidence", json=record, timeout=10)
+    response.raise_for_status()
+
     return record
 
 
@@ -86,7 +90,7 @@ def main() -> None:
     args = parser.parse_args()
 
     record = record_evidence(
-        device_id=args.device,
+        device=args.device,
         test_id=args.test_id,
         tool=args.tool,
         tool_version=args.tool_version,

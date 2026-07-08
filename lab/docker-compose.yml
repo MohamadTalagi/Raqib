@@ -97,6 +97,7 @@ services:
     build: ./auditor/worker
     environment:
       - PYTHONPATH=/work
+      - AUDITOR_API_URL=http://auditor-api:8000
     volumes:
       - ../policies:/work/policies:ro
       - ./auditor/worker:/work/lab/auditor/worker
@@ -104,6 +105,8 @@ services:
     networks:
       - audit-network
       - internal-network
+    depends_on:
+      - auditor-api
 
   auditor-database:
     build: ./auditor/db
