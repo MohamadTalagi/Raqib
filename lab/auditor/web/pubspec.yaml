@@ -1,0 +1,21 @@
+name: auditor_web
+description: IoTGuard auditor dashboard
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  http_mock_adapter: ^0.6.1
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
