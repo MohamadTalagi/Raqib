@@ -105,5 +105,22 @@ services:
       - audit-network
       - internal-network
 
+  auditor-database:
+    build: ./auditor/db
+    environment:
+      - POSTGRES_DB=auditor
+      - POSTGRES_USER=auditor
+      - POSTGRES_PASSWORD=auditor-lab-pw
+    volumes:
+      - auditor-db-data:/var/lib/postgresql/data
+    networks:
+      - internal-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auditor -d auditor"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   mqtt-secure-passwd:
+  auditor-db-data:
