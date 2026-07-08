@@ -1,7 +1,9 @@
 import json
+import os
 from pathlib import Path
 
 import jsonschema
+import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -179,3 +181,26 @@ def get_verdict_by_id(verdict_id: str):
     if row is None:
         raise HTTPException(status_code=404, detail="verdict not found")
     return _row_to_verdict(row)
+
+
+CONTROLS_DIR = Path(os.environ.get("CONTROLS_DIR", "/work/policies/controls"))
+
+
+def _load_all_controls() -> list[dict]:
+    controls = []
+    for path in sorted(CONTROLS_DIR.glob("*.yaml")):
+        controls.append(yaml.safe_load(path.read_text()))
+    return controls
+
+
+@app.get("/controls")
+def get_controls():
+    return _load_all_controls()
+
+
+@app.get("/controls/{control_id}")
+def get_control_by_id(control_id: str):
+    path = CONTROLS_DIR / f"{control_id}.yaml"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="control not found")
+    return yaml.safe_load(path.read_text())
