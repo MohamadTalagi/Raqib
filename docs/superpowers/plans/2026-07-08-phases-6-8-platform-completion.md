@@ -1556,7 +1556,6 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  http_mock_adapter: ^0.6.1
 
 flutter:
   uses-material-design: true
