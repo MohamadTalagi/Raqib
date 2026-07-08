@@ -1,0 +1,20 @@
+{
+  "evidence_id": "EV-2026-07-08-0024",
+  "device_id": "device-insecure",
+  "test_id": "TEST-FW-SBOM",
+  "tool": "grype",
+  "tool_version": "0.82.0",
+  "command": "syft camera-fw-insecure | grype sbom",
+  "timestamp": "2026-07-08T08:58:51Z",
+  "finding": "Syft did not recognize the firmware custom manifest.json format so Grype found no CVE matches; manifest.json itself documents outdated openssl 1.0.1e and busybox 1.19.4 as a manual cross-reference",
+  "observations": {
+    "automated_sbom_match": false,
+    "manual_outdated_packages": [
+      "openssl-1.0.1e",
+      "busybox-1.19.4"
+    ]
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0024.txt",
+  "confidence": "medium",
+  "sha256": "6035586e62adda775e6e093e9a854f91329a9a0572cbe63b0739d90917b11e2b"
+}

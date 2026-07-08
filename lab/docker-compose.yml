@@ -1,0 +1,109 @@
+name: kaust-iot-lab
+
+networks:
+  audit-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  internal-network:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+
+services:
+  device-insecure:
+    build: ./devices/smart-camera
+    env_file: ./devices/smart-camera/profiles/insecure.env
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  telnet-sim:
+    build: ./telnet-sim
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "23"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  mqtt-broker-insecure:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./mqtt/insecure/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 1883 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  cert-init:
+    build: ./certs
+    volumes:
+      - ./certs:/out
+    profiles: ["init"]
+
+  device-partial:
+    build: ./devices/smart-camera
+    env_file: ./devices/smart-camera/profiles/partial.env
+    volumes:
+      - ./certs:/certs:ro
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl, urllib.request; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; ctx.set_ciphers('DEFAULT@SECLEVEL=0'); urllib.request.urlopen('https://localhost/health', context=ctx, timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  device-hardened:
+    build: ./devices/smart-camera
+    env_file: ./devices/smart-camera/profiles/hardened.env
+    volumes:
+      - ./certs:/certs:ro
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl, urllib.request; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; urllib.request.urlopen('https://localhost/health', context=ctx, timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  mqtt-broker-secure:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./mqtt/secure/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./certs:/mosquitto/certs:ro
+      - mqtt-secure-passwd:/mosquitto/config
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8883 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  auditor-worker:
+    build: ./auditor/worker
+    environment:
+      - PYTHONPATH=/work
+    volumes:
+      - ../policies:/work/policies:ro
+      - ./auditor/worker:/work/lab/auditor/worker
+      - ../document-store:/work/document-store
+    networks:
+      - audit-network
+      - internal-network
+
+volumes:
+  mqtt-secure-passwd:

@@ -1,0 +1,18 @@
+control_id: SA-IOT-001
+title: Device identification and asset inventory
+saudi_source:
+  - framework: CGIoT-1:2024
+    reference: "2-1-1"
+    clause: "Maintain an accurate inventory of connected IoT devices, including vendor, model, and identifiers."
+applicability:
+  device_type: [smart-camera]
+required_evidence:
+  - test_id: TEST-DEVICE-ID
+automated_test_ids: [TEST-DEVICE-ID]
+severity: medium
+conditions:
+  pass: { field: "observations.device_identified", op: "equals", value: true }
+  fail: { field: "observations.device_identified", op: "equals", value: false }
+  partial: null
+  inconclusive: { when: "evidence_missing_or_low_confidence" }
+remediation: "Expose vendor, model, MAC, and firmware version via an unauthenticated read-only device-info endpoint for asset inventory tooling."

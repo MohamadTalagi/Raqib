@@ -1,0 +1,2 @@
+{'member': 'etc/config.ini', 'rule': 'HardcodedPassword', 'severity': 'high'}
+{'member': 'etc/config.ini', 'rule': 'EmbeddedAPIKey', 'severity': 'high'}

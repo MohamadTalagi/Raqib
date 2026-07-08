@@ -1,0 +1,18 @@
+{
+  "evidence_id": "EV-2026-07-08-0019",
+  "device_id": "device-partial",
+  "test_id": "TEST-TLS-CONFIG",
+  "tool": "openssl",
+  "tool_version": "3.5.6",
+  "command": "openssl s_client partial",
+  "timestamp": "2026-07-08T08:58:46Z",
+  "finding": "1024-bit SHA-1 cert weak",
+  "observations": {
+    "tls_version": "TLSv1.2",
+    "weak_cipher": true,
+    "cert_bits": 1024
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0019.txt",
+  "confidence": "high",
+  "sha256": "f3cd7fd07c1b89ed380975ccf0fdfc4864f56317b273389306dff2c4bc1b4197"
+}

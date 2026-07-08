@@ -1,0 +1,15 @@
+{
+  "verdict_id": "VD-2026-07-08-0006",
+  "control_id": "SA-IOT-005",
+  "device_id": "device-hardened",
+  "status": "PASS",
+  "severity": "high",
+  "evidence_ids": [
+    "EV-2026-07-08-0020"
+  ],
+  "matched": "pass",
+  "reason": "observations.weak_cipher equals False",
+  "saudi_source": "CGIoT-1:2024 \u00a72-7-2",
+  "remediation": "Reissue the device certificate at 2048-bit RSA (or better) with SHA-256, disable TLS 1.0/1.1.",
+  "timestamp": "2026-07-08T08:58:46Z"
+}

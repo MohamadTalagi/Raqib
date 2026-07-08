@@ -1,0 +1,15 @@
+{
+  "verdict_id": "VD-2026-07-08-0001",
+  "control_id": "SA-IOT-003",
+  "device_id": "device-insecure",
+  "status": "PASS",
+  "severity": "high",
+  "evidence_ids": [
+    "EV-2026-07-08-0013"
+  ],
+  "matched": "pass",
+  "reason": "observations.telnet_open equals False",
+  "saudi_source": "CGIoT-1:2024 \u00a72-15-2",
+  "remediation": "Remove Telnet and any other non-essential listening service from the device image.",
+  "timestamp": "2026-07-08T08:58:42Z"
+}

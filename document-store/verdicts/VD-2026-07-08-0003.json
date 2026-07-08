@@ -1,0 +1,15 @@
+{
+  "verdict_id": "VD-2026-07-08-0003",
+  "control_id": "SA-IOT-002",
+  "device_id": "device-insecure",
+  "status": "FAIL",
+  "severity": "high",
+  "evidence_ids": [
+    "EV-2026-07-08-0015"
+  ],
+  "matched": "fail",
+  "reason": "observations.default_creds equals True",
+  "saudi_source": "CGIoT-1:2024 \u00a72-2-2",
+  "remediation": "Force a unique strong password on first boot; remove all vendor defaults.",
+  "timestamp": "2026-07-08T08:58:44Z"
+}

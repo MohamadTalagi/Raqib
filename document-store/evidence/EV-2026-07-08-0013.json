@@ -1,0 +1,19 @@
+{
+  "evidence_id": "EV-2026-07-08-0013",
+  "device_id": "device-insecure",
+  "test_id": "TEST-NET-PORTSCAN",
+  "tool": "nmap",
+  "tool_version": "7.95",
+  "command": "nmap -sV -p- device-insecure",
+  "timestamp": "2026-07-08T08:58:42Z",
+  "finding": "Port 80 open; no unnecessary Telnet",
+  "observations": {
+    "open_ports": [
+      80
+    ],
+    "telnet_open": false
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0013.txt",
+  "confidence": "high",
+  "sha256": "fc5467ebf52c3be6ad18d497e5ab049b30bb3ad386b6d944284ffa44be9c92bd"
+}

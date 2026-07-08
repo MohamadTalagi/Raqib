@@ -1,0 +1,15 @@
+Connecting to 172.30.0.6
+Can't use SSL_get_servername
+depth=0 CN=device-hardened
+verify error:num=20:unable to get local issuer certificate
+depth=0 CN=device-hardened
+verify error:num=21:unable to verify the first certificate
+CONNECTION ESTABLISHED
+Protocol version: TLSv1.3
+Ciphersuite: TLS_AES_256_GCM_SHA384
+Peer certificate: CN=device-hardened
+Hash used: SHA256
+Signature type: rsa_pss_rsae_sha256
+Verification error: unable to verify the first certificate
+Negotiated TLS1.3 group: X25519MLKEM768
+DONE

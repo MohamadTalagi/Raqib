@@ -1,0 +1,18 @@
+{
+  "evidence_id": "EV-2026-07-08-0020",
+  "device_id": "device-hardened",
+  "test_id": "TEST-TLS-CONFIG",
+  "tool": "openssl",
+  "tool_version": "3.5.6",
+  "command": "openssl s_client hardened",
+  "timestamp": "2026-07-08T08:58:46Z",
+  "finding": "2048-bit SHA-256 cert strong",
+  "observations": {
+    "tls_version": "TLSv1.3",
+    "weak_cipher": false,
+    "cert_bits": 2048
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0020.txt",
+  "confidence": "high",
+  "sha256": "a97c10737c87866f3c9305feec7c201adf9402fd973d22b8e244432ff9963735"
+}

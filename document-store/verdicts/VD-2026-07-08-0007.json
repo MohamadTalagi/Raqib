@@ -1,0 +1,15 @@
+{
+  "verdict_id": "VD-2026-07-08-0007",
+  "control_id": "SA-IOT-004",
+  "device_id": "mqtt-broker-insecure",
+  "status": "FAIL",
+  "severity": "high",
+  "evidence_ids": [
+    "EV-2026-07-08-0021"
+  ],
+  "matched": "fail",
+  "reason": "observations.mqtt_tls equals False",
+  "saudi_source": "CGIoT-1:2024 \u00a72-4-3",
+  "remediation": "Route all MQTT telemetry through the TLS-secured, authenticated broker; retire the plaintext broker.",
+  "timestamp": "2026-07-08T08:58:49Z"
+}

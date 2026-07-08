@@ -1,0 +1,16 @@
+{
+  "evidence_id": "EV-2026-07-08-0015",
+  "device_id": "device-insecure",
+  "test_id": "TEST-AUTH-DEFAULT-CREDS",
+  "tool": "curl",
+  "tool_version": "8.9.1",
+  "command": "curl POST login",
+  "timestamp": "2026-07-08T08:58:44Z",
+  "finding": "Default creds admin/admin accepted",
+  "observations": {
+    "default_creds": true
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0015.txt",
+  "confidence": "high",
+  "sha256": "d20fedeccaa8b0a2f321c732cc44423cde147ffb07e64875ed5715799f09d9a9"
+}

@@ -1,0 +1,16 @@
+{
+  "evidence_id": "EV-2026-07-08-0016",
+  "device_id": "device-hardened",
+  "test_id": "TEST-AUTH-DEFAULT-CREDS",
+  "tool": "curl",
+  "tool_version": "8.9.1",
+  "command": "curl POST login",
+  "timestamp": "2026-07-08T08:58:44Z",
+  "finding": "Default creds rejected 401",
+  "observations": {
+    "default_creds": false
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0016.txt",
+  "confidence": "high",
+  "sha256": "dcaadad1cfce437735b81ab025f776e5857e48558c47f6960e6a5f2595664a85"
+}

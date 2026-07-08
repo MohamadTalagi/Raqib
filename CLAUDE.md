@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-07
+> **Last updated:** 2026-07-08
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,20 +12,27 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** implementation plan written → **ready to execute Phase 0**.
+**Phase:** **Phases 0-5 COMPLETE** (all 31 tasks implemented, reviewed, and PC-verified) → **ready to merge the worktree and plan Phases 6-8**.
 
-**Plan:** `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md` — 31 tasks covering Phases 0-5 (contracts → lab core → profiles/TLS → Day-1 artifacts → manual assessment → policy-as-code). Phases 6-8 (auditor-api/database, Flutter auditor-web, full 11-container polish) are a separate follow-up plan, written after Phases 0-5 are graded.
+**Plan:** `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md` — 31 tasks covering Phases 0-5 (contracts → lab core → profiles/TLS → Day-1 artifacts → manual assessment → policy-as-code). All complete. Phases 6-8 (auditor-api/database, Flutter auditor-web, full 11-container polish) are a separate follow-up plan, to be written now that Phases 0-5 are done.
 
-**Already done (2026-07-07):**
+**Acceptance verification:** `docs/architecture/phases-0-5-acceptance.md` — full Day-1/Day-2/Day-3 acceptance criteria checked off with evidence, all independently re-verified against the real committed files (not just implementer claims). Headline results:
+- Day 1: full lab (6 services + auditor-worker, 2 networks) built and demonstrated working on the physical PC.
+- Day 2: 12 real manual-assessment evidence entries collected (exceeds required ≥8), all schema-valid.
+- Day 3: 5 NCA controls (SA-IOT-001..005) mapped to real CGIoT-1:2024 sources; verdict engine run for real against the Day-2 evidence — 4 controls (not just the required ≥2) show correct PASS+FAIL pairs across different device configs.
+- 45 tests passing across the whole codebase (schema, policy engine, controls, firmware, evidence recording, smart-camera device).
+- 11 errors hit and logged (`docs/errors/001`-`011`), each with root cause + fix + prevention.
+
+**Already done (2026-07-07/08):**
 - Approved design spec → `docs/superpowers/specs/2026-07-07-preliminary-iot-security-lab-design.md`
 - Private git repo → `https://github.com/OSAMAxALHARBI/kaust-iot-security-lab` (branch `main`)
 - Working **ssh-mcp** connection to the 32 GB build PC → host `OSRA-PC2025-V2`, user `osama`, Tailscale `100.99.182.30`, key auth. Tools appear as `mcp__ssh-mcp__*`. Remote shell is **Windows PowerShell 5.1** (no `&&` — use `;`; stderr from git gets wrongly wrapped as a PowerShell error even on success — check actual result, don't trust the error alone).
 - **PC has read-write repo access**: dedicated ed25519 deploy key generated on the PC (`C:\Users\osama\.ssh\kaust_iot_deploy_key`), registered on GitHub as a **read-write** deploy key ("OSRA-PC2025-V2 (build PC, read-write)" — upgraded 2026-07-07 from an initial read-only key, so the PC could commit+push Day-2 evidence files generated on it per the Phase 0-5 plan's Task 26), SSH host alias `github.com-kaust-iot` added to `C:\Users\osama\.ssh\config`. Repo cloned to `C:\Users\osama\Projects\kaust-iot-security-lab`. (gh CLI is NOT installed on the PC — GCM/HTTPS auth doesn't work non-interactively over ssh-mcp, so use this SSH deploy-key path for any future PC git auth needs.)
-- **Implementation is happening in a git worktree**: `.claude/worktrees/phase-0-5-implementation` on branch `worktree-phase-0-5-implementation`, via subagent-driven-development. Progress ledger at `.superpowers/sdd/progress.md` (gitignored, local only) — check it first if resuming this work after a compaction/restart.
+- **Implementation happened in a git worktree**: `.claude/worktrees/phase-0-5-implementation` on branch `worktree-phase-0-5-implementation`, via subagent-driven-development (fresh implementer + reviewer subagent per task). Progress ledger at `.superpowers/sdd/progress.md` (gitignored, local only) records all 31 tasks as complete.
 
 **Next steps, in order:**
-1. Invoke the **writing-plans** skill to turn the approved spec into a step-by-step implementation plan.
-2. Build in **phase order** (Workflow B: author on laptop → `git push` → PC `git pull` + `docker compose` via ssh-mcp). **Start at Phase 0** (contracts + repo skeleton + compose networks) per spec §10.
+1. Merge/integrate the `worktree-phase-0-5-implementation` branch into `main` (via **finishing-a-development-branch** skill) — decide merge vs. PR.
+2. Plan Phases 6-8 (auditor-api/database, Flutter auditor-web, full 11-container polish) as a new implementation plan.
 
 > Also read the recalled memory notes (project-overview, ssh-pc-connection, error-log-convention).
 > Full history is in §8 changelog; decisions in §9 and the spec's decisions log.
@@ -182,6 +189,7 @@ Kaust IoT Project/
 | 2026-07-07 | Ran a full **brainstorming** pass (Superpowers) on the mentor's 3-day sprint. Decisions: standalone project · full 11-container architecture (Option A) · `auditor-web` = thin Flutter/Dart built last · manual-then-automated assessment · hybrid real/simulated services · target machine = the 32 GB PC · single deliverer. Design approved section-by-section and written to `docs/superpowers/specs/2026-07-07-preliminary-iot-security-lab-design.md`. Created `setup/ssh-mcp/` scripts to remote-control the PC over Tailscale. Next: user reviews spec → set up ssh-mcp + switch Opus→Sonnet → implementation plan. |
 | 2026-07-07 | **Spec approved. Git initialized** (commits `d94853e`, `71343b3`). **ssh-mcp connection to the 32 GB PC is working** (host OSRA-PC2025-V2, user `osama`, Tailscale 100.99.182.30, key auth) — verified `hostname`/`whoami` over SSH; MCP registered at user scope. Hit + fixed + logged the Windows `spawn npx ENOENT` bug (**ERR-001**; use `cmd /c npx`). **Boundary reached:** restart Claude Code + switch Opus→Sonnet to load `mcp__ssh-mcp__*`, then write the implementation plan and build on the PC. Open decision: build directly on the PC vs. author-on-laptop + git-sync + run-via-ssh-mcp. |
 | 2026-07-07 | **Model switched to Sonnet 5, `mcp__ssh-mcp__*` tools confirmed loaded** (`hostname`/`whoami` succeeded over SSH). **Decided Workflow B** (author on laptop → push → PC pulls + runs via ssh-mcp). Set up **read-only repo access on the PC**: generated a dedicated ed25519 deploy key on the PC, registered it read-only on GitHub via local `gh` CLI, added SSH host alias `github.com-kaust-iot`, cloned the repo to `C:\Users\osama\Projects\kaust-iot-security-lab`. (HTTPS + Git Credential Manager doesn't work here — no TTY/browser over non-interactive ssh-mcp, and PC has no `gh` CLI — so SSH deploy key is the pattern going forward.) Confirmed the PC has **Docker Desktop 29.x + Compose v5 with the WSL2 backend already running** — `docker`/`docker compose` work directly from the ssh-mcp PowerShell session, no need to shell into WSL. **Wrote the full Phases 0-5 implementation plan** (31 tasks, TDD throughout for all pure-Python pieces) via the writing-plans skill → `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md`. Next: execute Phase 0 (Task 1 onward). |
+| 2026-07-08 | **Phases 0-5 fully implemented, reviewed, and PC-verified — all 31 tasks complete.** Executed via subagent-driven-development in the `phase-0-5-implementation` worktree: fresh implementer subagent + independent reviewer subagent per task, with PC-side Docker/Compose verification over ssh-mcp wherever the lab itself was touched. Phase 0 (contracts), Phase 1 (lab core: 3 device profiles, telnet-sim, 2 MQTT brokers, cert-init, auditor-worker, 2-network topology), Phase 2 (TLS profiles hardening), Phase 3 (Day-1 diagrams/threat model/inventory/README), Phase 4 (Day-2 manual assessment: 12 real evidence entries collected on the PC across nmap/curl/openssl/mosquitto/YARA/Syft/Grype, all schema-valid), and Phase 5 (Day-3 policy-as-code: deterministic policy engine with no `eval`/`exec`, 5 NCA controls mapped to real CGIoT-1:2024 sources, verdict-generation CLI run for real producing 4 controls with correct PASS+FAIL pairs — double the required ≥2). 11 errors hit and logged (`docs/errors/001`-`011`). Final acceptance doc written and independently fact-checked twice (`docs/architecture/phases-0-5-acceptance.md`) — first draft had a wrong test count and some fabricated NCA references, caught by controller cross-checking against the real committed files, then corrected and re-verified line-by-line. **Total: 45 tests passing.** Next: merge the worktree, then plan Phases 6-8. |
 
 ---
 

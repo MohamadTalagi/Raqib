@@ -1,0 +1,18 @@
+control_id: SA-IOT-005
+title: Strong TLS configuration for device communications
+saudi_source:
+  - framework: CGIoT-1:2024
+    reference: "2-7-2"
+    clause: "Use strong, up-to-date cryptographic algorithms and key lengths for TLS."
+applicability:
+  device_type: [smart-camera]
+required_evidence:
+  - test_id: TEST-TLS-CONFIG
+automated_test_ids: [TEST-TLS-CONFIG]
+severity: high
+conditions:
+  pass: { field: "observations.weak_cipher", op: "equals", value: false }
+  fail: { field: "observations.weak_cipher", op: "equals", value: true }
+  partial: null
+  inconclusive: { when: "evidence_missing_or_low_confidence" }
+remediation: "Reissue the device certificate at 2048-bit RSA (or better) with SHA-256, disable TLS 1.0/1.1."

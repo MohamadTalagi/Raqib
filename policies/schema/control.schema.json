@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ControlDefinition",
+  "type": "object",
+  "required": [
+    "control_id", "title", "saudi_source", "applicability",
+    "required_evidence", "automated_test_ids", "severity", "conditions", "remediation"
+  ],
+  "properties": {
+    "control_id": {"type": "string", "pattern": "^SA-IOT-\\d{3}$"},
+    "title": {"type": "string"},
+    "saudi_source": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["framework", "reference"],
+        "properties": {
+          "framework": {"type": "string"},
+          "reference": {"type": "string"},
+          "clause": {"type": "string"}
+        }
+      }
+    },
+    "applicability": {
+      "type": "object",
+      "required": ["device_type"],
+      "properties": {"device_type": {"type": "array", "items": {"type": "string"}}}
+    },
+    "required_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["test_id"],
+        "properties": {"test_id": {"type": "string"}}
+      }
+    },
+    "automated_test_ids": {"type": "array", "items": {"type": "string"}},
+    "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+    "conditions": {
+      "type": "object",
+      "required": ["pass", "fail", "partial", "inconclusive"],
+      "properties": {
+        "pass": {"type": ["object", "null"]},
+        "fail": {"type": ["object", "null"]},
+        "partial": {"type": ["object", "null"]},
+        "inconclusive": {"type": ["object", "null"]}
+      }
+    },
+    "remediation": {"type": "string"}
+  },
+  "additionalProperties": false
+}

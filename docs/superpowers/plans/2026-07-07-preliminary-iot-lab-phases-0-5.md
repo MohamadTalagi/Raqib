@@ -20,6 +20,7 @@
 - **No secrets in the repo beyond intentional lab fixtures:** the hardcoded passwords/API keys/private keys baked into `device-insecure` and the firmware archives are **intentional training fixtures** for a sandboxed, non-internet-facing lab — call this out in code comments where it might otherwise look like a real leak.
 - **Container base images:** `python:3.12-slim` for Python services, `alpine:3.20` for tiny utilities (telnet-sim, cert-init), `eclipse-mosquitto:2` for brokers.
 - **Every error hit during implementation gets its own file in `docs/errors/`** per `docs/errors/ERROR_TEMPLATE.md` (CLAUDE.md §6 — mandatory, not optional).
+- **Docker on the PC needs two workarounds (see ERR-003, ERR-004):** (1) the PC's `~/.docker/config.json` has had `credsStore` removed since Docker Desktop's credential helper can't reach the interactive-session credential vault over a headless SSH session — anonymous pulls of public images work fine without it. (2) `docker build`/`docker compose ... --build` may report a spurious `image "...": already exists` error at the final export step even though the image built successfully (a buildx/containerd-store attestation-manifest quirk) — add `--provenance=false` to `docker build` invocations, and after any build "failure," check `docker images`/`docker compose ps` before concluding it actually failed.
 
 ---
 
@@ -608,13 +609,20 @@ Expected: prints the resolved compose config (two networks, no services) with no
 ```
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-pydantic==2.9.2
+pydantic==2.13.4
 pydantic-settings==2.5.2
 python-multipart==0.0.9
 paho-mqtt==1.6.1
 pytest==8.3.3
 httpx==0.27.2
 ```
+
+> **Errata (2026-07-08):** originally pinned `pydantic==2.9.2`, which depends on `pydantic-core==2.23.4` —
+> no prebuilt wheel exists for Python 3.14 on Windows, and building it from source needs a working
+> Rust+MSVC toolchain that isn't present in this environment. `pydantic==2.13.4` (paired with
+> `pydantic-core==2.46.4`, which does ship a `cp314-win_amd64` wheel) is a drop-in replacement —
+> verified compatible with `fastapi==0.115.0` and `pydantic-settings==2.5.2` with no other version
+> changes needed. See `docs/errors/002-pydantic-core-no-py314-wheel.md`.
 
 - [ ] **Step 2: Install into a dedicated venv for this component (laptop)**
 
@@ -1106,7 +1114,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY docs ./docs
 COPY entrypoint.sh .
+COPY sitecustomize.py .
 RUN chmod +x entrypoint.sh
+
+ENV PYTHONPATH=/app
 
 EXPOSE 80 443
 
@@ -1115,12 +1126,35 @@ import os, ssl, urllib.request; \
 ctx = ssl.create_default_context(); \
 ctx.check_hostname = False; \
 ctx.verify_mode = ssl.CERT_NONE; \
+ctx.set_ciphers('DEFAULT@SECLEVEL=0'); \
 scheme = 'https' if os.environ.get('TRANSPORT') == 'https' else 'http'; \
 port = 443 if scheme == 'https' else 80; \
 urllib.request.urlopen(f'{scheme}://localhost:{port}/health', context=ctx if scheme == 'https' else None, timeout=2)"
 
 ENTRYPOINT ["./entrypoint.sh"]
 ```
+
+> **Errata (2026-07-08, added in Task 16):** `sitecustomize.py` (auto-imported by every Python
+> process via `PYTHONPATH=/app`) monkeypatches `ssl.SSLContext.load_cert_chain` to relax OpenSSL's
+> security level so device-partial's intentionally-weak 1024-bit cert can load, and the healthcheck's
+> client-side context does the same via `set_ciphers`. See
+> `docs/errors/006-openssl-seclevel-rejects-weak-1024bit-cert.md`. `lab/devices/smart-camera/sitecustomize.py`:
+> ```python
+> import ssl
+>
+> _original_load_cert_chain = ssl.SSLContext.load_cert_chain
+>
+>
+> def _relaxed_load_cert_chain(self, certfile, keyfile=None, password=None):
+>     try:
+>         self.set_ciphers("DEFAULT@SECLEVEL=0")
+>     except ssl.SSLError:
+>         pass
+>     return _original_load_cert_chain(self, certfile, keyfile, password)
+>
+>
+> ssl.SSLContext.load_cert_chain = _relaxed_load_cert_chain
+> ```
 
 - [ ] **Step 3: Write `lab/devices/smart-camera/profiles/insecure.env`**
 
@@ -1229,9 +1263,15 @@ FROM python:3.12-alpine
 WORKDIR /app
 COPY banner_server.py .
 EXPOSE 23
-HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD nc -z localhost 23 || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD nc -z 127.0.0.1 23 || exit 1
 CMD ["python", "banner_server.py"]
 ```
+
+> **Errata (2026-07-08):** originally used `nc -z localhost 23`. BusyBox `nc` resolves `localhost` and
+> tries `::1` (IPv6) first; `banner_server.py` binds only `0.0.0.0` (IPv4), so the healthcheck failed
+> even though the server was reachable. Fixed by using `127.0.0.1` directly, skipping DNS resolution
+> entirely. See `docs/errors/005-busybox-nc-localhost-ipv6-healthcheck.md`. (Mosquitto's healthchecks
+> elsewhere in this plan are unaffected — the broker listens on both IPv4 and IPv6 by default.)
 
 - [ ] **Step 3: Build and smoke-test (PC via ssh-mcp)**
 
@@ -1302,7 +1342,7 @@ lab/certs/*.crt
 lab/certs/*.csr
 lab/certs/*.srl
 lab/mqtt/secure/passwd
-auditor/worker/firmware/output/
+lab/auditor/worker/firmware/output/
 EOF
 ```
 
@@ -1456,8 +1496,22 @@ openssl x509 -req -in "$OUT/mqtt-server.csr" -CA "$OUT/ca.crt" -CAkey "$OUT/ca.k
   -days 365 -sha256 -out "$OUT/mqtt-server.crt"
 
 rm -f "$OUT"/*.csr "$OUT"/*.srl
+chmod 644 "$OUT/mqtt-server.key"
 echo "Certificates generated in $OUT"
 ```
+
+> **Errata (2026-07-08):** the `chmod 644 mqtt-server.key` line was added after discovering
+> `mqtt-broker-secure` fails to start (exit 13/EACCES) — `eclipse-mosquitto:2` drops privileges to a
+> non-root `mosquitto` user that can't read a `600`-permission, root-owned key file. `weak.key` and
+> `strong.key` stay `600` since the smart-camera containers that consume them run as root. See
+> `docs/errors/007-mosquitto-nonroot-cant-read-broker-key.md`. Separately, `device-partial`'s
+> 1024-bit weak cert needs a Python-level fix, not an `OPENSSL_CONF`/`openssl.cnf` one — CPython's
+> `ssl` module skips OpenSSL's config auto-loading entirely, so that env var has no effect. The real
+> fix: `lab/devices/smart-camera/sitecustomize.py` monkeypatches `ssl.SSLContext.load_cert_chain` to
+> call `self.set_ciphers("DEFAULT@SECLEVEL=0")` first (picked up automatically via
+> `ENV PYTHONPATH=/app` in the Dockerfile), plus the same `set_ciphers` call added to the
+> HEALTHCHECK's client-side context — see
+> `docs/errors/006-openssl-seclevel-rejects-weak-1024bit-cert.md`.
 
 - [ ] **Step 2: Write `lab/certs/Dockerfile`**
 
@@ -1678,7 +1732,7 @@ git commit -m "feat(smart-camera): add device-hardened profile (strong TLS, uniq
     networks:
       - audit-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import ssl, urllib.request; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; urllib.request.urlopen('https://localhost/health', context=ctx, timeout=2)"]
+      test: ["CMD", "python", "-c", "import ssl, urllib.request; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; ctx.set_ciphers('DEFAULT@SECLEVEL=0'); urllib.request.urlopen('https://localhost/health', context=ctx, timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -1729,6 +1783,7 @@ git push
 cd C:\Users\osama\Projects\kaust-iot-security-lab; git pull; cd lab
 docker compose --profile init run --rm cert-init
 docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config eclipse-mosquitto:2 mosquitto_passwd -c -b /mosquitto/config/passwd labworker "LabWork3r-Secr3t!"
+docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config alpine chmod 644 /mosquitto/config/passwd
 docker compose up -d --build
 docker compose ps
 ```
@@ -1956,6 +2011,7 @@ manual-assessment toolbox, used to produce evidence for Saudi NCA (CGIoT-1:2024)
 ```
 docker compose --profile init run --rm cert-init
 docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config eclipse-mosquitto:2 mosquitto_passwd -c -b /mosquitto/config/passwd labworker "LabWork3r-Secr3t!"
+docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config alpine chmod 644 /mosquitto/config/passwd
 ```
 
 ## Start the lab
@@ -2040,14 +2096,38 @@ CMD ["sleep", "infinity"]
 ```yaml
   auditor-worker:
     build: ./auditor/worker
+    environment:
+      - PYTHONPATH=/work
     volumes:
       - ../policies:/work/policies:ro
-      - ./auditor/worker:/work/auditor/worker
+      - ./auditor/worker:/work/lab/auditor/worker
       - ../document-store:/work/document-store
     networks:
       - audit-network
       - internal-network
 ```
+
+> **Errata (2026-07-08, found during Task 25):** the third volume line originally read
+> `./auditor/worker:/work/auditor/worker` (no `lab/` segment). That works fine for shell commands
+> like `python auditor/worker/tests/record_evidence.py` run from `/work` inside the container, but it
+> broke every `from lab.auditor.worker... import ...` statement added by the ERR-008 fix, since inside
+> the container there was no `lab/` directory for that import to resolve against — only `/work/policies`
+> matches the repo-root layout the `lab.`-prefixed imports assume `policies` (a sibling of `lab/`) come
+> from. Mounting at `/work/lab/auditor/worker` instead makes `/work` mirror the repo root exactly
+> (`/work/policies`, `/work/document-store`, `/work/lab/auditor/worker`), so the *same* `lab.`-prefixed
+> import works whether pytest runs locally from the repo root or `python`/`pytest` runs inside this
+> container from `/work`. Every `python auditor/worker/...` invocation in Task 26's runbook below is
+> also updated to `python lab/auditor/worker/...` to match. See
+> `docs/errors/010-container-mount-missing-lab-prefix.md`.
+
+> **Errata (2026-07-08, found during Task 26):** added `environment: - PYTHONPATH=/work`. Without it,
+> `python lab/auditor/worker/tests/record_evidence.py ...` (run as a plain script, per Task 26's
+> runbook) fails with `ModuleNotFoundError: No module named 'policies'` — plain `python script.py`
+> adds the *script's own directory* to `sys.path`, not the current working directory, so `/work`
+> (where `policies/` lives) was never on the path for that invocation style. (`python -m pytest` and
+> `python -c "..."` both add the cwd automatically, which is why Tasks 23-25's pytest-based
+> verification never hit this.) Setting `PYTHONPATH=/work` fixes every invocation style uniformly.
+> See `docs/errors/011-record-evidence-script-invocation-needs-pythonpath.md`.
 
 Note the relative paths: `../policies` and `../document-store` climb out of `lab/` to the repo root, matching the top-level layout from the File Structure section.
 
@@ -2091,11 +2171,18 @@ Expected: device info JSON prints; a second network interface (`eth1` or similar
 
 Create `lab/auditor/worker/tests/test_record_evidence.py`:
 
+> **Errata (2026-07-08):** the import below originally read `from auditor.worker.tests.record_evidence
+> import record_evidence` (missing the `lab.` prefix) — inconsistent with the File Structure section's
+> `lab/auditor/worker/tests/record_evidence.py` path, and with `DOCUMENT_STORE`'s parent-climbing
+> further down (also fixed: `parents[3]` → `parents[4]`, since the file has one more directory level
+> above it — `lab/`, `auditor/`, `worker/`, `tests/` — than a repo-root-adjacent module would). See
+> `docs/errors/008-plan-path-mismatch-auditor-worker.md`.
+
 ```python
 import json
 from pathlib import Path
 
-from auditor.worker.tests.record_evidence import record_evidence
+from lab.auditor.worker.tests.record_evidence import record_evidence
 
 
 def test_record_evidence_writes_valid_json(tmp_path):
@@ -2188,7 +2275,7 @@ from pathlib import Path
 
 from policies.schema.validate import validate_evidence
 
-DOCUMENT_STORE = Path(__file__).resolve().parents[3] / "document-store"
+DOCUMENT_STORE = Path(__file__).resolve().parents[4] / "document-store"
 
 
 def _next_sequence(evidence_dir: Path, date_str: str) -> int:
@@ -2319,7 +2406,7 @@ Create `lab/auditor/worker/firmware/test_generate_firmware.py`:
 ```python
 import tarfile
 
-from auditor.worker.firmware.generate_firmware import build_variant, sha256_of
+from lab.auditor.worker.firmware.generate_firmware import build_variant, sha256_of
 
 
 def test_firmware_build_is_byte_reproducible(tmp_path):
@@ -2520,8 +2607,8 @@ git commit -m "feat(firmware): add deterministic 3-variant firmware generator"
 Create `lab/auditor/worker/firmware/test_scan_firmware.py`:
 
 ```python
-from auditor.worker.firmware.generate_firmware import build_variant
-from auditor.worker.firmware.scan_firmware import scan_archive
+from lab.auditor.worker.firmware.generate_firmware import build_variant
+from lab.auditor.worker.firmware.scan_firmware import scan_archive
 
 
 def test_insecure_firmware_flags_hardcoded_password_and_api_key(tmp_path):
@@ -2682,7 +2769,7 @@ Then from that shell (`/work` is the container's workdir; evidence files land in
 ​```sh
 nmap -sV -p- device-insecure > /tmp/portscan.txt
 cat /tmp/portscan.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-NET-PORTSCAN \
   --tool nmap --tool-version "$(nmap --version | head -1 | awk '{print $3}')" \
   --command "nmap -sV -p- device-insecure" \
@@ -2695,7 +2782,7 @@ python auditor/worker/tests/record_evidence.py \
 
 ​```sh
 nmap -sV -p 23 telnet-sim > /tmp/portscan_telnet.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-NET-PORTSCAN \
   --tool nmap --tool-version "$(nmap --version | head -1 | awk '{print $3}')" \
   --command "nmap -sV -p 23 telnet-sim" \
@@ -2709,7 +2796,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 curl -s -X POST http://device-insecure/login -d "username=admin&password=admin" > /tmp/login.txt
 cat /tmp/login.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-AUTH-DEFAULT-CREDS \
   --tool curl --tool-version "$(curl --version | head -1 | awk '{print $2}')" \
   --command "curl -X POST http://device-insecure/login -d username=admin&password=admin" \
@@ -2723,7 +2810,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 curl -sk -X POST https://device-hardened/login -d "username=admin&password=admin" -o /tmp/login_hardened.txt -w "%{http_code}" > /tmp/login_hardened_code.txt
 cat /tmp/login_hardened_code.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-hardened --test-id TEST-AUTH-DEFAULT-CREDS \
   --tool curl --tool-version "$(curl --version | head -1 | awk '{print $2}')" \
   --command "curl -X POST https://device-hardened/login -d username=admin&password=admin" \
@@ -2736,7 +2823,7 @@ python auditor/worker/tests/record_evidence.py \
 
 ​```sh
 curl -s -o /tmp/admin_reset.txt -w "%{http_code}" http://device-insecure/api/admin/reset > /tmp/admin_reset_code.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-ADMIN-UNAUTH \
   --tool curl --tool-version "$(curl --version | head -1 | awk '{print $2}')" \
   --command "curl http://device-insecure/api/admin/reset" \
@@ -2750,7 +2837,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 curl -sI http://device-insecure/ > /tmp/headers.txt
 cat /tmp/headers.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-HTTP-HEADERS \
   --tool curl --tool-version "$(curl --version | head -1 | awk '{print $2}')" \
   --command "curl -I http://device-insecure/" \
@@ -2764,7 +2851,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 openssl s_client -connect device-partial:443 -brief < /dev/null > /tmp/tls_partial.txt 2>&1
 cat /tmp/tls_partial.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-partial --test-id TEST-TLS-CONFIG \
   --tool openssl --tool-version "$(openssl version | awk '{print $2}')" \
   --command "openssl s_client -connect device-partial:443 -brief" \
@@ -2777,7 +2864,7 @@ python auditor/worker/tests/record_evidence.py \
 
 ​```sh
 openssl s_client -connect device-hardened:443 -brief < /dev/null > /tmp/tls_hardened.txt 2>&1
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-hardened --test-id TEST-TLS-CONFIG \
   --tool openssl --tool-version "$(openssl version | awk '{print $2}')" \
   --command "openssl s_client -connect device-hardened:443 -brief" \
@@ -2791,7 +2878,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 timeout 3 mosquitto_sub -h mqtt-broker-insecure -t 'devices/#' -C 1 -v > /tmp/mqtt_insecure.txt 2>&1
 cat /tmp/mqtt_insecure.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device mqtt-broker-insecure --test-id TEST-MQTT-OPEN \
   --tool mosquitto_sub --tool-version "$(mosquitto_sub --help 2>&1 | head -1)" \
   --command "mosquitto_sub -h mqtt-broker-insecure -t devices/# -C 1" \
@@ -2805,7 +2892,7 @@ python auditor/worker/tests/record_evidence.py \
 ​```sh
 timeout 3 mosquitto_sub -h mqtt-broker-secure -p 8883 -t 'devices/#' -C 1 > /tmp/mqtt_secure.txt 2>&1
 cat /tmp/mqtt_secure.txt
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device mqtt-broker-secure --test-id TEST-MQTT-OPEN \
   --tool mosquitto_sub --tool-version "$(mosquitto_sub --help 2>&1 | head -1)" \
   --command "mosquitto_sub -h mqtt-broker-secure -p 8883 -t devices/# -C 1" \
@@ -2817,19 +2904,19 @@ python auditor/worker/tests/record_evidence.py \
 ## TEST-FW-SECRETS + TEST-FW-SBOM (firmware analysis, all 3 variants)
 
 ​```sh
-python auditor/worker/firmware/generate_firmware.py
-file auditor/worker/firmware/output/*.tar.gz > /tmp/fw_file.txt
+python lab/auditor/worker/firmware/generate_firmware.py
+file lab/auditor/worker/firmware/output/*.tar.gz > /tmp/fw_file.txt
 
 python -c "
 from pathlib import Path
-from auditor.worker.firmware.scan_firmware import scan_archive
-p = Path('auditor/worker/firmware/output/camera-fw-1.0.0-old-device-insecure.tar.gz')
+from lab.auditor.worker.firmware.scan_firmware import scan_archive
+p = Path('lab/auditor/worker/firmware/output/camera-fw-1.0.0-old-device-insecure.tar.gz')
 for f in scan_archive(p):
     print(f)
 " > /tmp/fw_scan_insecure.txt
 cat /tmp/fw_scan_insecure.txt
 
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-FW-SECRETS \
   --tool yara --tool-version "4.5.1" \
   --command "scan_firmware.py camera-fw-1.0.0-old-device-insecure.tar.gz" \
@@ -2837,11 +2924,11 @@ python auditor/worker/tests/record_evidence.py \
   --raw-file /tmp/fw_scan_insecure.txt --confidence high \
   --observations '{"hardcoded_secret": true, "api_key_found": true, "private_key_present": false}'
 
-syft auditor/worker/firmware/output/camera-fw-1.0.0-old-device-insecure.tar.gz -o json > /tmp/fw_sbom_insecure.json
+syft lab/auditor/worker/firmware/output/camera-fw-1.0.0-old-device-insecure.tar.gz -o json > /tmp/fw_sbom_insecure.json
 grype sbom:/tmp/fw_sbom_insecure.json > /tmp/fw_vulns_insecure.txt
 cat /tmp/fw_vulns_insecure.txt
 
-python auditor/worker/tests/record_evidence.py \
+python lab/auditor/worker/tests/record_evidence.py \
   --device device-insecure --test-id TEST-FW-SBOM \
   --tool grype --tool-version "$(grype version 2>&1 | head -1)" \
   --command "syft ... | grype sbom:-" \
@@ -2850,7 +2937,7 @@ python auditor/worker/tests/record_evidence.py \
   --observations '{"outdated_packages": ["openssl-1.0.1e", "busybox-1.19.4"]}'
 ​```
 
-This yields **10 evidence entries** total (well above the required ≥8), covering: network/port
+This yields **12 evidence entries** total (well above the required ≥8), covering: network/port
 scan (2), default credentials (2), unauthenticated admin (1), missing headers (1), TLS config (2),
 MQTT posture (2), firmware secrets (1), firmware SBOM/CVE (1) — every category the brief requires
 (default creds, exposed insecure service, unencrypted protocol, hard-coded secret, outdated

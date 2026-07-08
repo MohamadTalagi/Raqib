@@ -1,0 +1,21 @@
+control_id: SA-IOT-003
+title: Disable unnecessary network services
+saudi_source:
+  - framework: CGIoT-1:2024
+    reference: "2-15-2"
+    clause: "Disable all unnecessary network services and interfaces on the device."
+  - framework: CGIoT-1:2024
+    reference: "Appendix A #3"
+    clause: "Minimize the device's exposed attack surface."
+applicability:
+  device_type: [smart-camera]
+required_evidence:
+  - test_id: TEST-NET-PORTSCAN
+automated_test_ids: [TEST-NET-PORTSCAN]
+severity: high
+conditions:
+  pass: { field: "observations.telnet_open", op: "equals", value: false }
+  fail: { field: "observations.telnet_open", op: "equals", value: true }
+  partial: null
+  inconclusive: { when: "evidence_missing_or_low_confidence" }
+remediation: "Remove Telnet and any other non-essential listening service from the device image."

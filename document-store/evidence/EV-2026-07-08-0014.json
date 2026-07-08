@@ -1,0 +1,19 @@
+{
+  "evidence_id": "EV-2026-07-08-0014",
+  "device_id": "device-insecure",
+  "test_id": "TEST-NET-PORTSCAN",
+  "tool": "nmap",
+  "tool_version": "7.95",
+  "command": "nmap -sV -p 23 telnet-sim",
+  "timestamp": "2026-07-08T08:58:43Z",
+  "finding": "Telnet 23 open; plaintext mgmt exposed",
+  "observations": {
+    "open_ports": [
+      23
+    ],
+    "telnet_open": true
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-08-0014.txt",
+  "confidence": "high",
+  "sha256": "63bd7a3314075b789f9893ae700267d2b53f2f83bbed9bbaa6db1525020e7d71"
+}

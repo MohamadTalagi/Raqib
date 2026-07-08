@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EvidenceRecord",
+  "type": "object",
+  "required": [
+    "evidence_id", "device_id", "test_id", "tool", "tool_version",
+    "command", "timestamp", "finding", "observations",
+    "raw_output_path", "confidence", "sha256"
+  ],
+  "properties": {
+    "evidence_id": {"type": "string", "pattern": "^EV-\\d{4}-\\d{2}-\\d{2}-\\d{4}$"},
+    "device_id": {"type": "string"},
+    "test_id": {"type": "string"},
+    "tool": {"type": "string"},
+    "tool_version": {"type": "string"},
+    "command": {"type": "string"},
+    "timestamp": {"type": "string"},
+    "finding": {"type": "string"},
+    "observations": {"type": "object"},
+    "raw_output_path": {"type": "string"},
+    "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  },
+  "additionalProperties": false
+}
