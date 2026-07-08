@@ -12,20 +12,24 @@ void main() {
 }
 
 class AuditorApp extends StatelessWidget {
-  const AuditorApp({super.key});
+  final ApiClient? apiClient;
+
+  const AuditorApp({super.key, this.apiClient});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'IoTGuard Auditor',
       theme: auditorDarkTheme,
-      home: const HomeShell(),
+      home: HomeShell(apiClient: apiClient),
     );
   }
 }
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  final ApiClient? apiClient;
+
+  const HomeShell({super.key, this.apiClient});
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -39,7 +43,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
-    _apiClient = ApiClient(baseUrl: const String.fromEnvironment(
+    _apiClient = widget.apiClient ?? ApiClient(baseUrl: const String.fromEnvironment(
       'AUDITOR_API_URL',
       defaultValue: 'http://localhost:8000',
     ));
