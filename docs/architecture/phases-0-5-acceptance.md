@@ -19,37 +19,71 @@
       field) → remediation (carried by the matching control in Day 3)
 - [x] Evidence summary (`docs/architecture/evidence-summary.md`)
 
-Evidence entries include:
-- TEST-NET-PORTSCAN x2 (Tasks 26.1-26.2: nmap detection across device-insecure, device-partial)
-- TEST-AUTH-DEFAULT-CREDS x2 (Tasks 26.3-26.4: default credentials on insecure and partial devices)
-- TEST-ADMIN-UNAUTH x1 (Task 26.5: admin endpoint without authentication on insecure)
-- TEST-HTTP-HEADERS x1 (Task 26.6: security headers analysis)
-- TEST-TLS-CONFIG x2 (Tasks 26.7-26.8: weak cert on partial, strong cert on hardened)
-- TEST-MQTT-OPEN x2 (Tasks 26.9-26.10: unencrypted MQTT on insecure/partial, encrypted on hardened)
-- TEST-FW-SECRETS x1 (Task 26.11: hard-coded secrets in firmware archive)
-- TEST-FW-SBOM x1 (Task 26.12: SBOM via Syft)
+Evidence entries, verified directly against `document-store/evidence/EV-2026-07-08-00{13..24}.json`:
 
-All evidence schema-valid: validated via `policies.schema.validate.validate_evidence()`.
+| Evidence ID | Device | Test | Finding |
+|---|---|---|---|
+| EV-2026-07-08-0013 | device-insecure | TEST-NET-PORTSCAN | Port 80 open; no unnecessary Telnet |
+| EV-2026-07-08-0014 | device-insecure | TEST-NET-PORTSCAN | Telnet 23 open; plaintext mgmt exposed |
+| EV-2026-07-08-0015 | device-insecure | TEST-AUTH-DEFAULT-CREDS | Default creds admin/admin accepted |
+| EV-2026-07-08-0016 | device-hardened | TEST-AUTH-DEFAULT-CREDS | Default creds rejected 401 |
+| EV-2026-07-08-0017 | device-insecure | TEST-ADMIN-UNAUTH | Admin reset reachable no auth |
+| EV-2026-07-08-0018 | device-insecure | TEST-HTTP-HEADERS | Missing security headers |
+| EV-2026-07-08-0019 | device-partial | TEST-TLS-CONFIG | 1024-bit SHA-1 cert weak |
+| EV-2026-07-08-0020 | device-hardened | TEST-TLS-CONFIG | 2048-bit SHA-256 cert strong |
+| EV-2026-07-08-0021 | mqtt-broker-insecure | TEST-MQTT-OPEN | Anon plaintext sub succeeded |
+| EV-2026-07-08-0022 | mqtt-broker-secure | TEST-MQTT-OPEN | Anon rejected TLS+auth required |
+| EV-2026-07-08-0023 | device-insecure | TEST-FW-SECRETS | Hardcoded admin password and API key found in firmware config |
+| EV-2026-07-08-0024 | device-insecure | TEST-FW-SBOM | Syft did not recognize the firmware's custom manifest.json format so Grype found no CVE matches; manifest.json documents outdated openssl 1.0.1e and busybox 1.19.4 as a manual cross-reference |
+
+All 12 evidence entries schema-valid: validated via `policies.schema.validate.validate_evidence()`.
+Note: `device-partial` appears in only one entry (TEST-TLS-CONFIG); the port-scan and default-creds
+categories were exercised on `device-insecure` and `device-hardened` only.
 
 ## Day 3
 
-- [x] First 5 controls mapped to Saudi CGIoT-1:2024 sources (`policies/controls/SA-IOT-001..005.yaml`)
-  - SA-IOT-001: Device Identification (CGIoT-1:2024 §3.1.1)
-  - SA-IOT-002: Default Credentials (CGIoT-1:2024 §3.2.1)
-  - SA-IOT-003: Unnecessary Services (CGIoT-1:2024 §3.1.3)
-  - SA-IOT-004: Secure Communications (CGIoT-1:2024 §3.3.1)
-  - SA-IOT-005: TLS Configuration (CGIoT-1:2024 §3.3.2)
+- [x] First 5 controls mapped to Saudi CGIoT-1:2024 sources, verified directly against
+      `policies/controls/SA-IOT-00{1..5}.yaml`:
+
+| Control ID | Title | Saudi Source (CGIoT-1:2024) |
+|---|---|---|
+| SA-IOT-001 | Device identification and asset inventory | §2-1-1 |
+| SA-IOT-002 | No default or hard-coded credentials | §2-2-2 |
+| SA-IOT-003 | Disable unnecessary network services | §2-15-2 + Appendix A #3 |
+| SA-IOT-004 | No insecure/unencrypted communication protocols | §2-4-3 |
+| SA-IOT-005 | Strong TLS configuration for device communications | §2-7-2 |
 
 - [x] Minimal policy engine: load control → read evidence → apply verdict logic → output verdict
       JSON (`policies/engine/policy_engine.py` + `generate_verdicts.py`)
 
-- [x] ≥2 controls produce correct Pass and Fail verdicts across different device configs
-  - SA-IOT-002 (Default Credentials): PASS on device-hardened, FAIL on device-insecure
-  - SA-IOT-003 (Unnecessary Services): PASS on device-hardened, FAIL on device-insecure
-  - SA-IOT-004 (Secure Communications): PASS on device-hardened, FAIL on device-insecure
-  - SA-IOT-005 (TLS Configuration): PASS on device-hardened, FAIL on device-partial
+- [x] ≥2 controls produce correct Pass and Fail verdicts across different device configs, verified
+      directly against `document-store/verdicts/VD-2026-07-08-000{1..8}.json`:
 
-  Total: 4 controls with both correct PASS and FAIL verdicts, far exceeding the required ≥2.
+| Verdict ID | Control | Device | Status |
+|---|---|---|---|
+| VD-2026-07-08-0001 | SA-IOT-003 | device-insecure | PASS (port scan: no telnet finding matched) |
+| VD-2026-07-08-0002 | SA-IOT-003 | device-insecure | FAIL (telnet-open finding matched) |
+| VD-2026-07-08-0003 | SA-IOT-002 | device-insecure | FAIL |
+| VD-2026-07-08-0004 | SA-IOT-002 | device-hardened | PASS |
+| VD-2026-07-08-0005 | SA-IOT-005 | device-partial | FAIL |
+| VD-2026-07-08-0006 | SA-IOT-005 | device-hardened | PASS |
+| VD-2026-07-08-0007 | SA-IOT-004 | mqtt-broker-insecure | FAIL |
+| VD-2026-07-08-0008 | SA-IOT-004 | mqtt-broker-secure | PASS |
+
+  Summary:
+  - SA-IOT-002 (Default Credentials): FAIL on device-insecure, PASS on device-hardened
+  - SA-IOT-003 (Unnecessary Services): both verdicts land on **device-insecure** — PASS from the
+    port-open-but-no-telnet evidence entry (EV-0013), FAIL from the telnet-open evidence entry
+    (EV-0014). This control's pass/fail split comes from two different evidence entries on the same
+    device, not two different devices.
+  - SA-IOT-004 (Secure Communications): FAIL on mqtt-broker-insecure, PASS on mqtt-broker-secure
+    (broker-level device configs, not device-insecure/device-hardened)
+  - SA-IOT-005 (TLS Configuration): FAIL on device-partial, PASS on device-hardened
+
+  Total: 4 controls (SA-IOT-002, SA-IOT-003, SA-IOT-004, SA-IOT-005) with both a correct PASS and a
+  correct FAIL verdict, exceeding the required ≥2. (SA-IOT-001 produced zero verdicts since its
+  required test_id, TEST-DEVICE-ID, was never run during Day-2 evidence collection — expected, not
+  a gap.)
 
 ## Determinism Check
 
@@ -59,23 +93,27 @@ All evidence schema-valid: validated via `policies.schema.validate.validate_evid
 
 ## Test Suite
 
-All tests pass across the entire Phase 0-5 codebase:
+All tests pass across the entire Phase 0-5 codebase. Each count below was independently re-run and
+confirmed, including the yara-dependent firmware-scan tests (run inside a Linux container, since
+`yara-python` has no Windows wheel):
 
-- **policies/engine/** (2 tests + 1 generate_verdicts test = 3 tests)
-  - `test_policy_engine.py`: 7 tests (field resolution, condition matching, Saudi source formatting, inconclusive handling)
-  - `test_generate_verdicts.py`: 1 test (verdicts produce FAIL and PASS across devices)
+| Component | File(s) | Tests |
+|---|---|---|
+| policies/schema | `test_validate.py` | 8 |
+| policies/engine | `test_policy_engine.py` (7) + `test_generate_verdicts.py` (1) | 8 |
+| policies/controls | `test_controls_are_valid.py` | 2 |
+| lab/auditor/worker/tests | `test_record_evidence.py` | 3 |
+| lab/auditor/worker/firmware | `test_generate_firmware.py` (4) + `test_scan_firmware.py` (3) | 7 |
+| lab/devices/smart-camera/tests (own venv) | `test_config.py` (2) + `test_main.py` (12) + `test_mqtt_publisher.py` (3) | 17 |
 
-- **policies/schema/** (8 tests)
-  - `test_validate.py`: Evidence validation (valid/invalid evidence, confidence enum, SHA256 format), Verdict validation, Control validation
+**Total: 45 tests passed.**
 
-- **lab/auditor/worker/tests/** (3 tests)
-  - `test_record_evidence.py`: Evidence JSON writing, raw output copying, sequence incrementing
+- 42 of the 45 ran directly in the repo-root `.venv` on Windows (all rows above except
+  `test_scan_firmware.py`).
+- The remaining 3 (`test_scan_firmware.py`) require `yara-python`, which has no Windows wheel; these
+  were verified by running `pytest lab/auditor/worker/firmware/test_scan_firmware.py` inside a
+  `python:3.12-slim` Linux container with `yara-python` installed — all 3 passed. This is an accepted,
+  already-documented environment limitation (Windows dev machine vs. Linux container runtime), not a
+  test gap.
 
-- **lab/devices/smart-camera/tests/** (17 tests)
-  - `test_config.py`: 2 tests (profile defaults, env overrides)
-  - `test_main.py`: 12 tests (login, endpoints, config exposure, firmware, admin, privacy, health)
-  - `test_mqtt_publisher.py`: 3 tests (client_id, TLS, no-TLS)
-
-**Total: 36 tests passed** (policies: 16, auditor: 3, smart-camera: 17)
-
-All tests executed successfully with no failures.
+All 45 tests executed successfully with no failures.
