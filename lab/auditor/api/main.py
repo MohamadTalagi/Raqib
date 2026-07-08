@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 
 import jsonschema
@@ -200,6 +201,8 @@ def get_controls():
 
 @app.get("/controls/{control_id}")
 def get_control_by_id(control_id: str):
+    if not re.match(r"^[A-Za-z0-9\-]+$", control_id):
+        raise HTTPException(status_code=400, detail="invalid control_id format")
     path = CONTROLS_DIR / f"{control_id}.yaml"
     if not path.exists():
         raise HTTPException(status_code=404, detail="control not found")
