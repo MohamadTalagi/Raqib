@@ -121,6 +121,24 @@ services:
       timeout: 3s
       retries: 5
 
+  auditor-api:
+    build: ./auditor/api
+    environment:
+      - DATABASE_URL=postgresql://auditor:auditor-lab-pw@auditor-database:5432/auditor
+      - PYTHONPATH=/work
+    volumes:
+      - ../policies:/work/policies:ro
+    networks:
+      - internal-network
+    depends_on:
+      auditor-database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
 volumes:
   mqtt-secure-passwd:
   auditor-db-data:
