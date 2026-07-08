@@ -28,3 +28,4 @@ feed our research report later, so we capture them even when the error is small.
 | [012](012-psycopg-binary-3-2-3-no-wheel.md) | `psycopg[binary]==3.2.3` has no available wheel on PyPI | lab/auditor/api | 2026-07-08 | resolved |
 | [013](013-plan-verdict-shape-mismatch-with-real-schema.md) | Plan's verdict test fixtures used dict-shaped `matched`/`saudi_source`, contradicting the real committed schema and `evaluate()`'s actual contract | Phases 6-8 plan (Tasks 4, 6, 8) | 2026-07-08 | resolved |
 | [014](014-record-evidence-sequence-collision-after-api-migration.md) | `record_evidence.py`'s sequence numbering would collide on every repeated invocation after moving to API-based writes | lab/auditor/worker/tests/record_evidence.py | 2026-07-08 | resolved |
+| [015](015-missing-flutter-web-platform-scaffold.md) | Flutter project was missing the `web/` platform directory, breaking `flutter build web` | lab/auditor/web | 2026-07-08 | resolved |
