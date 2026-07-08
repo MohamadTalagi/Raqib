@@ -182,7 +182,7 @@ python lab/auditor/worker/tests/record_evidence.py \
   --observations '{"outdated_packages": ["openssl-1.0.1e", "busybox-1.19.4"]}'
 ```
 
-This yields **10 evidence entries** total (well above the required ≥8), covering: network/port
+This yields **12 evidence entries** total (well above the required ≥8), covering: network/port
 scan (2), default credentials (2), unauthenticated admin (1), missing headers (1), TLS config (2),
 MQTT posture (2), firmware secrets (1), firmware SBOM/CVE (1) — every category the brief requires
 (default creds, exposed insecure service, unencrypted protocol, hard-coded secret, outdated
