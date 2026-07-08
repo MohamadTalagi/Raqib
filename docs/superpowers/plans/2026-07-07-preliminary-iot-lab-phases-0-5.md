@@ -1783,6 +1783,7 @@ git push
 cd C:\Users\osama\Projects\kaust-iot-security-lab; git pull; cd lab
 docker compose --profile init run --rm cert-init
 docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config eclipse-mosquitto:2 mosquitto_passwd -c -b /mosquitto/config/passwd labworker "LabWork3r-Secr3t!"
+docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config alpine chmod 644 /mosquitto/config/passwd
 docker compose up -d --build
 docker compose ps
 ```
@@ -2010,6 +2011,7 @@ manual-assessment toolbox, used to produce evidence for Saudi NCA (CGIoT-1:2024)
 ```
 docker compose --profile init run --rm cert-init
 docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config eclipse-mosquitto:2 mosquitto_passwd -c -b /mosquitto/config/passwd labworker "LabWork3r-Secr3t!"
+docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config alpine chmod 644 /mosquitto/config/passwd
 ```
 
 ## Start the lab
