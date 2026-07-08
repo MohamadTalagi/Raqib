@@ -6,11 +6,19 @@ from pathlib import Path
 import jsonschema
 import yaml
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from db import get_connection
 
 app = FastAPI(title="auditor-api")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 SCHEMA_PATH = Path("/work/policies/schema/evidence.schema.json")
 
