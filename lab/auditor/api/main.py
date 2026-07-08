@@ -207,3 +207,56 @@ def get_control_by_id(control_id: str):
     if not path.exists():
         raise HTTPException(status_code=404, detail="control not found")
     return yaml.safe_load(path.read_text())
+
+
+@app.get("/devices")
+def get_devices():
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                d.device_id,
+                COALESCE(e.evidence_count, 0) AS evidence_count,
+                COALESCE(v.verdict_count, 0) AS verdict_count
+            FROM (
+                SELECT device_id FROM evidence
+                UNION
+                SELECT device_id FROM verdicts
+            ) d
+            LEFT JOIN (
+                SELECT device_id, COUNT(*) AS evidence_count FROM evidence GROUP BY device_id
+            ) e ON e.device_id = d.device_id
+            LEFT JOIN (
+                SELECT device_id, COUNT(*) AS verdict_count FROM verdicts GROUP BY device_id
+            ) v ON v.device_id = d.device_id
+            ORDER BY d.device_id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {"device_id": device_id, "evidence_count": evidence_count, "verdict_count": verdict_count}
+        for device_id, evidence_count, verdict_count in rows
+    ]
+
+
+@app.get("/summary")
+def get_summary():
+    conn = get_connection()
+    try:
+        total_evidence = conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
+        total_verdicts = conn.execute("SELECT COUNT(*) FROM verdicts").fetchone()[0]
+        status_rows = conn.execute(
+            "SELECT status, COUNT(*) FROM verdicts GROUP BY status"
+        ).fetchall()
+    finally:
+        conn.close()
+    verdicts_by_status = {"PASS": 0, "FAIL": 0, "PARTIAL": 0, "INCONCLUSIVE": 0}
+    for status, count in status_rows:
+        verdicts_by_status[status] = count
+    return {
+        "total_evidence": total_evidence,
+        "total_verdicts": total_verdicts,
+        "verdicts_by_status": verdicts_by_status,
+    }
