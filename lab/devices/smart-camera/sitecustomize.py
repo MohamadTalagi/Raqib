@@ -1,3 +1,4 @@
+import os
 import ssl
 
 # device-partial intentionally serves a 1024-bit/SHA-1 cert to model a
@@ -5,17 +6,21 @@ import ssl
 # refuses to load such a key (EE_KEY_TOO_SMALL) -- setting OPENSSL_CONF
 # has no effect here because CPython's ssl module skips OpenSSL's
 # config-file auto-loading. Patch load_cert_chain to relax the security
-# level on the context first; device-hardened is unaffected since its
-# strength comes from actually using a strong 2048-bit/SHA-256 key, not
-# from this gate. See docs/errors/006-openssl-seclevel-rejects-weak-1024bit-cert.md.
+# level on the context first, but only for TLS_PROFILE=weak (device-partial):
+# all three device profiles build from this same image, so an unconditional
+# patch would also relax device-hardened's context even though its own
+# 2048-bit/SHA-256 key never needs it -- that would let the "hardened"
+# reference device negotiate weak ciphers it's meant to reject.
+# See docs/errors/006-openssl-seclevel-rejects-weak-1024bit-cert.md.
 _original_load_cert_chain = ssl.SSLContext.load_cert_chain
 
 
 def _relaxed_load_cert_chain(self, certfile, keyfile=None, password=None):
-    try:
-        self.set_ciphers("DEFAULT@SECLEVEL=0")
-    except ssl.SSLError:
-        pass
+    if os.environ.get("TLS_PROFILE") == "weak":
+        try:
+            self.set_ciphers("DEFAULT@SECLEVEL=0")
+        except ssl.SSLError:
+            pass
     return _original_load_cert_chain(self, certfile, keyfile, password)
 
 
