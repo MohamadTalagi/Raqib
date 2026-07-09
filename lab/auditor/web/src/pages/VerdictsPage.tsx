@@ -1,0 +1,131 @@
+import { useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { Shell } from "@/components/layout/Shell";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState, EmptyState } from "@/components/ui/state";
+import { SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
+import { useFetch } from "@/lib/useFetch";
+import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import type { ControlRecord, VerdictStatus } from "@/lib/types";
+
+const FILTERS: Array<VerdictStatus | "ALL"> = ["ALL", "PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"];
+
+function controlFor(controls: ControlRecord[] | null, controlId: string): ControlRecord | undefined {
+  return controls?.find((c) => c.control_id === controlId);
+}
+
+export function VerdictsPage() {
+  const verdicts = useFetch(api.verdicts, []);
+  const controls = useFetch(api.controls, []);
+  const [filter, setFilter] = useState<VerdictStatus | "ALL">("ALL");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const filtered = useMemo(() => {
+    if (!verdicts.data) return [];
+    if (filter === "ALL") return verdicts.data;
+    return verdicts.data.filter((v) => v.status === filter);
+  }, [verdicts.data, filter]);
+
+  const loading = verdicts.loading || controls.loading;
+  const error = verdicts.error ?? controls.error;
+
+  return (
+    <Shell title="Verdicts" subtitle="Deterministic policy-engine results mapped to CGIoT-1:2024">
+      <div className="mb-4 flex flex-wrap gap-2">
+        {FILTERS.map((status) => (
+          <button
+            key={status}
+            type="button"
+            onClick={() => setFilter(status)}
+            className={cn(
+              "cursor-pointer rounded-md border px-3 py-1.5 text-xs font-medium tracking-wide transition-colors",
+              filter === status
+                ? "border-[var(--color-brand)] bg-[color-mix(in_oklab,var(--color-brand)_14%,transparent)] text-[var(--color-brand)]"
+                : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]",
+            )}
+          >
+            {status}
+          </button>
+        ))}
+      </div>
+
+      {error ? (
+        <ErrorState message={error} />
+      ) : loading ? (
+        <Skeleton className="h-96" />
+      ) : filtered.length === 0 ? (
+        <EmptyState message="No verdicts match this filter." />
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((v) => {
+            const control = controlFor(controls.data, v.control_id);
+            const isOpen = expanded === v.verdict_id;
+            return (
+              <Card key={v.verdict_id} className="overflow-hidden py-0">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isOpen ? null : v.verdict_id)}
+                  className="flex w-full cursor-pointer items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-[var(--color-surface-hover)]"
+                >
+                  <StatusBadge status={v.status} />
+                  <SeverityBadge severity={v.severity} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-[var(--color-text)]">
+                      {control?.title ?? v.control_id}
+                    </p>
+                    <p className="truncate font-mono text-xs text-[var(--color-text-muted)]">
+                      {v.control_id} · {v.device_id}
+                    </p>
+                  </div>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-[var(--color-text-muted)] transition-transform",
+                      isOpen && "rotate-180",
+                    )}
+                  />
+                </button>
+                {isOpen && (
+                  <div className="space-y-3 border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-5 py-4 text-sm">
+                    <p>
+                      <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                        Reason{" "}
+                      </span>
+                      <span className="text-[var(--color-text-secondary)]">{v.reason}</span>
+                    </p>
+                    <p>
+                      <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                        Saudi source{" "}
+                      </span>
+                      <span className="text-[var(--color-text-secondary)]">{v.saudi_source}</span>
+                    </p>
+                    <p>
+                      <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                        Remediation{" "}
+                      </span>
+                      <span className="text-[var(--color-text-secondary)]">{v.remediation}</span>
+                    </p>
+                    <p>
+                      <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                        Evidence{" "}
+                      </span>
+                      {v.evidence_ids.map((id) => (
+                        <span
+                          key={id}
+                          className="mr-1.5 inline-block rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs text-[var(--color-text-secondary)]"
+                        >
+                          {id}
+                        </span>
+                      ))}
+                    </p>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </Shell>
+  );
+}

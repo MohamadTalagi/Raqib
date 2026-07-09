@@ -1,10 +1,13 @@
-FROM ghcr.io/cirruslabs/flutter:stable AS build
+FROM node:22-alpine AS build
 WORKDIR /app
-COPY pubspec.yaml .
-RUN flutter pub get
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
-RUN flutter build web --release --dart-define=AUDITOR_API_URL=http://localhost:8000
+ARG VITE_API_URL=http://localhost:8000
+ENV VITE_API_URL=$VITE_API_URL
+RUN npm run build
 
 FROM nginx:alpine
-COPY --from=build /app/build/web /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

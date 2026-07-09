@@ -12,24 +12,29 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**START A NEW SESSION? Read `docs/NEXT-SESSION-HANDOFF.md` first** — short, current,
-and explains exactly what's wrong with the dashboard UI and how to fix it properly.
+**Phase:** **Phases 0-8 functionally COMPLETE**, and the `auditor-web` dashboard has
+been **rebuilt from scratch in React + Tailwind v4 + Vite**, replacing Flutter Web
+entirely, after the owner rejected the Flutter redesign as "AI slop" (see §8 for the
+full story — kept in `docs/NEXT-SESSION-HANDOFF.md` as a historical record of the
+root-cause analysis, now resolved). Branch `worktree-phase-6-8-implementation` is
+pushed but not yet merged to `main` (final whole-branch review + merge decision still
+outstanding).
 
-**Phase:** **Phases 0-8 functionally COMPLETE** (backend, database, Flutter dashboard,
-traffic capture, full 11-container lab — all built, tested, and verified working on
-the physical PC) → **but the dashboard's visual design is NOT acceptable and needs a
-proper redo before this is done.** Backend/infra/policy-engine work is solid; only
-`lab/auditor/web/`'s visuals need rework. Branch `worktree-phase-6-8-implementation`
-is pushed but not yet merged to `main` (final whole-branch review + merge decision
-still outstanding).
-
-**Owner feedback (2026-07-09):** the "full visual redesign" of `auditor-web` shipped
-in commit `d84d21f` was reviewed by the owner and rejected as "AI slop" — generic-
-looking despite the effort. Root causes and a concrete fix plan are in
-`docs/NEXT-SESSION-HANDOFF.md` §3 and §6 (short version: custom fonts were referenced
-in code but never actually bundled, no real design process ran before implementation,
-and nobody visually verified the result before calling it done — same "curl instead
-of a real browser" blind spot that caused the earlier CORS bug).
+**2026-07-09 — dashboard rebuilt in React (resolved the "AI slop" complaint):**
+Replaced `lab/auditor/web/` (Flutter) wholesale with a Vite + React + TypeScript +
+Tailwind v4 app. Design direction: dark near-black theme, single amber brand accent,
+severity-coded status colors, real bundled Inter + JetBrains Mono fonts (via
+`@fontsource`, so no repeat of the "referenced but never bundled" font bug), recharts
+for the compliance gauge / verdict donut / device activity bar, lucide-react icons
+throughout (no emojis). Fetches live from `auditor-api` (`/summary`, `/devices`,
+`/evidence`, `/verdicts`, `/controls`). Verified by seeding the real 12
+evidence + 8 verdict records from `document-store/` into a locally built
+`auditor-database` + `auditor-api`, then visually confirming all 4 screens
+(Overview, Devices, Evidence, Verdicts) with Playwright screenshots against both the
+Vite dev server and the actual built Docker/nginx image — not just `flutter
+analyze`/`tsc` this time. 14 Vitest + React Testing Library tests pass (7 files),
+exceeding the old Flutter suite's 11. Two small errors hit and logged
+(`docs/errors/018`-`019`).
 
 **Plans:**
 - `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md` — 31 tasks,
@@ -54,10 +59,9 @@ of a real browser" blind spot that caused the earlier CORS bug).
 - Full stack (all 11 containers, including `auditor-api`/`auditor-database`/`auditor-web`/`traffic-capture`) deployed and manually verified working on the physical PC, including a live CORS bug fix caught by the owner opening a real browser.
 
 **Next steps, in order:**
-1. **Fix the `auditor-web` UI properly** — see `docs/NEXT-SESSION-HANDOFF.md` §6 for
-   the concrete plan (bundle the missing fonts, use `ui-ux-pro-max` for a real design
-   system, get owner sign-off on a mockup direction before coding, verify visually
-   before declaring done).
+1. Deploy the new React `auditor-web` to the physical build PC (git pull + `docker
+   compose build auditor-web` + recreate) and get the owner's sign-off on the new
+   look before anything else.
 2. Run the final whole-branch code review, then use **finishing-a-development-branch**
    to merge/PR `worktree-phase-6-8-implementation` into `main`.
 
@@ -218,6 +222,7 @@ Kaust IoT Project/
 | 2026-07-07 | **Model switched to Sonnet 5, `mcp__ssh-mcp__*` tools confirmed loaded** (`hostname`/`whoami` succeeded over SSH). **Decided Workflow B** (author on laptop → push → PC pulls + runs via ssh-mcp). Set up **read-only repo access on the PC**: generated a dedicated ed25519 deploy key on the PC, registered it read-only on GitHub via local `gh` CLI, added SSH host alias `github.com-kaust-iot`, cloned the repo to `C:\Users\osama\Projects\kaust-iot-security-lab`. (HTTPS + Git Credential Manager doesn't work here — no TTY/browser over non-interactive ssh-mcp, and PC has no `gh` CLI — so SSH deploy key is the pattern going forward.) Confirmed the PC has **Docker Desktop 29.x + Compose v5 with the WSL2 backend already running** — `docker`/`docker compose` work directly from the ssh-mcp PowerShell session, no need to shell into WSL. **Wrote the full Phases 0-5 implementation plan** (31 tasks, TDD throughout for all pure-Python pieces) via the writing-plans skill → `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md`. Next: execute Phase 0 (Task 1 onward). |
 | 2026-07-08 | **Phases 0-5 fully implemented, reviewed, and PC-verified — all 31 tasks complete.** Executed via subagent-driven-development in the `phase-0-5-implementation` worktree: fresh implementer subagent + independent reviewer subagent per task, with PC-side Docker/Compose verification over ssh-mcp wherever the lab itself was touched. Phase 0 (contracts), Phase 1 (lab core: 3 device profiles, telnet-sim, 2 MQTT brokers, cert-init, auditor-worker, 2-network topology), Phase 2 (TLS profiles hardening), Phase 3 (Day-1 diagrams/threat model/inventory/README), Phase 4 (Day-2 manual assessment: 12 real evidence entries collected on the PC across nmap/curl/openssl/mosquitto/YARA/Syft/Grype, all schema-valid), and Phase 5 (Day-3 policy-as-code: deterministic policy engine with no `eval`/`exec`, 5 NCA controls mapped to real CGIoT-1:2024 sources, verdict-generation CLI run for real producing 4 controls with correct PASS+FAIL pairs — double the required ≥2). 11 errors hit and logged (`docs/errors/001`-`011`). Final acceptance doc written and independently fact-checked twice (`docs/architecture/phases-0-5-acceptance.md`) — first draft had a wrong test count and some fabricated NCA references, caught by controller cross-checking against the real committed files, then corrected and re-verified line-by-line. **Total: 45 tests passing.** Next: merge the worktree, then plan Phases 6-8. |
 | 2026-07-08/09 | **Phases 6-8 implemented and PC-verified — all 20 tasks complete** in the `phase-6-8-implementation` worktree via subagent-driven-development: `auditor-api` (FastAPI, full CRUD, CORS), `auditor-database` (Postgres schema + indexes), `auditor-web` (Flutter dashboard, 4 screens), `traffic-capture` (tcpdump on audit-network), all wired into the 11-container compose stack. Hit and fixed 6 more errors (`docs/errors/012`-`017`), including two genuine infra findings: Docker Desktop's host port-forwarding proxy silently fails to bind ports for containers whose only network is `internal: true` (fixed via a dev-only compose overlay, ERR-017), and a live CORS bug the owner caught by opening a real browser (curl-based verification never exercises CORS). Full stack deployed and smoke-tested on the PC. **Then did a "full UI redesign" pass on `auditor-web` (commit `d84d21f`) that the owner rejected as "AI slop"** — root cause: custom fonts (`Inter`/`JetBrains Mono`) were referenced in `theme.dart` but never bundled in `pubspec.yaml`, no design-approval step ran before implementation, and the result was never visually verified (same blind spot as the CORS bug: checks passed, nobody looked at a real browser). Wrote `docs/NEXT-SESSION-HANDOFF.md` with the concrete root causes and fix plan for the next session. Branch pushed but not yet merged — final whole-branch review and UI redo both still outstanding. |
+| 2026-07-09 | **`auditor-web` rebuilt from scratch in React, resolving the "AI slop" complaint.** Owner decided to abandon Flutter Web for the dashboard entirely and switch to React + Tailwind + shadcn-style components. Deleted `lab/auditor/web/`'s Flutter app wholesale (Dockerfile, `lib/`, `test/`, `pubspec.yaml`, `web/`) and scaffolded a Vite + React 19 + TypeScript app in its place: Tailwind v4 (`@tailwindcss/vite`), `@fontsource/inter` + `@fontsource/jetbrains-mono` actually bundled (not just referenced — the exact bug that sank the Flutter attempt), recharts for the compliance gauge/verdict donut/device bar chart, lucide-react icons, react-router for the 4 screens (Overview/Devices/Evidence/Verdicts). Design: dark near-black theme with a single amber brand accent and severity-coded status colors (critical/high/medium/low + PASS/FAIL/PARTIAL/INCONCLUSIVE), monospace accents for control/evidence IDs and raw commands — deliberately avoiding the generic "dark mode + rounded cards + one teal accent" Material look called out in the handoff doc. Verified for real this time: built `auditor-database` + `auditor-api` locally, seeded the actual 12 evidence + 8 verdict records from `document-store/` through the live API, then used Playwright to screenshot all 4 screens against both the Vite dev server and the final built Docker/nginx image (`docker run` on a scratch port, since the shared dev machine already had 8080 bound — ERR-019) — confirmed real fonts render, live data flows through, zero console errors. Added a from-scratch Vitest + React Testing Library suite (14 tests / 7 files, beating the old Flutter suite's 11) since the whole app was replaced. Hit two small errors (`docs/errors/018`-`019`). New Dockerfile is a standard Node-build → nginx multi-stage (replacing the `cirruslabs/flutter` build stage), with an `nginx.conf` adding SPA fallback routing. Still outstanding: deploy to the physical PC and get the owner's live sign-off, then the final whole-branch review and merge to `main`. |
 
 ---
 

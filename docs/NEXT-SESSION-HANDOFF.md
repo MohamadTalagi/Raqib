@@ -1,5 +1,13 @@
 # Handoff — Read This First in a New Chat
 
+> **RESOLVED (2026-07-09, later the same day):** the owner decided to abandon Flutter
+> Web for the dashboard rather than keep iterating on it (option explicitly raised in
+> §6 point 5 below). `lab/auditor/web/` is now a React + Tailwind v4 + Vite app. The
+> root-cause analysis below is kept as-is for the historical record — same lesson
+> (bundle fonts for real, get a design system before coding, verify visually with a
+> real browser/screenshot, not just `analyze`/`test`) was applied to the rebuild. See
+> `CLAUDE.md` §0 and §8 (2026-07-09 entry) for what shipped.
+
 **Written:** 2026-07-09
 **Why this file exists:** the owner is unhappy with the dashboard UI ("AI slop") after
 waiting on it. This file exists so a fresh Claude Code session doesn't have to

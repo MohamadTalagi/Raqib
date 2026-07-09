@@ -31,3 +31,5 @@ feed our research report later, so we capture them even when the error is small.
 | [015](015-missing-flutter-web-platform-scaffold.md) | Flutter project was missing the `web/` platform directory, breaking `flutter build web` | lab/auditor/web | 2026-07-08 | resolved |
 | [016](016-disk-space-exhaustion-corrupts-docker-containerd.md) | PC disk space exhaustion corrupted Docker Desktop's containerd storage and port-forwarding proxy | build PC / Docker Desktop | 2026-07-08 | resolved |
 | [017](017-internal-network-blocks-docker-desktop-port-forwarding.md) | `internal: true` Docker network silently blocks Docker Desktop's host port-forwarding proxy | lab/docker-compose.dev.yml | 2026-07-08 | resolved |
+| [018](018-erasable-syntax-only-blocks-parameter-properties.md) | `erasableSyntaxOnly` rejects TypeScript constructor parameter-property shorthand | lab/auditor/web (React) | 2026-07-09 | resolved |
+| [019](019-host-port-8080-conflict-on-shared-dev-machine.md) | Host port 8080 already bound by an unrelated process on the shared dev machine | lab/auditor/web (Docker verification) | 2026-07-09 | resolved |
