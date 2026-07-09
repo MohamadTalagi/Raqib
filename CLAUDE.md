@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-08
+> **Last updated:** 2026-07-09
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,27 +12,54 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Phases 0-5 COMPLETE** (all 31 tasks implemented, reviewed, and PC-verified) → **ready to merge the worktree and plan Phases 6-8**.
+**START A NEW SESSION? Read `docs/NEXT-SESSION-HANDOFF.md` first** — short, current,
+and explains exactly what's wrong with the dashboard UI and how to fix it properly.
 
-**Plan:** `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md` — 31 tasks covering Phases 0-5 (contracts → lab core → profiles/TLS → Day-1 artifacts → manual assessment → policy-as-code). All complete. Phases 6-8 (auditor-api/database, Flutter auditor-web, full 11-container polish) are a separate follow-up plan, to be written now that Phases 0-5 are done.
+**Phase:** **Phases 0-8 functionally COMPLETE** (backend, database, Flutter dashboard,
+traffic capture, full 11-container lab — all built, tested, and verified working on
+the physical PC) → **but the dashboard's visual design is NOT acceptable and needs a
+proper redo before this is done.** Backend/infra/policy-engine work is solid; only
+`lab/auditor/web/`'s visuals need rework. Branch `worktree-phase-6-8-implementation`
+is pushed but not yet merged to `main` (final whole-branch review + merge decision
+still outstanding).
+
+**Owner feedback (2026-07-09):** the "full visual redesign" of `auditor-web` shipped
+in commit `d84d21f` was reviewed by the owner and rejected as "AI slop" — generic-
+looking despite the effort. Root causes and a concrete fix plan are in
+`docs/NEXT-SESSION-HANDOFF.md` §3 and §6 (short version: custom fonts were referenced
+in code but never actually bundled, no real design process ran before implementation,
+and nobody visually verified the result before calling it done — same "curl instead
+of a real browser" blind spot that caused the earlier CORS bug).
+
+**Plans:**
+- `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md` — 31 tasks,
+  Phases 0-5, all complete.
+- `docs/superpowers/plans/2026-07-08-phases-6-8-platform-completion.md` — 20 tasks,
+  Phases 6-8 (auditor-api, auditor-database, auditor-web, traffic-capture), all
+  complete and PC-verified. Acceptance doc: `docs/architecture/phases-6-8-acceptance.md`.
 
 **Acceptance verification:** `docs/architecture/phases-0-5-acceptance.md` — full Day-1/Day-2/Day-3 acceptance criteria checked off with evidence, all independently re-verified against the real committed files (not just implementer claims). Headline results:
 - Day 1: full lab (6 services + auditor-worker, 2 networks) built and demonstrated working on the physical PC.
 - Day 2: 12 real manual-assessment evidence entries collected (exceeds required ≥8), all schema-valid.
 - Day 3: 5 NCA controls (SA-IOT-001..005) mapped to real CGIoT-1:2024 sources; verdict engine run for real against the Day-2 evidence — 4 controls (not just the required ≥2) show correct PASS+FAIL pairs across different device configs.
-- 45 tests passing across the whole codebase (schema, policy engine, controls, firmware, evidence recording, smart-camera device).
-- 11 errors hit and logged (`docs/errors/001`-`011`), each with root cause + fix + prevention.
+- 45+ tests passing across the whole codebase (schema, policy engine, controls, firmware, evidence recording, smart-camera device, auditor-api, auditor-web widget tests).
+- 17 errors hit and logged (`docs/errors/001`-`017`), each with root cause + fix + prevention.
 
-**Already done (2026-07-07/08):**
+**Already done (2026-07-07/08/09):**
 - Approved design spec → `docs/superpowers/specs/2026-07-07-preliminary-iot-security-lab-design.md`
 - Private git repo → `https://github.com/OSAMAxALHARBI/kaust-iot-security-lab` (branch `main`)
 - Working **ssh-mcp** connection to the 32 GB build PC → host `OSRA-PC2025-V2`, user `osama`, Tailscale `100.99.182.30`, key auth. Tools appear as `mcp__ssh-mcp__*`. Remote shell is **Windows PowerShell 5.1** (no `&&` — use `;`; stderr from git gets wrongly wrapped as a PowerShell error even on success — check actual result, don't trust the error alone).
 - **PC has read-write repo access**: dedicated ed25519 deploy key generated on the PC (`C:\Users\osama\.ssh\kaust_iot_deploy_key`), registered on GitHub as a **read-write** deploy key ("OSRA-PC2025-V2 (build PC, read-write)" — upgraded 2026-07-07 from an initial read-only key, so the PC could commit+push Day-2 evidence files generated on it per the Phase 0-5 plan's Task 26), SSH host alias `github.com-kaust-iot` added to `C:\Users\osama\.ssh\config`. Repo cloned to `C:\Users\osama\Projects\kaust-iot-security-lab`. (gh CLI is NOT installed on the PC — GCM/HTTPS auth doesn't work non-interactively over ssh-mcp, so use this SSH deploy-key path for any future PC git auth needs.)
-- **Implementation happened in a git worktree**: `.claude/worktrees/phase-0-5-implementation` on branch `worktree-phase-0-5-implementation`, via subagent-driven-development (fresh implementer + reviewer subagent per task). Progress ledger at `.superpowers/sdd/progress.md` (gitignored, local only) records all 31 tasks as complete.
+- **Implementation happened in git worktrees**: `.claude/worktrees/phase-0-5-implementation` (branch `worktree-phase-0-5-implementation`, merged) and `.claude/worktrees/phase-6-8-implementation` (branch `worktree-phase-6-8-implementation`, not yet merged), both via subagent-driven-development (fresh implementer + reviewer subagent per task).
+- Full stack (all 11 containers, including `auditor-api`/`auditor-database`/`auditor-web`/`traffic-capture`) deployed and manually verified working on the physical PC, including a live CORS bug fix caught by the owner opening a real browser.
 
 **Next steps, in order:**
-1. Merge/integrate the `worktree-phase-0-5-implementation` branch into `main` (via **finishing-a-development-branch** skill) — decide merge vs. PR.
-2. Plan Phases 6-8 (auditor-api/database, Flutter auditor-web, full 11-container polish) as a new implementation plan.
+1. **Fix the `auditor-web` UI properly** — see `docs/NEXT-SESSION-HANDOFF.md` §6 for
+   the concrete plan (bundle the missing fonts, use `ui-ux-pro-max` for a real design
+   system, get owner sign-off on a mockup direction before coding, verify visually
+   before declaring done).
+2. Run the final whole-branch code review, then use **finishing-a-development-branch**
+   to merge/PR `worktree-phase-6-8-implementation` into `main`.
 
 > Also read the recalled memory notes (project-overview, ssh-pc-connection, error-log-convention).
 > Full history is in §8 changelog; decisions in §9 and the spec's decisions log.
@@ -190,6 +217,7 @@ Kaust IoT Project/
 | 2026-07-07 | **Spec approved. Git initialized** (commits `d94853e`, `71343b3`). **ssh-mcp connection to the 32 GB PC is working** (host OSRA-PC2025-V2, user `osama`, Tailscale 100.99.182.30, key auth) — verified `hostname`/`whoami` over SSH; MCP registered at user scope. Hit + fixed + logged the Windows `spawn npx ENOENT` bug (**ERR-001**; use `cmd /c npx`). **Boundary reached:** restart Claude Code + switch Opus→Sonnet to load `mcp__ssh-mcp__*`, then write the implementation plan and build on the PC. Open decision: build directly on the PC vs. author-on-laptop + git-sync + run-via-ssh-mcp. |
 | 2026-07-07 | **Model switched to Sonnet 5, `mcp__ssh-mcp__*` tools confirmed loaded** (`hostname`/`whoami` succeeded over SSH). **Decided Workflow B** (author on laptop → push → PC pulls + runs via ssh-mcp). Set up **read-only repo access on the PC**: generated a dedicated ed25519 deploy key on the PC, registered it read-only on GitHub via local `gh` CLI, added SSH host alias `github.com-kaust-iot`, cloned the repo to `C:\Users\osama\Projects\kaust-iot-security-lab`. (HTTPS + Git Credential Manager doesn't work here — no TTY/browser over non-interactive ssh-mcp, and PC has no `gh` CLI — so SSH deploy key is the pattern going forward.) Confirmed the PC has **Docker Desktop 29.x + Compose v5 with the WSL2 backend already running** — `docker`/`docker compose` work directly from the ssh-mcp PowerShell session, no need to shell into WSL. **Wrote the full Phases 0-5 implementation plan** (31 tasks, TDD throughout for all pure-Python pieces) via the writing-plans skill → `docs/superpowers/plans/2026-07-07-preliminary-iot-lab-phases-0-5.md`. Next: execute Phase 0 (Task 1 onward). |
 | 2026-07-08 | **Phases 0-5 fully implemented, reviewed, and PC-verified — all 31 tasks complete.** Executed via subagent-driven-development in the `phase-0-5-implementation` worktree: fresh implementer subagent + independent reviewer subagent per task, with PC-side Docker/Compose verification over ssh-mcp wherever the lab itself was touched. Phase 0 (contracts), Phase 1 (lab core: 3 device profiles, telnet-sim, 2 MQTT brokers, cert-init, auditor-worker, 2-network topology), Phase 2 (TLS profiles hardening), Phase 3 (Day-1 diagrams/threat model/inventory/README), Phase 4 (Day-2 manual assessment: 12 real evidence entries collected on the PC across nmap/curl/openssl/mosquitto/YARA/Syft/Grype, all schema-valid), and Phase 5 (Day-3 policy-as-code: deterministic policy engine with no `eval`/`exec`, 5 NCA controls mapped to real CGIoT-1:2024 sources, verdict-generation CLI run for real producing 4 controls with correct PASS+FAIL pairs — double the required ≥2). 11 errors hit and logged (`docs/errors/001`-`011`). Final acceptance doc written and independently fact-checked twice (`docs/architecture/phases-0-5-acceptance.md`) — first draft had a wrong test count and some fabricated NCA references, caught by controller cross-checking against the real committed files, then corrected and re-verified line-by-line. **Total: 45 tests passing.** Next: merge the worktree, then plan Phases 6-8. |
+| 2026-07-08/09 | **Phases 6-8 implemented and PC-verified — all 20 tasks complete** in the `phase-6-8-implementation` worktree via subagent-driven-development: `auditor-api` (FastAPI, full CRUD, CORS), `auditor-database` (Postgres schema + indexes), `auditor-web` (Flutter dashboard, 4 screens), `traffic-capture` (tcpdump on audit-network), all wired into the 11-container compose stack. Hit and fixed 6 more errors (`docs/errors/012`-`017`), including two genuine infra findings: Docker Desktop's host port-forwarding proxy silently fails to bind ports for containers whose only network is `internal: true` (fixed via a dev-only compose overlay, ERR-017), and a live CORS bug the owner caught by opening a real browser (curl-based verification never exercises CORS). Full stack deployed and smoke-tested on the PC. **Then did a "full UI redesign" pass on `auditor-web` (commit `d84d21f`) that the owner rejected as "AI slop"** — root cause: custom fonts (`Inter`/`JetBrains Mono`) were referenced in `theme.dart` but never bundled in `pubspec.yaml`, no design-approval step ran before implementation, and the result was never visually verified (same blind spot as the CORS bug: checks passed, nobody looked at a real browser). Wrote `docs/NEXT-SESSION-HANDOFF.md` with the concrete root causes and fix plan for the next session. Branch pushed but not yet merged — final whole-branch review and UI redo both still outstanding. |
 
 ---
 
