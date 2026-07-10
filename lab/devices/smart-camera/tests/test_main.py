@@ -87,3 +87,29 @@ def test_admin_reset_requires_auth_when_required_and_rejects_missing_header(monk
     fresh_client = _fresh_app(monkeypatch, REQUIRE_ADMIN_AUTH="true")
     resp = fresh_client.get("/api/admin/reset")
     assert resp.status_code == 401
+
+
+def test_dashboard_loads_and_shows_device_identity():
+    resp = client.get("/dashboard")
+    assert resp.status_code == 200
+    assert "AcmeCam" in resp.text
+    assert "AC-100" in resp.text
+
+
+def test_dashboard_shows_api_key_when_exposed():
+    resp = client.get("/dashboard")
+    assert resp.status_code == 200
+    assert "sk-insecure-hardcoded-key-000111222" in resp.text
+
+
+def test_dashboard_hides_api_key_when_not_exposed(monkeypatch):
+    fresh_client = _fresh_app(monkeypatch, EXPOSE_API_KEY="false")
+    resp = fresh_client.get("/dashboard")
+    assert resp.status_code == 200
+    assert "API key" not in resp.text
+
+
+def test_login_page_links_to_dashboard():
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert '/dashboard' in resp.text

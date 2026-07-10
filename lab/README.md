@@ -31,8 +31,14 @@ docker compose down
 ## Notes
 - No device or broker port is published to the host by default — everything is reachable only
   from inside `audit-network`/`internal-network`, matching the training brief. Use
-  `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` if you want `device-insecure`
-  and `mqtt-broker-insecure` exposed to `localhost` for manual poking around.
+  `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` if you want all three device
+  profiles and `mqtt-broker-insecure` exposed to `localhost` for manual poking around:
+  - `device-insecure` → http://localhost:8081/
+  - `device-partial` → https://localhost:8082/ (weak self-signed cert — expect a browser warning)
+  - `device-hardened` → https://localhost:8083/ (strong self-signed cert — still a browser warning,
+    since it's a lab test CA rather than a publicly trusted one, but the cert itself is 2048-bit/SHA-256)
+  - Each device serves a minimal `/dashboard` page (device info, config, an admin-reset button) in
+    addition to the JSON API endpoints — see it live to compare postures side by side.
 - To probe the lab from the audit network without a published port, run a throwaway container
   attached to it, e.g.:
   `docker run --rm --network kaust-iot-lab_audit-network nicolaka/netshoot nmap -sV device-insecure`

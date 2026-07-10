@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     device_type: str = "smart-camera"
     firmware_version: str = "1.0.0-old"
 
+    transport: str = "http"  # http | https — mirrors entrypoint.sh's TRANSPORT env var
     cred_mode: str = "default"  # default | strong
     admin_user: str = "admin"
     admin_pass: str = "admin"

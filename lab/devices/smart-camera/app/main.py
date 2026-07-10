@@ -20,12 +20,100 @@ LOGIN_PAGE_TEMPLATE = """<!DOCTYPE html>
   <input type="password" name="password" placeholder="Password" />
   <button type="submit">Login</button>
 </form>
+<p><a href="/dashboard">View device dashboard</a></p>
 </body></html>"""
 
 
 @app.get("/", response_class=HTMLResponse)
 def login_page():
     return LOGIN_PAGE_TEMPLATE.format(vendor=settings.device_vendor, model=settings.device_model)
+
+
+DASHBOARD_TEMPLATE = """<!DOCTYPE html>
+<html><head><title>{vendor} {model} - Dashboard</title>
+<style>
+  body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #14151a; color: #e8e8ea;
+          margin: 0; padding: 32px; }}
+  .wrap {{ max-width: 640px; margin: 0 auto; }}
+  h1 {{ font-size: 20px; margin: 0 0 2px; }}
+  .sub {{ color: #8a8f9a; font-size: 13px; margin-bottom: 20px; }}
+  .card {{ background: #1c1e24; border: 1px solid #2a2d35; border-radius: 8px; padding: 16px 18px; margin-bottom: 14px; }}
+  .card h2 {{ font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #8a8f9a; margin: 0 0 10px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+  td {{ padding: 5px 0; border-bottom: 1px solid #2a2d35; }}
+  td:first-child {{ color: #8a8f9a; width: 40%; }}
+  tr:last-child td {{ border-bottom: none; }}
+  .warn {{ color: #f2733c; }}
+  button {{ background: #f2a93b; color: #14151a; border: none; border-radius: 6px; padding: 8px 14px;
+            font-weight: 600; cursor: pointer; }}
+  pre {{ background: #0e0f13; border-radius: 6px; padding: 10px 12px; font-size: 12px; margin-top: 10px;
+         white-space: pre-wrap; word-break: break-word; }}
+  a {{ color: #f2a93b; }}
+</style></head>
+<body>
+<div class="wrap">
+  <h1>{vendor} {model}</h1>
+  <div class="sub">{device_id} &middot; posture check for the manual assessment</div>
+
+  <div class="card">
+    <h2>Device Info</h2>
+    <table>
+      <tr><td>MAC address</td><td>{mac}</td></tr>
+      <tr><td>Firmware</td><td>{firmware_version}</td></tr>
+      <tr><td>Transport</td><td>{transport}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Config</h2>
+    <table>
+      <tr><td>Credential mode</td><td>{cred_mode}</td></tr>
+      <tr><td>MQTT target</td><td>{mqtt_host} ({mqtt_transport})</td></tr>
+      <tr><td>Logging mode</td><td>{logging_mode}</td></tr>
+      {api_key_row}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Admin</h2>
+    <p style="font-size:13px; color:#8a8f9a; margin-top:0;">
+      Auth required for reset: <b>{require_admin_auth}</b>
+    </p>
+    <button onclick="triggerReset()">Trigger admin reset</button>
+    <pre id="reset-result"></pre>
+  </div>
+
+  <p style="font-size:12px;"><a href="/privacy">Privacy document</a> &middot; <a href="/">Back to login</a></p>
+</div>
+<script>
+  async function triggerReset() {{
+    const res = await fetch('/api/admin/reset');
+    const body = await res.text();
+    document.getElementById('reset-result').textContent = 'HTTP ' + res.status + '\\n' + body;
+  }}
+</script>
+</body></html>"""
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard():
+    api_key_row = ""
+    if settings.expose_api_key:
+        api_key_row = f'<tr><td class="warn">API key (exposed)</td><td class="warn">{settings.api_key}</td></tr>'
+    return DASHBOARD_TEMPLATE.format(
+        vendor=settings.device_vendor,
+        model=settings.device_model,
+        device_id=settings.device_id,
+        mac=settings.device_mac,
+        firmware_version=settings.firmware_version,
+        transport=settings.transport.upper(),
+        cred_mode=settings.cred_mode,
+        mqtt_host=settings.mqtt_host,
+        mqtt_transport="TLS" if settings.mqtt_tls else "plaintext",
+        logging_mode=settings.logging_mode,
+        api_key_row=api_key_row,
+        require_admin_auth=settings.require_admin_auth,
+    )
 
 
 @app.post("/login")

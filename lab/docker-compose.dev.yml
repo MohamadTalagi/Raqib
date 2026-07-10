@@ -18,6 +18,12 @@ services:
   device-insecure:
     ports:
       - "8081:80"
+  device-partial:
+    ports:
+      - "8082:443"
+  device-hardened:
+    ports:
+      - "8083:443"
   mqtt-broker-insecure:
     ports:
       - "18830:1883"
