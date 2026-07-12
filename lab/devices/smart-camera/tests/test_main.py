@@ -16,6 +16,12 @@ def _fresh_app(monkeypatch, **env):
     return TestClient(main_module.app)
 
 
+def test_cors_allows_any_origin_on_device_info():
+    resp = client.get("/api/device/info", headers={"Origin": "http://localhost:8080"})
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] == "*"
+
+
 def test_login_page_loads():
     resp = client.get("/")
     assert resp.status_code == 200

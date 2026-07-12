@@ -1,10 +1,24 @@
 from fastapi import FastAPI, Form, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from app.config import settings
 from app.mqtt_publisher import start_mqtt_publisher
 
 app = FastAPI(title="Smart Camera Device Simulator")
+
+# Wide open on purpose, same as auditor-api: this lab device has no
+# authentication boundary to protect with CORS anyway (every endpoint here
+# is either intentionally public or gated by REQUIRE_ADMIN_AUTH, not by
+# origin). Needed so the dashboard's device console can call these
+# endpoints directly from the browser across the :8080 -> :8081/8082/8083
+# origin boundary.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
