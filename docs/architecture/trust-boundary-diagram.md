@@ -1,5 +1,9 @@
 # Trust Boundaries — Phases 0-5
 
+![Trust boundary diagram](trust-boundary-diagram.png)
+
+Rendered image above; Mermaid source below (also renders automatically on GitHub).
+
 ```mermaid
 flowchart LR
     subgraph Untrusted["UNTRUSTED: audit-network"]

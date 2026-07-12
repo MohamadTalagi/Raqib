@@ -1,5 +1,9 @@
 # Lab Architecture — Phases 0-5
 
+![Architecture diagram](architecture-diagram.png)
+
+Rendered image above; Mermaid source below (also renders automatically on GitHub).
+
 ```mermaid
 flowchart TB
     subgraph HOST["HOST (32GB PC) — only auditor-web published"]
