@@ -139,8 +139,10 @@ services:
     environment:
       - DATABASE_URL=postgresql://auditor:auditor-lab-pw@auditor-database:5432/auditor
       - PYTHONPATH=/work
+      - DOCUMENT_STORE_DIR=/work/document-store
     volumes:
       - ../policies:/work/policies:ro
+      - ../document-store:/work/document-store
     networks:
       - internal-network
     depends_on:

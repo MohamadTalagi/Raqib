@@ -27,7 +27,24 @@ CREATE TABLE verdicts (
     timestamp        TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE scan_jobs (
+    id               SERIAL PRIMARY KEY,
+    device_id        TEXT NOT NULL,
+    test_id          TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    tool             TEXT,
+    tool_version     TEXT,
+    command          TEXT,
+    raw_output       TEXT,
+    observations     JSONB,
+    error            TEXT,
+    evidence_id      TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX idx_evidence_device_id ON evidence(device_id);
 CREATE INDEX idx_evidence_test_id ON evidence(test_id);
 CREATE INDEX idx_verdicts_control_id ON verdicts(control_id);
 CREATE INDEX idx_verdicts_device_id ON verdicts(device_id);
+CREATE INDEX idx_scan_jobs_status ON scan_jobs(status);

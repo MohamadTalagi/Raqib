@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { ShieldHalf, LayoutGrid, HardDrive, FileSearch, Gavel } from "lucide-react";
+import { ShieldHalf, LayoutGrid, HardDrive, FileSearch, Gavel, PlayCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { to: "/devices", label: "Devices", icon: HardDrive, end: false },
   { to: "/evidence", label: "Evidence", icon: FileSearch, end: false },
   { to: "/verdicts", label: "Verdicts", icon: Gavel, end: false },
+  { to: "/run-scan", label: "Run Scan", icon: PlayCircle, end: false },
 ];
 
 export function Sidebar() {

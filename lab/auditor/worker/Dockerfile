@@ -16,4 +16,7 @@ WORKDIR /work
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["sleep", "infinity"]
+# job_runner.py (bind-mounted in at runtime, same as the rest of lab/auditor/worker)
+# runs in the background so this container is still exec-able for manual
+# Day-2-style assessment work, while also polling for dashboard-triggered scans.
+CMD ["sh", "-c", "python /work/lab/auditor/worker/job_runner.py & exec sleep infinity"]

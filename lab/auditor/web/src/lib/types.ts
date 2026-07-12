@@ -61,3 +61,32 @@ export interface Summary {
   total_verdicts: number;
   verdicts_by_status: Record<VerdictStatus, number>;
 }
+
+export interface ScanTestSpec {
+  test_id: string;
+  label: string;
+  allowed_devices: string[];
+}
+
+export type ScanJobStatus = "pending" | "running" | "awaiting_finding" | "recorded" | "failed";
+
+export interface ScanJob {
+  id: number;
+  device_id: string;
+  test_id: string;
+  status: ScanJobStatus;
+  tool: string | null;
+  tool_version: string | null;
+  command: string | null;
+  raw_output: string | null;
+  observations: Record<string, unknown> | null;
+  error: string | null;
+  evidence_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecomputeVerdictsResult {
+  created: number;
+  verdicts: VerdictRecord[];
+}
