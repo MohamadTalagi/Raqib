@@ -22,11 +22,14 @@ export interface ConsoleEndpoint {
   path: string;
   body?: string;
   contentType?: string;
+  // HTML pages meant to be viewed, not just fetched for their raw body.
+  // Clicking these also opens the real page in a new tab.
+  viewable?: boolean;
 }
 
 // One button per service the brief requires on the simulated device.
 export const CONSOLE_ENDPOINTS: ConsoleEndpoint[] = [
-  { key: "login-page", label: "Login page", method: "GET", path: "/" },
+  { key: "login-page", label: "Login page", method: "GET", path: "/", viewable: true },
   {
     key: "login",
     label: "Login (admin / admin)",
@@ -39,7 +42,7 @@ export const CONSOLE_ENDPOINTS: ConsoleEndpoint[] = [
   { key: "config", label: "Config", method: "GET", path: "/api/config" },
   { key: "firmware", label: "Firmware version", method: "GET", path: "/api/firmware/version" },
   { key: "admin-reset", label: "Admin reset", method: "GET", path: "/api/admin/reset" },
-  { key: "privacy", label: "Privacy doc", method: "GET", path: "/privacy" },
+  { key: "privacy", label: "Privacy doc", method: "GET", path: "/privacy", viewable: true },
   { key: "health", label: "Health", method: "GET", path: "/health" },
 ];
 

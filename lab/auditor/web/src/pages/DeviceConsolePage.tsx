@@ -23,6 +23,9 @@ function DeviceConsoleCard({ device }: { device: ConsoleDevice }) {
   async function handleClick(epKey: string) {
     const ep = CONSOLE_ENDPOINTS.find((e) => e.key === epKey);
     if (!ep) return;
+    if (ep.viewable) {
+      window.open(baseUrl + ep.path, "_blank", "noopener,noreferrer");
+    }
     setPendingKey(epKey);
     const r = await callConsoleEndpoint(baseUrl, ep);
     setResult(r);

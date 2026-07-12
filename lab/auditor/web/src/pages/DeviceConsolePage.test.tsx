@@ -49,6 +49,27 @@ describe("DeviceConsolePage", () => {
     expect(screen.getByText("GET /api/device/info")).toBeInTheDocument();
   });
 
+  it("opens the real login page in a new tab in addition to showing the fetch result", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response("<html><body>login form</body></html>", { status: 200 }))),
+    );
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    render(
+      <MemoryRouter>
+        <DeviceConsolePage />
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    const [insecureLoginPageBtn] = screen.getAllByRole("button", { name: "Login page" });
+    await user.click(insecureLoginPageBtn);
+
+    expect(openSpy).toHaveBeenCalledWith("http://localhost:8081/", "_blank", "noopener,noreferrer");
+    expect(await screen.findByText("GET /")).toBeInTheDocument();
+  });
+
   it("shows a helpful cert hint when an HTTPS device fetch fails with no status", async () => {
     vi.stubGlobal(
       "fetch",
