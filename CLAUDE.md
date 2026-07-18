@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-12
+> **Last updated:** 2026-07-19
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -16,9 +16,9 @@
 been **rebuilt from scratch in React + Tailwind v4 + Vite**, replacing Flutter Web
 entirely, after the owner rejected the Flutter redesign as "AI slop" (see §8 for the
 full story — kept in `docs/NEXT-SESSION-HANDOFF.md` as a historical record of the
-root-cause analysis, now resolved). Branch `worktree-phase-6-8-implementation` is
-pushed but not yet merged to `main` (final whole-branch review + merge decision still
-outstanding).
+root-cause analysis, now resolved). Branch `worktree-phase-6-8-implementation` was
+**merged into `main` on 2026-07-19** (fast-forward to `fa73983`, 48 commits, 111 files)
+— `main` is now the single live branch again.
 
 **2026-07-09 — dashboard rebuilt in React (resolved the "AI slop" complaint):**
 Replaced `lab/auditor/web/` (Flutter) wholesale with a Vite + React + TypeScript +
@@ -59,11 +59,16 @@ exceeding the old Flutter suite's 11. Two small errors hit and logged
 - Full stack (all 11 containers, including `auditor-api`/`auditor-database`/`auditor-web`/`traffic-capture`) deployed and manually verified working on the physical PC, including a live CORS bug fix caught by the owner opening a real browser.
 
 **Next steps, in order:**
-1. Deploy the new React `auditor-web` to the physical build PC (git pull + `docker
-   compose build auditor-web` + recreate) and get the owner's sign-off on the new
-   look before anything else.
-2. Run the final whole-branch code review, then use **finishing-a-development-branch**
-   to merge/PR `worktree-phase-6-8-implementation` into `main`.
+1. **Manual device registration + related dashboard work** — scope being brainstormed
+   with the owner as of 2026-07-19. Builds on the merged `main`.
+2. Fix `telnet-sim`'s failing healthcheck (container runs, but the healthcheck exits 1
+   with empty output — likely the check command itself, not the service).
+3. Commit the 3 untracked evidence files sitting on the PC in `document-store/raw/`
+   (`EV-2026-07-08-0001/0002`, `EV-2026-07-12-0001`).
+
+> **Deferred, do not start:** a "production-ready" rebuild of the platform. The owner
+> explicitly scoped this as a later track (2026-07-19) — finish the current feature
+> work on the existing 11-container lab first.
 
 > Also read the recalled memory notes (project-overview, ssh-pc-connection, error-log-convention).
 > Full history is in §8 changelog; decisions in §9 and the spec's decisions log.
@@ -241,3 +246,4 @@ Kaust IoT Project/
 ### Still open
 - [ ] Team fluent in Flutter/Dart or React? (No — as of 2026-07-07.) Flips the *platform* dashboard choice later; irrelevant to the sprint.
 - [ ] Frontend stack for the final platform deliverable (revisit after the sprint).
+| 2026-07-19 | **Merged `worktree-phase-6-8-implementation` into `main`** — fast-forward to `fa73983`, 48 commits, 111 files, +9,266/-147. `main` had zero commits the branch lacked, so no conflicts and no merge commit. This also resolved a documentation trap: `main`'s CLAUDE.md had been stale since 2026-07-08 (still claiming Phases 6-8 were merely "planned") while the branch's copy was fully current — the fix was merging, not rewriting. **Lab restored on the build PC:** Docker Desktop was found not running (all 11 containers `Exited (255)` from an engine restart, not a crash — images intact); started the engine and `docker compose up -d` brought all 11 back, 9 reporting healthy. **Known issue:** `telnet-sim` is `Up (unhealthy)` — healthcheck fails with exit 1 and empty output on a 4-run streak; the container itself is running, so this looks like a broken healthcheck command rather than a dead service. Not yet diagnosed. Also noted: 3 uncommitted evidence files on the PC in `document-store/raw/`. Owner scoped the "production-ready rebuild" as a **deferred** later track — current work continues on the existing 11-container lab. |
