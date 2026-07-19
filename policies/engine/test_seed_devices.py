@@ -6,10 +6,16 @@ from policies.engine.seed_devices import SEED_DEVICES, seed
 TEST_DB_URL = "postgresql://auditor:auditor-lab-pw@localhost:55432/auditor"
 
 
-@pytest.fixture
-def conn():
+@pytest.fixture(scope="session")
+def db_available():
+    """Probe database availability once per test session.
+
+    Avoids paying a 2-second connect_timeout for every test. If the database
+    is unavailable, skip the entire session with a helpful message.
+    """
     try:
         connection = psycopg.connect(TEST_DB_URL, connect_timeout=2)
+        connection.close()
     except psycopg.OperationalError as e:
         pytest.skip(
             f"Seed tests require a Postgres database on port 55432: {e}\n"
@@ -22,6 +28,11 @@ def conn():
             "  docker exec -i auditor-seed-test-db psql -U auditor -d auditor < "
             "lab/auditor/db/migrations/001-devices.sql"
         )
+
+
+@pytest.fixture
+def conn(db_available):
+    connection = psycopg.connect(TEST_DB_URL)
     connection.execute("TRUNCATE device_services, devices RESTART IDENTITY CASCADE")
     connection.commit()
     yield connection
