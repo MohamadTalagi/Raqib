@@ -514,6 +514,8 @@ def get_verdict_by_id(verdict_id: str):
 
 CONTROLS_DIR = Path(os.environ.get("CONTROLS_DIR", "/work/policies/controls"))
 
+VERDICT_STATUSES = ("PASS", "FAIL", "PARTIAL", "INCONCLUSIVE")
+
 
 def _load_all_controls() -> list[dict]:
     controls = []
@@ -525,6 +527,39 @@ def _load_all_controls() -> list[dict]:
 @app.get("/controls")
 def get_controls():
     return _load_all_controls()
+
+
+@app.get("/controls/{control_id:path}/verdicts")
+def get_control_verdicts(control_id: str) -> dict:
+    # Reject any control_id that doesn't match the allowed pattern (alphanumeric and hyphen only)
+    if not re.fullmatch(r"[A-Za-z0-9\-]+", control_id):
+        raise HTTPException(status_code=400, detail="invalid control_id")
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT verdict_id, device_id, status, severity, reason, timestamp
+            FROM verdicts WHERE control_id = %s ORDER BY device_id
+            """,
+            (control_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    verdicts = [
+        {
+            "verdict_id": r[0], "device_id": r[1], "status": r[2],
+            "severity": r[3], "reason": r[4], "timestamp": r[5].isoformat(),
+        }
+        for r in rows
+    ]
+    counts = {status: 0 for status in VERDICT_STATUSES}
+    for verdict in verdicts:
+        if verdict["status"] in counts:
+            counts[verdict["status"]] += 1
+
+    return {"control_id": control_id, "verdicts": verdicts, "counts": counts}
 
 
 @app.get("/controls/{control_id}")
