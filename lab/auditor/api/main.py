@@ -644,6 +644,191 @@ def get_devices() -> list[dict]:
     return devices
 
 
+PATCHABLE_DEVICE_FIELDS = (
+    "display_name", "description", "tier", "host",
+    "vendor", "model", "location", "owner", "notes",
+)
+
+
+def _device_row(conn, device_id: str) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT device_id, display_name, description, tier, host, vendor, model,
+               location, owner, notes, source, created_at, updated_at
+        FROM devices WHERE device_id = %s
+        """,
+        (device_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    keys = (
+        "device_id", "display_name", "description", "tier", "host", "vendor",
+        "model", "location", "owner", "notes", "source", "created_at", "updated_at",
+    )
+    device = dict(zip(keys, row))
+    device["created_at"] = device["created_at"].isoformat()
+    device["updated_at"] = device["updated_at"].isoformat()
+    return device
+
+
+@app.get("/devices/{device_id}")
+def get_device_detail(device_id: str) -> dict:
+    validate_device_id(device_id)
+    conn = get_connection()
+    try:
+        device = _device_row(conn, device_id)
+        if device is None:
+            raise HTTPException(status_code=404, detail="device not found")
+
+        evidence = conn.execute(
+            """
+            SELECT evidence_id, test_id, tool, finding, confidence, timestamp
+            FROM evidence WHERE device_id = %s ORDER BY timestamp DESC
+            """,
+            (device_id,),
+        ).fetchall()
+        verdicts = conn.execute(
+            """
+            SELECT verdict_id, control_id, status, severity, reason, timestamp
+            FROM verdicts WHERE device_id = %s ORDER BY control_id
+            """,
+            (device_id,),
+        ).fetchall()
+        jobs = conn.execute(
+            """
+            SELECT id, test_id, status, created_at
+            FROM scan_jobs WHERE device_id = %s ORDER BY created_at DESC LIMIT 25
+            """,
+            (device_id,),
+        ).fetchall()
+        services = _services_for(conn, device_id)
+    finally:
+        conn.close()
+
+    return {
+        "device": device,
+        "services": services,
+        "evidence": [
+            {
+                "evidence_id": r[0], "test_id": r[1], "tool": r[2],
+                "finding": r[3], "confidence": r[4], "timestamp": r[5].isoformat(),
+            }
+            for r in evidence
+        ],
+        "verdicts": [
+            {
+                "verdict_id": r[0], "control_id": r[1], "status": r[2],
+                "severity": r[3], "reason": r[4], "timestamp": r[5].isoformat(),
+            }
+            for r in verdicts
+        ],
+        "scan_jobs": [
+            {"id": r[0], "test_id": r[1], "status": r[2], "created_at": r[3].isoformat()}
+            for r in jobs
+        ],
+    }
+
+
+@app.patch("/devices/{device_id}")
+def update_device(device_id: str, payload: dict) -> dict:
+    validate_device_id(device_id)
+    updates = {k: v for k, v in payload.items() if k in PATCHABLE_DEVICE_FIELDS}
+    if not updates:
+        raise HTTPException(status_code=400, detail="no updatable fields supplied")
+
+    try:
+        if "host" in updates:
+            validate_host(updates["host"])
+        if "tier" in updates and updates["tier"] not in TIERS:
+            raise ValidationError("tier", f"tier must be one of {', '.join(TIERS)}")
+    except ValidationError as exc:
+        return JSONResponse(
+            status_code=400, content={"field": exc.field, "detail": exc.message}
+        )
+
+    assignments = ", ".join(f"{field} = %s" for field in updates)
+    conn = get_connection()
+    try:
+        result = conn.execute(
+            f"UPDATE devices SET {assignments}, updated_at = now() WHERE device_id = %s",
+            (*updates.values(), device_id),
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="device not found")
+        conn.commit()
+        device = _device_row(conn, device_id)
+        device["services"] = _services_for(conn, device_id)
+    finally:
+        conn.close()
+    return device
+
+
+@app.delete("/devices/{device_id}", status_code=204)
+def delete_device(device_id: str) -> None:
+    validate_device_id(device_id)
+    conn = get_connection()
+    try:
+        # Cascades to device_services only. evidence/verdicts have no FK to
+        # devices and are immutable audit records - they are never touched.
+        result = conn.execute("DELETE FROM devices WHERE device_id = %s", (device_id,))
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="device not found")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.post("/devices/{device_id}/services", status_code=201)
+def add_device_service(device_id: str, payload: dict) -> dict:
+    validate_device_id(device_id)
+    try:
+        service_type = validate_service_type(payload.get("service_type", ""))
+        port = validate_port(payload.get("port"))
+        published = payload.get("published_port")
+        published_port = (
+            validate_port(published, "published_port") if published is not None else None
+        )
+    except ValidationError as exc:
+        return JSONResponse(
+            status_code=400, content={"field": exc.field, "detail": exc.message}
+        )
+
+    conn = get_connection()
+    try:
+        if _device_row(conn, device_id) is None:
+            raise HTTPException(status_code=404, detail="device not found")
+        row = conn.execute(
+            """
+            INSERT INTO device_services (device_id, service_type, port, published_port)
+            VALUES (%s, %s, %s, %s) RETURNING id, service_type, port, published_port, enabled
+            """,
+            (device_id, service_type, port, published_port),
+        ).fetchone()
+        conn.commit()
+    finally:
+        conn.close()
+    return {
+        "id": row[0], "service_type": row[1], "port": row[2],
+        "published_port": row[3], "enabled": row[4],
+    }
+
+
+@app.delete("/devices/{device_id}/services/{service_id}", status_code=204)
+def delete_device_service(device_id: str, service_id: int) -> None:
+    validate_device_id(device_id)
+    conn = get_connection()
+    try:
+        result = conn.execute(
+            "DELETE FROM device_services WHERE device_id = %s AND id = %s",
+            (device_id, service_id),
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="service not found")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 @app.get("/summary")
 def get_summary():
     conn = get_connection()

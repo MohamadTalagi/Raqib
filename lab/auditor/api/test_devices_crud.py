@@ -90,3 +90,87 @@ def test_orphan_device_with_evidence_still_appears_unregistered(client, postgres
     entry = next(d for d in devices if d["device_id"] == "ghost-device")
     assert entry["registered"] is False
     assert entry["evidence_count"] == 1
+
+
+def test_device_detail_returns_related_records(client, postgres_url):
+    client.post("/devices", json=_payload())
+    conn = psycopg.connect(postgres_url)
+    conn.execute(
+        """
+        INSERT INTO evidence (evidence_id, device_id, test_id, tool, tool_version,
+                              command, timestamp, finding, observations,
+                              raw_output_path, confidence, sha256)
+        VALUES ('EV-DETAIL-1', 'test-camera', 'TEST-NET-PORTSCAN', 'nmap', '7.94',
+                'nmap -sV test-camera', now(), 'open ports', '{}'::jsonb,
+                'document-store/raw/d.txt', 'high', 'aaa')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    body = client.get("/devices/test-camera").json()
+    assert body["device"]["display_name"] == "Test Camera"
+    assert len(body["services"]) == 1
+    assert len(body["evidence"]) == 1
+    assert body["evidence"][0]["evidence_id"] == "EV-DETAIL-1"
+    assert body["verdicts"] == []
+
+
+def test_device_detail_404_for_unknown_device(client):
+    assert client.get("/devices/nope").status_code == 404
+
+
+def test_patch_updates_metadata_but_not_device_id(client):
+    client.post("/devices", json=_payload())
+    response = client.patch(
+        "/devices/test-camera", json={"location": "Rack 3", "device_id": "hacked"}
+    )
+    assert response.status_code == 200
+    assert response.json()["location"] == "Rack 3"
+    assert response.json()["device_id"] == "test-camera"
+    assert client.get("/devices/hacked").status_code == 404
+
+
+def test_delete_removes_device_and_services_but_keeps_evidence(client, postgres_url):
+    client.post("/devices", json=_payload())
+    conn = psycopg.connect(postgres_url)
+    conn.execute(
+        """
+        INSERT INTO evidence (evidence_id, device_id, test_id, tool, tool_version,
+                              command, timestamp, finding, observations,
+                              raw_output_path, confidence, sha256)
+        VALUES ('EV-KEEP-1', 'test-camera', 'TEST-NET-PORTSCAN', 'nmap', '7.94',
+                'nmap -sV test-camera', now(), 'keep me', '{}'::jsonb,
+                'document-store/raw/k.txt', 'high', 'bbb')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    assert client.delete("/devices/test-camera").status_code == 204
+
+    # Evidence survives; the device reappears as unregistered.
+    entry = next(d for d in client.get("/devices").json() if d["device_id"] == "test-camera")
+    assert entry["registered"] is False
+    assert entry["evidence_count"] == 1
+
+    conn = psycopg.connect(postgres_url)
+    remaining = conn.execute(
+        "SELECT COUNT(*) FROM device_services WHERE device_id = 'test-camera'"
+    ).fetchone()[0]
+    conn.close()
+    assert remaining == 0
+
+
+def test_add_and_remove_a_service(client):
+    client.post("/devices", json=_payload())
+    added = client.post(
+        "/devices/test-camera/services",
+        json={"service_type": "mqtt", "port": 1883},
+    )
+    assert added.status_code == 201
+    service_id = added.json()["id"]
+    assert len(client.get("/devices/test-camera").json()["services"]) == 2
+
+    assert client.delete(f"/devices/test-camera/services/{service_id}").status_code == 204
+    assert len(client.get("/devices/test-camera").json()["services"]) == 1
