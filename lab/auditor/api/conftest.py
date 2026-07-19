@@ -47,6 +47,6 @@ def postgres_url():
 @pytest.fixture(autouse=True)
 def clean_tables(postgres_url):
     conn = psycopg.connect(postgres_url)
-    conn.execute("TRUNCATE evidence, verdicts, scan_jobs RESTART IDENTITY")
+    conn.execute("TRUNCATE evidence, verdicts, scan_jobs, device_services, devices RESTART IDENTITY CASCADE")
     conn.commit()
     conn.close()

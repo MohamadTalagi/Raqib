@@ -48,3 +48,31 @@ CREATE INDEX idx_evidence_test_id ON evidence(test_id);
 CREATE INDEX idx_verdicts_control_id ON verdicts(control_id);
 CREATE INDEX idx_verdicts_device_id ON verdicts(device_id);
 CREATE INDEX idx_scan_jobs_status ON scan_jobs(status);
+
+CREATE TABLE devices (
+    device_id        TEXT PRIMARY KEY,
+    display_name     TEXT NOT NULL,
+    description      TEXT NOT NULL DEFAULT '',
+    tier             TEXT NOT NULL CHECK (tier IN ('insecure', 'partial', 'hardened', 'unknown')),
+    host             TEXT NOT NULL,
+    vendor           TEXT,
+    model            TEXT,
+    location         TEXT,
+    owner            TEXT,
+    notes            TEXT,
+    source           TEXT NOT NULL CHECK (source IN ('seeded', 'manual')),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE device_services (
+    id               SERIAL PRIMARY KEY,
+    device_id        TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+    service_type     TEXT NOT NULL CHECK (service_type IN ('http', 'https', 'mqtt', 'mqtts', 'telnet', 'ssh')),
+    port             INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
+    published_port   INTEGER CHECK (published_port BETWEEN 1 AND 65535),
+    enabled          BOOLEAN NOT NULL DEFAULT true,
+    UNIQUE (device_id, service_type, port)
+);
+
+CREATE INDEX idx_device_services_device_id ON device_services(device_id);
