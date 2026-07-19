@@ -1125,14 +1125,14 @@ This returns a URL rather than fetching, because the browser must perform the do
 
 - [ ] **Step 4: Add the button**
 
-In `lab/auditor/web/src/pages/DeviceDetailPage.tsx`, import `FileDown` from `lucide-react` and render an anchor in the page header block, matching the existing button styling used on `DevicesPage.tsx`:
+In `lab/auditor/web/src/pages/DeviceDetailPage.tsx`, import `FileDown` from `lucide-react` and render an anchor in the page header block. Use the **exact token names the existing primary button uses** (`DevicesPage.tsx:50`) — `--color-brand` and `--color-brand-foreground`. Note `--color-accent` does **not** exist in `index.css`; using it would render an unstyled button:
 
 ```tsx
 <a
   href={api.deviceReportUrl(device.device_id)}
-  className="inline-flex items-center gap-2 rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-[var(--color-bg)] hover:opacity-90"
+  className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
 >
-  <FileDown size={16} />
+  <FileDown className="h-4 w-4" />
   Download report
 </a>
 ```
