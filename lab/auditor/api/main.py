@@ -20,7 +20,7 @@ from device_validation import (
     validate_port,
     validate_service_type,
 )
-from policies.catalog.scan_tests import SCAN_CATALOG, is_allowed
+from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable
 
 
 def _document_store_dir() -> Path:
@@ -159,7 +159,11 @@ def _row_to_scan_job(row: tuple) -> dict:
 @app.get("/scan-tests")
 def get_scan_tests():
     return [
-        {"test_id": test_id, "label": spec["label"], "allowed_devices": spec["allowed_devices"]}
+        {
+            "test_id": test_id,
+            "label": spec["label"],
+            "applicable_service_types": list(spec["applicable_service_types"]),
+        }
         for test_id, spec in SCAN_CATALOG.items()
     ]
 
@@ -170,8 +174,35 @@ def post_scan_job(payload: dict):
     test_id = payload.get("test_id")
     if not device_id or not test_id:
         raise HTTPException(status_code=422, detail="device_id and test_id are required")
-    if not is_allowed(device_id, test_id):
-        raise HTTPException(status_code=422, detail="unknown or disallowed device_id/test_id combination")
+
+    conn = get_connection()
+    try:
+        service = conn.execute(
+            """
+            SELECT d.host, s.service_type, s.port
+            FROM devices d
+            JOIN device_services s ON s.device_id = d.device_id
+            WHERE d.device_id = %s AND s.enabled = true
+            ORDER BY s.id LIMIT 1
+            """,
+            (device_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if service is None:
+        raise HTTPException(
+            status_code=400, detail="device is not registered or has no enabled service"
+        )
+
+    target = {
+        "device_id": device_id, "host": service[0],
+        "service_type": service[1], "port": service[2],
+    }
+    if not is_applicable(target, test_id):
+        raise HTTPException(
+            status_code=400, detail="test does not apply to this device's services"
+        )
 
     conn = get_connection()
     try:

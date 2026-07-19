@@ -1,11 +1,12 @@
 """Whitelisted scan tests for the dashboard's live "Run Scan" feature.
 
-Security boundary: device_id and test_id are always validated against this
-fixed catalog before anything runs. Commands are built as argv lists (never
-a shell string), so even a bypassed validation has no shell-injection
-surface. auditor-api never executes a command itself — it only ever
-creates/reads scan_jobs rows; auditor-worker is the sole executor, and it
-re-validates against this same catalog before running anything.
+Security boundary: test_id is validated against this fixed catalog, and the
+target host/port is validated by device_validation (172.30.0.0/24 or a
+container name, never infrastructure) on both the API and worker sides.
+Commands are built as argv lists (never a shell string), so even a bypassed
+validation has no shell-injection surface. auditor-api never executes a
+command itself - it only ever creates/reads scan_jobs rows; auditor-worker is
+the sole executor, and it re-validates before running anything.
 
 Finding text is deliberately NOT produced here. Observations are simple,
 mechanical parses of real tool output (port numbers, string matches) - the
@@ -15,44 +16,46 @@ the dashboard before evidence is recorded, matching the CLI-driven flow
 this mirrors (record_evidence.py).
 """
 
-DEVICE_SCHEME = {
-    "device-insecure": "http",
-    "device-partial": "https",
-    "device-hardened": "https",
-}
+HTTP_SERVICE_TYPES = ("http", "https")
+ALL_SERVICE_TYPES = ("http", "https", "mqtt", "mqtts", "telnet", "ssh")
 
 
-def _nmap_command(device_id: str) -> list[str]:
-    if device_id == "telnet-sim":
-        return ["nmap", "-sV", "-p", "23", device_id]
-    return ["nmap", "-sV", "-p-", device_id]
+def _scheme_for(target: dict) -> str:
+    return "https" if target["service_type"] == "https" else "http"
 
 
-def _parse_nmap_observations(device_id: str, output: str) -> dict:
+def _nmap_command(target: dict) -> list[str]:
+    port = target["port"]
+    return ["nmap", "-sV", "-p", str(port), target["host"]]
+
+
+def _parse_nmap_observations(target: dict, output: str) -> dict:
     import re
 
     ports = sorted({int(m) for m in re.findall(r"^(\d+)/tcp\s+open", output, re.MULTILINE)})
     return {"open_ports": ports, "telnet_open": 23 in ports}
 
 
-def _login_command(device_id: str) -> list[str]:
-    scheme = DEVICE_SCHEME[device_id]
-    flags = ["-sk"] if scheme == "https" else ["-s"]
-    return ["curl", *flags, "-X", "POST", f"{scheme}://{device_id}/login",
-            "-d", "username=admin&password=admin"]
+def _login_command(target: dict) -> list[str]:
+    scheme = _scheme_for(target)
+    flags = ["-s", "-k"] if scheme == "https" else ["-s"]
+    return [
+        "curl", *flags, "-X", "POST", f"{scheme}://{target['host']}/login",
+        "-d", "username=admin&password=admin",
+    ]
 
 
-def _parse_login_observations(device_id: str, output: str) -> dict:
+def _parse_login_observations(target: dict, output: str) -> dict:
     return {"default_creds": "Login successful" in output}
 
 
-def _headers_command(device_id: str) -> list[str]:
-    scheme = DEVICE_SCHEME[device_id]
-    flags = ["-sk"] if scheme == "https" else ["-s"]
-    return ["curl", *flags, "-I", f"{scheme}://{device_id}/"]
+def _headers_command(target: dict) -> list[str]:
+    scheme = _scheme_for(target)
+    flags = ["-s", "-k", "-I"] if scheme == "https" else ["-s", "-I"]
+    return ["curl", *flags, f"{scheme}://{target['host']}/"]
 
 
-def _parse_headers_observations(device_id: str, output: str) -> dict:
+def _parse_headers_observations(target: dict, output: str) -> dict:
     lowered = output.lower()
     missing = [h for h in ("X-Frame-Options", "Content-Security-Policy") if h.lower() not in lowered]
     return {"missing_security_headers": missing}
@@ -63,7 +66,7 @@ SCAN_CATALOG = {
         "label": "Nmap service/port scan",
         "tool": "nmap",
         "tool_version_command": ["nmap", "--version"],
-        "allowed_devices": ["device-insecure", "device-partial", "device-hardened", "telnet-sim"],
+        "applicable_service_types": ALL_SERVICE_TYPES,
         "build_command": _nmap_command,
         "parse_observations": _parse_nmap_observations,
     },
@@ -71,7 +74,7 @@ SCAN_CATALOG = {
         "label": "Default credentials (admin/admin)",
         "tool": "curl",
         "tool_version_command": ["curl", "--version"],
-        "allowed_devices": ["device-insecure", "device-partial", "device-hardened"],
+        "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _login_command,
         "parse_observations": _parse_login_observations,
     },
@@ -79,13 +82,15 @@ SCAN_CATALOG = {
         "label": "HTTP security headers",
         "tool": "curl",
         "tool_version_command": ["curl", "--version"],
-        "allowed_devices": ["device-insecure", "device-partial", "device-hardened"],
+        "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _headers_command,
         "parse_observations": _parse_headers_observations,
     },
 }
 
 
-def is_allowed(device_id: str, test_id: str) -> bool:
+def is_applicable(target: dict, test_id: str) -> bool:
     spec = SCAN_CATALOG.get(test_id)
-    return spec is not None and device_id in spec["allowed_devices"]
+    if spec is None:
+        return False
+    return target.get("service_type") in spec["applicable_service_types"]

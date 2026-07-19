@@ -12,6 +12,22 @@ def client(postgres_url, monkeypatch, tmp_path):
     return TestClient(app)
 
 
+def _register_device(client, device_id, service_type="http", port=80):
+    # Scan jobs now resolve their target by joining devices + device_services,
+    # so every test that creates a scan job needs a registered device first.
+    response = client.post(
+        "/devices",
+        json={
+            "device_id": device_id,
+            "display_name": device_id,
+            "tier": "unknown",
+            "host": device_id,
+            "services": [{"service_type": service_type, "port": port}],
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
 def test_get_scan_tests_returns_the_catalog(client):
     response = client.get("/scan-tests")
     assert response.status_code == 200
@@ -22,6 +38,7 @@ def test_get_scan_tests_returns_the_catalog(client):
 
 
 def test_post_scan_job_creates_pending_job(client):
+    _register_device(client, "device-insecure")
     response = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"})
     assert response.status_code == 201
     body = response.json()
@@ -32,16 +49,25 @@ def test_post_scan_job_creates_pending_job(client):
 
 
 def test_post_scan_job_rejects_disallowed_combo(client):
+    # telnet-sim only exposes a telnet service, so an HTTP-only test does not apply.
+    _register_device(client, "telnet-sim", service_type="telnet", port=23)
     response = client.post("/scan-jobs", json={"device_id": "telnet-sim", "test_id": "TEST-AUTH-DEFAULT-CREDS"})
-    assert response.status_code == 422
+    assert response.status_code == 400
 
 
 def test_post_scan_job_rejects_unknown_test_id(client):
+    _register_device(client, "device-insecure")
     response = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-DOES-NOT-EXIST"})
-    assert response.status_code == 422
+    assert response.status_code == 400
+
+
+def test_post_scan_job_rejects_unregistered_device(client):
+    response = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"})
+    assert response.status_code == 400
 
 
 def test_get_scan_jobs_lists_created_jobs(client):
+    _register_device(client, "device-insecure")
     client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"})
     response = client.get("/scan-jobs")
     assert response.status_code == 200
@@ -49,6 +75,7 @@ def test_get_scan_jobs_lists_created_jobs(client):
 
 
 def test_get_scan_jobs_filters_by_status(client):
+    _register_device(client, "device-insecure")
     job = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"}).json()
     client.patch(f"/scan-jobs/{job['id']}", json={"status": "running"})
     pending = client.get("/scan-jobs", params={"status": "pending"}).json()
@@ -63,6 +90,7 @@ def test_get_scan_job_by_id_404_when_missing(client):
 
 
 def test_patch_scan_job_updates_fields(client):
+    _register_device(client, "device-insecure")
     job = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"}).json()
     response = client.patch(
         f"/scan-jobs/{job['id']}",
@@ -87,6 +115,7 @@ def test_patch_scan_job_404_when_missing(client):
 
 
 def _make_awaiting_finding_job(client, device_id="device-insecure", test_id="TEST-NET-PORTSCAN"):
+    _register_device(client, device_id)
     job = client.post("/scan-jobs", json={"device_id": device_id, "test_id": test_id}).json()
     client.patch(
         f"/scan-jobs/{job['id']}",
@@ -137,6 +166,7 @@ def test_record_scan_job_requires_finding_and_confidence(client):
 
 
 def test_record_scan_job_rejects_wrong_status(client):
+    _register_device(client, "device-insecure")
     job = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"}).json()
     # still "pending", never moved to awaiting_finding
     response = client.post(f"/scan-jobs/{job['id']}/record", json={"finding": "x", "confidence": "high"})
