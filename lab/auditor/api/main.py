@@ -9,7 +9,7 @@ import jsonschema
 import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from db import get_connection
 from device_validation import (
@@ -21,6 +21,7 @@ from device_validation import (
     validate_service_type,
 )
 from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable
+from report import build_report_model, render_report_pdf
 
 
 def _document_store_dir() -> Path:
@@ -767,6 +768,32 @@ def _device_row(conn, device_id: str) -> dict | None:
     device["created_at"] = device["created_at"].isoformat()
     device["updated_at"] = device["updated_at"].isoformat()
     return device
+
+
+@app.get("/devices/{device_id}/report.pdf")
+def get_device_report(device_id: str):
+    # validate_device_id raises ValidationError, which the global handler turns
+    # into a 400 {field, detail}. device_id is constrained to
+    # ^[a-z0-9][a-z0-9-]{0,62}$, so it cannot inject quotes, slashes or newlines
+    # into the Content-Disposition header below.
+    validate_device_id(device_id)
+
+    conn = get_connection()
+    try:
+        model = build_report_model(conn, device_id)
+    finally:
+        conn.close()
+
+    if model is None:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    pdf = render_report_pdf(model)
+    filename = f"iotguard-{device_id}-{datetime.now(timezone.utc):%Y-%m-%d}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/devices/{device_id}")
