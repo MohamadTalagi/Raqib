@@ -12,6 +12,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from db import get_connection
+from device_validation import (
+    TIERS,
+    ValidationError,
+    validate_device_id,
+    validate_host,
+    validate_port,
+    validate_service_type,
+)
 from policies.catalog.scan_tests import SCAN_CATALOG, is_allowed
 
 
@@ -466,36 +474,174 @@ def get_control_by_id(control_id: str):
     return yaml.safe_load(path.read_text())
 
 
-@app.get("/devices")
-def get_devices():
+def _validate_device_payload(payload: dict) -> dict:
+    device_id = validate_device_id(payload.get("device_id", ""))
+    host = validate_host(payload.get("host", ""))
+
+    tier = payload.get("tier", "unknown")
+    if tier not in TIERS:
+        raise ValidationError("tier", f"tier must be one of {', '.join(TIERS)}")
+
+    display_name = payload.get("display_name", "")
+    if not isinstance(display_name, str) or not display_name.strip():
+        raise ValidationError("display_name", "display_name is required")
+
+    raw_services = payload.get("services", [])
+    if not isinstance(raw_services, list) or not raw_services:
+        raise ValidationError("services", "at least one service is required")
+
+    services = []
+    for service in raw_services:
+        published = service.get("published_port")
+        services.append(
+            {
+                "service_type": validate_service_type(service.get("service_type", "")),
+                "port": validate_port(service.get("port")),
+                "published_port": (
+                    validate_port(published, "published_port")
+                    if published is not None
+                    else None
+                ),
+                "enabled": bool(service.get("enabled", True)),
+            }
+        )
+
+    return {
+        "device_id": device_id,
+        "display_name": display_name.strip(),
+        "description": payload.get("description", "") or "",
+        "tier": tier,
+        "host": host,
+        "vendor": payload.get("vendor"),
+        "model": payload.get("model"),
+        "location": payload.get("location"),
+        "owner": payload.get("owner"),
+        "notes": payload.get("notes"),
+        "services": services,
+    }
+
+
+def _services_for(conn, device_id: str) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT id, service_type, port, published_port, enabled
+        FROM device_services WHERE device_id = %s ORDER BY id
+        """,
+        (device_id,),
+    ).fetchall()
+    return [
+        {
+            "id": r[0],
+            "service_type": r[1],
+            "port": r[2],
+            "published_port": r[3],
+            "enabled": r[4],
+        }
+        for r in rows
+    ]
+
+
+@app.post("/devices", status_code=201)
+def create_device(payload: dict) -> dict:
+    try:
+        device = _validate_device_payload(payload)
+    except ValidationError as exc:
+        return JSONResponse(
+            status_code=400, content={"field": exc.field, "detail": exc.message}
+        )
+
     conn = get_connection()
     try:
+        exists = conn.execute(
+            "SELECT 1 FROM devices WHERE device_id = %s", (device["device_id"],)
+        ).fetchone()
+        if exists:
+            raise HTTPException(status_code=409, detail="device_id already registered")
+
+        conn.execute(
+            """
+            INSERT INTO devices (device_id, display_name, description, tier, host,
+                                 vendor, model, location, owner, notes, source)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'manual')
+            """,
+            (
+                device["device_id"], device["display_name"], device["description"],
+                device["tier"], device["host"], device["vendor"], device["model"],
+                device["location"], device["owner"], device["notes"],
+            ),
+        )
+        for service in device["services"]:
+            conn.execute(
+                """
+                INSERT INTO device_services (device_id, service_type, port, published_port, enabled)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    device["device_id"], service["service_type"], service["port"],
+                    service["published_port"], service["enabled"],
+                ),
+            )
+        conn.commit()
+        services = _services_for(conn, device["device_id"])
+    finally:
+        conn.close()
+
+    return {**device, "source": "manual", "services": services, "registered": True}
+
+
+@app.get("/devices")
+def get_devices() -> list[dict]:
+    conn = get_connection()
+    try:
+        # Registered devices LEFT JOINed to counts, UNIONed with orphan
+        # device_ids that only exist in evidence/verdicts. The orphan half
+        # preserves the old guarantee that no evidence is ever invisible.
         rows = conn.execute(
             """
             SELECT
-                d.device_id,
-                COALESCE(e.evidence_count, 0) AS evidence_count,
-                COALESCE(v.verdict_count, 0) AS verdict_count
+                ids.device_id,
+                d.display_name, d.description, d.tier, d.host,
+                d.vendor, d.model, d.location, d.owner, d.notes, d.source,
+                (d.device_id IS NOT NULL) AS registered,
+                COALESCE(e.evidence_count, 0),
+                COALESCE(v.verdict_count, 0)
             FROM (
-                SELECT device_id FROM evidence
-                UNION
-                SELECT device_id FROM verdicts
-            ) d
+                SELECT device_id FROM devices
+                UNION SELECT device_id FROM evidence
+                UNION SELECT device_id FROM verdicts
+            ) ids
+            LEFT JOIN devices d ON d.device_id = ids.device_id
             LEFT JOIN (
                 SELECT device_id, COUNT(*) AS evidence_count FROM evidence GROUP BY device_id
-            ) e ON e.device_id = d.device_id
+            ) e ON e.device_id = ids.device_id
             LEFT JOIN (
                 SELECT device_id, COUNT(*) AS verdict_count FROM verdicts GROUP BY device_id
-            ) v ON v.device_id = d.device_id
-            ORDER BY d.device_id
+            ) v ON v.device_id = ids.device_id
+            ORDER BY ids.device_id
             """
         ).fetchall()
+
+        devices = []
+        for r in rows:
+            device_id = r[0]
+            devices.append(
+                {
+                    "device_id": device_id,
+                    "display_name": r[1] or device_id,
+                    "description": r[2] or "",
+                    "tier": r[3] or "unknown",
+                    "host": r[4],
+                    "vendor": r[5], "model": r[6], "location": r[7],
+                    "owner": r[8], "notes": r[9], "source": r[10],
+                    "registered": r[11],
+                    "evidence_count": r[12],
+                    "verdict_count": r[13],
+                    "services": _services_for(conn, device_id) if r[11] else [],
+                }
+            )
     finally:
         conn.close()
-    return [
-        {"device_id": device_id, "evidence_count": evidence_count, "verdict_count": verdict_count}
-        for device_id, evidence_count, verdict_count in rows
-    ]
+    return devices
 
 
 @app.get("/summary")

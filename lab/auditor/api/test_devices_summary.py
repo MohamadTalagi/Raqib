@@ -44,6 +44,14 @@ def test_get_devices_returns_counts(client):
     assert by_id["device-hardened"]["evidence_count"] == 1
     assert by_id["device-hardened"]["verdict_count"] == 0
 
+    # Neither device was ever POSTed to /devices, so both are orphans: they
+    # come from the evidence/verdicts UNION half of the query, not the
+    # devices table, and must be flagged unregistered with no services.
+    assert by_id["device-insecure"]["registered"] is False
+    assert by_id["device-insecure"]["services"] == []
+    assert by_id["device-hardened"]["registered"] is False
+    assert by_id["device-hardened"]["services"] == []
+
 
 def test_get_summary_returns_aggregate_counts(client):
     client.post("/evidence", json=EVIDENCE_A)
