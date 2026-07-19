@@ -27,11 +27,38 @@ export function ControlDetailPage() {
   const control = controlFrom(controls.data, controlId ?? "");
   const loading = controls.loading || rollup.loading;
   const error = controls.error ?? rollup.error;
+  // The controls list has finished loading (successfully) once it is no
+  // longer in flight and has resolved with data. The backend returns HTTP 200
+  // with an empty verdicts array for any syntactically valid but unknown
+  // control_id (see auditor-api main.py get_control_verdicts), so `rollup`
+  // never surfaces a "not found" error on its own — we can only detect a
+  // nonexistent control by checking whether it is absent from the resolved
+  // controls list.
+  const controlsResolved = !controls.loading && controls.data !== null;
+  const notFound = controlsResolved && !control;
 
   if (error) {
     return (
       <Shell title="Control" subtitle={controlId}>
         <ErrorState message={error} />
+      </Shell>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <Shell title="Control not found" subtitle={controlId}>
+        <div className="space-y-4">
+          <EmptyState message={`No control found with ID "${controlId}".`} />
+          <div className="flex justify-center">
+            <Link
+              to="/controls"
+              className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-brand)] hover:underline"
+            >
+              Back to controls
+            </Link>
+          </div>
+        </div>
       </Shell>
     );
   }

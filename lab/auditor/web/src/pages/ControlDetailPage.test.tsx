@@ -74,12 +74,32 @@ describe("ControlDetailPage", () => {
     expect(deviceLink).toHaveAttribute("href", "/devices/device-insecure");
   });
 
-  it("renders an error state when the control cannot be found", async () => {
+  it("renders a not-found state when the control ID does not match any known control", async () => {
+    // Reflects the real backend contract (auditor-api main.py get_control_verdicts):
+    // an unknown-but-syntactically-valid control_id resolves with HTTP 200 and an
+    // empty rollup, it does NOT reject/404. The page must detect "not found" by
+    // noticing the ID is absent from the resolved /controls list, not by an error.
     vi.spyOn(api, "controls").mockResolvedValue([]);
-    vi.spyOn(api, "controlVerdicts").mockRejectedValue(new Error("control not found"));
+    vi.spyOn(api, "controlVerdicts").mockResolvedValue({
+      control_id: "SA-IOT-002",
+      verdicts: [],
+      counts: { PASS: 0, FAIL: 0, PARTIAL: 0, INCONCLUSIVE: 0 },
+    });
 
     renderPage();
 
-    expect(await screen.findByText(/control not found/i)).toBeInTheDocument();
+    expect(await screen.findByText(/No control found with ID "SA-IOT-002"/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to controls/i })).toHaveAttribute("href", "/controls");
+    // Must not be stuck showing the loading skeleton.
+    expect(screen.queryByText(/pass \/ fail conditions/i)).not.toBeInTheDocument();
+  });
+
+  it("renders an error state when the controls fetch itself fails", async () => {
+    vi.spyOn(api, "controls").mockRejectedValue(new Error("network unreachable"));
+    vi.spyOn(api, "controlVerdicts").mockRejectedValue(new Error("network unreachable"));
+
+    renderPage();
+
+    expect(await screen.findByText(/network unreachable/i)).toBeInTheDocument();
   });
 });
