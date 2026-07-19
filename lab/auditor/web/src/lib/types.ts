@@ -102,7 +102,18 @@ export interface DeviceService {
   enabled: boolean;
 }
 
-export interface Device {
+/**
+ * Fields present in EVERY device object the API returns, regardless of which
+ * endpoint produced it. Verified against `lab/auditor/api/main.py`:
+ *   - GET  /devices          (list, main.py:690-742)   — full row incl. registered/counts/services
+ *   - POST /devices          (main.py:642-687)          — no evidence_count/verdict_count
+ *   - PATCH /devices/{id}    (main.py:830-863)           — no registered/evidence_count/verdict_count
+ *   - GET  /devices/{id}     (.device, main.py:772-807, via _device_row) — no registered/counts/services
+ * Only the fields common to all four live here; endpoint-specific extras are
+ * added by the narrower types below instead of being declared (and lied
+ * about) on every device object.
+ */
+export interface DeviceBase {
   device_id: string;
   display_name: string;
   description: string;
@@ -114,14 +125,34 @@ export interface Device {
   owner: string | null;
   notes: string | null;
   source: "seeded" | "manual" | null;
+}
+
+/**
+ * Shape returned by GET /devices — the only endpoint that includes
+ * registration status and the evidence/verdict counts. This is the type the
+ * Devices list page consumes.
+ */
+export interface Device extends DeviceBase {
   registered: boolean;
   evidence_count: number;
   verdict_count: number;
   services: DeviceService[];
 }
 
+/**
+ * Shape returned by POST /devices and PATCH /devices/{id}: the created/
+ * updated record with its services, but never the list-only evidence/verdict
+ * counts. `registered` is optional (not `| undefined` in a union) because
+ * POST's response always includes it (`true`) while PATCH's response omits
+ * the field entirely — an optional property models both truthfully.
+ */
+export interface DeviceMutationResult extends DeviceBase {
+  services: DeviceService[];
+  registered?: boolean;
+}
+
 export interface DeviceDetail {
-  device: Device;
+  device: DeviceBase;
   services: DeviceService[];
   evidence: Array<{
     evidence_id: string;

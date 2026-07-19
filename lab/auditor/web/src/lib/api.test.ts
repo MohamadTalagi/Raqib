@@ -99,4 +99,57 @@ describe("device api", () => {
 
     expect(detail.device.device_id).toBe("d1");
   });
+
+  it("issues a PATCH and returns the updated record", async () => {
+    const updated = { device_id: "d1", display_name: "Renamed", services: [] };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => updated,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await api.updateDevice("d1", { display_name: "Renamed" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/devices/d1"),
+      expect.objectContaining({
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ display_name: "Renamed" }),
+      }),
+    );
+    expect(result.display_name).toBe("Renamed");
+  });
+
+  it("resolves on a 204 with no body and does not attempt to parse one", async () => {
+    const jsonSpy = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 204,
+        json: jsonSpy,
+      }),
+    );
+
+    await expect(api.deleteDevice("d1")).resolves.toBeUndefined();
+    expect(jsonSpy).not.toHaveBeenCalled();
+  });
+
+  it("throws a field-tagged ApiError when delete fails with a {field, detail} body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({ field: "device_id", detail: "device has recorded evidence" }),
+      }),
+    );
+
+    await expect(api.deleteDevice("d1")).rejects.toMatchObject({
+      field: "device_id",
+      message: "device has recorded evidence",
+    });
+  });
 });

@@ -3,7 +3,7 @@ import type {
   ControlVerdictRollup,
   Device,
   DeviceDetail,
-  DeviceSummary,
+  DeviceMutationResult,
   EvidenceRecord,
   RecomputeVerdictsResult,
   ScanJob,
@@ -138,7 +138,7 @@ export type UpdateDevicePayload = Partial<CreateDevicePayload>;
 
 export const api = {
   summary: (): Promise<Summary> => getJson<Summary>("/summary"),
-  devices: (): Promise<DeviceSummary[]> => getJson<DeviceSummary[]>("/devices"),
+  devices: (): Promise<Device[]> => getJson<Device[]>("/devices"),
   evidence: (): Promise<EvidenceRecord[]> => getJson<EvidenceRecord[]>("/evidence"),
   verdicts: (): Promise<VerdictRecord[]> => getJson<VerdictRecord[]>("/verdicts"),
   controls: (): Promise<ControlRecord[]> => getJson<ControlRecord[]>("/controls"),
@@ -154,10 +154,10 @@ export const api = {
 
   device: (deviceId: string): Promise<DeviceDetail> =>
     getJson<DeviceDetail>(`/devices/${deviceId}`),
-  createDevice: (payload: CreateDevicePayload): Promise<Device> =>
-    postJson<Device>("/devices", payload),
-  updateDevice: (deviceId: string, patch: UpdateDevicePayload): Promise<Device> =>
-    patchJson<Device>(`/devices/${deviceId}`, patch),
+  createDevice: (payload: CreateDevicePayload): Promise<DeviceMutationResult> =>
+    postJson<DeviceMutationResult>("/devices", payload),
+  updateDevice: (deviceId: string, patch: UpdateDevicePayload): Promise<DeviceMutationResult> =>
+    patchJson<DeviceMutationResult>(`/devices/${deviceId}`, patch),
   deleteDevice: (deviceId: string): Promise<void> => deleteRequest(`/devices/${deviceId}`),
   controlVerdicts: (controlId: string): Promise<ControlVerdictRollup> =>
     getJson<ControlVerdictRollup>(`/controls/${controlId}/verdicts`),
