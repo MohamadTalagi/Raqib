@@ -22,4 +22,16 @@ describe("DevicesPage", () => {
     expect(screen.getByText("Insecure")).toBeInTheDocument();
     expect(screen.getByText("Hardened")).toBeInTheDocument();
   });
+
+  it("renders a device with evidence but no device record as unregistered", async () => {
+    render(
+      <MemoryRouter>
+        <DevicesPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("link", { name: /device-unregistered-cam/i })).toBeInTheDocument();
+    expect(screen.getByText("Unregistered")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^register$/i })).toBeInTheDocument();
+  });
 });

@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { Plus, X, CheckCircle2, CircleDashed, ArrowUpRight } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { StatusBadge } from "@/components/ui/severity-badge";
+import { RegisterDeviceForm } from "@/components/devices/RegisterDeviceForm";
 import { getDeviceMeta, getTierBadge } from "@/lib/deviceMeta";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
@@ -18,9 +21,11 @@ function verdictCounts(deviceVerdicts: VerdictRecord[]) {
 }
 
 export function DevicesPage() {
-  const devices = useFetch(api.devices, []);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const devices = useFetch(api.devices, [refreshKey]);
   const verdicts = useFetch(api.verdicts, []);
   const [selected, setSelected] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
   const loading = devices.loading || verdicts.loading;
   const error = devices.error ?? verdicts.error;
@@ -30,8 +35,32 @@ export function DevicesPage() {
     [verdicts.data, selected],
   );
 
+  function handleRegistered() {
+    setShowForm(false);
+    setRefreshKey((key) => key + 1);
+  }
+
   return (
     <Shell title="Devices" subtitle="Simulated IoT device profiles in the lab">
+      <div className="mb-4 flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => setShowForm((current) => !current)}
+          className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
+        >
+          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {showForm ? "Cancel" : "Register device"}
+        </button>
+      </div>
+
+      {showForm && (
+        <Card className="mb-6">
+          <CardContent className="pt-5">
+            <RegisterDeviceForm onRegistered={handleRegistered} onCancel={() => setShowForm(false)} />
+          </CardContent>
+        </Card>
+      )}
+
       {error ? (
         <ErrorState message={error} />
       ) : loading || !devices.data ? (
@@ -58,6 +87,7 @@ export function DevicesPage() {
                 className={cn(
                   "cursor-pointer hover:border-[var(--color-border-strong)]",
                   isSelected && "border-[var(--color-brand)]",
+                  !device.registered && "opacity-60",
                 )}
                 onClick={() => setSelected(isSelected ? null : device.device_id)}
               >
@@ -76,7 +106,29 @@ export function DevicesPage() {
                       {tier.label}
                     </span>
                   </div>
-                  <p className="mt-3 font-mono text-xs text-[var(--color-text-muted)]">{device.device_id}</p>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <Link
+                      to={`/devices/${device.device_id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-0.5 font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-brand)] hover:underline"
+                    >
+                      {device.device_id}
+                      <ArrowUpRight className="h-3 w-3" />
+                    </Link>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 text-[10px] font-medium tracking-wide uppercase",
+                        device.registered ? "text-[var(--color-pass)]" : "text-[var(--color-text-muted)]",
+                      )}
+                    >
+                      {device.registered ? (
+                        <CheckCircle2 className="h-3 w-3" />
+                      ) : (
+                        <CircleDashed className="h-3 w-3" />
+                      )}
+                      {device.registered ? "Registered" : "Unregistered"}
+                    </span>
+                  </div>
                   <p className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{meta.label}</p>
                   <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-text-secondary)]">
                     {meta.description}
@@ -88,9 +140,23 @@ export function DevicesPage() {
                     <span className="text-[var(--color-text-muted)]">
                       Verdicts <span className="font-mono-tabular text-[var(--color-text)]">{device.verdict_count}</span>
                     </span>
-                    {counts.fail > 0 && (
-                      <span className="ml-auto font-mono-tabular text-[var(--color-critical)]">{counts.fail} fail</span>
-                    )}
+                    <span className="ml-auto flex items-center gap-3">
+                      {counts.fail > 0 && (
+                        <span className="font-mono-tabular text-[var(--color-critical)]">{counts.fail} fail</span>
+                      )}
+                      {!device.registered && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowForm(true);
+                          }}
+                          className="font-medium text-[var(--color-brand)] hover:underline"
+                        >
+                          Register
+                        </button>
+                      )}
+                    </span>
                   </div>
                 </CardContent>
               </Card>

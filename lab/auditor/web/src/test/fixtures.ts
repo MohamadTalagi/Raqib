@@ -1,4 +1,4 @@
-import type { ControlRecord, DeviceSummary, EvidenceRecord, Summary, VerdictRecord } from "@/lib/types";
+import type { ControlRecord, Device, EvidenceRecord, Summary, VerdictRecord } from "@/lib/types";
 
 export const summaryFixture: Summary = {
   total_evidence: 12,
@@ -6,10 +6,75 @@ export const summaryFixture: Summary = {
   verdicts_by_status: { PASS: 4, FAIL: 4, PARTIAL: 0, INCONCLUSIVE: 0 },
 };
 
-export const devicesFixture: DeviceSummary[] = [
-  { device_id: "device-hardened", evidence_count: 2, verdict_count: 2 },
-  { device_id: "device-insecure", evidence_count: 7, verdict_count: 3 },
-  { device_id: "device-partial", evidence_count: 1, verdict_count: 1 },
+export const devicesFixture: Device[] = [
+  {
+    device_id: "device-hardened",
+    display_name: "Smart Camera — Hardened",
+    description: "HTTPS only, strong creds, MQTT over TLS.",
+    tier: "hardened",
+    host: "device-hardened",
+    vendor: "KAUST Labs",
+    model: "SC-3000",
+    location: "Lab Rack A",
+    owner: "auditor-team",
+    notes: null,
+    source: "seeded",
+    registered: true,
+    evidence_count: 2,
+    verdict_count: 2,
+    services: [{ id: 1, service_type: "https", port: 443, published_port: 8083, enabled: true }],
+  },
+  {
+    device_id: "device-insecure",
+    display_name: "Smart Camera — Insecure",
+    description: "Default creds, plain HTTP, Telnet, unencrypted MQTT.",
+    tier: "insecure",
+    host: "device-insecure",
+    vendor: "KAUST Labs",
+    model: "SC-1000",
+    location: "Lab Rack A",
+    owner: "auditor-team",
+    notes: null,
+    source: "seeded",
+    registered: true,
+    evidence_count: 7,
+    verdict_count: 3,
+    services: [{ id: 2, service_type: "http", port: 80, published_port: 8081, enabled: true }],
+  },
+  {
+    device_id: "device-partial",
+    display_name: "Smart Camera — Partially Hardened",
+    description: "Telnet removed, HTTPS with a weak cert, MQTT still unencrypted.",
+    tier: "partial",
+    host: "device-partial",
+    vendor: "KAUST Labs",
+    model: "SC-2000",
+    location: "Lab Rack A",
+    owner: "auditor-team",
+    notes: null,
+    source: "seeded",
+    registered: true,
+    evidence_count: 1,
+    verdict_count: 1,
+    services: [{ id: 3, service_type: "https", port: 443, published_port: 8082, enabled: true }],
+  },
+  {
+    device_id: "device-unregistered-cam",
+    display_name: "Unregistered Test Camera",
+    description: "Has evidence from manual scans but no formal device record yet.",
+    tier: "unknown",
+    host: null,
+    vendor: null,
+    model: null,
+    location: null,
+    owner: null,
+    notes: null,
+    source: null,
+    registered: false,
+    evidence_count: 1,
+    verdict_count: 0,
+    services: [],
+  },
 ];
 
 export const evidenceFixture: EvidenceRecord[] = [
