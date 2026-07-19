@@ -8,7 +8,20 @@ TEST_DB_URL = "postgresql://auditor:auditor-lab-pw@localhost:55432/auditor"
 
 @pytest.fixture
 def conn():
-    connection = psycopg.connect(TEST_DB_URL)
+    try:
+        connection = psycopg.connect(TEST_DB_URL, connect_timeout=2)
+    except psycopg.OperationalError as e:
+        pytest.skip(
+            f"Seed tests require a Postgres database on port 55432: {e}\n"
+            "Start it with:\n"
+            "  docker run -d --rm --name auditor-seed-test-db \\\n"
+            "    -e POSTGRES_DB=auditor -e POSTGRES_USER=auditor "
+            "-e POSTGRES_PASSWORD=auditor-lab-pw \\\n"
+            "    -p 55432:5432 postgres:16-alpine\n"
+            "Then apply migrations:\n"
+            "  docker exec -i auditor-seed-test-db psql -U auditor -d auditor < "
+            "lab/auditor/db/migrations/001-devices.sql"
+        )
     connection.execute("TRUNCATE device_services, devices RESTART IDENTITY CASCADE")
     connection.commit()
     yield connection
@@ -59,3 +72,43 @@ def test_device_ids_are_exactly_the_committed_strings():
         "device-insecure", "device-partial", "device-hardened",
         "mqtt-broker-insecure", "mqtt-broker-secure", "telnet-sim",
     }
+
+
+@pytest.mark.parametrize(
+    "device_id,tier,service_type,port,published_port",
+    [
+        ("device-insecure", "insecure", "http", 80, 8081),
+        ("device-partial", "partial", "https", 443, 8082),
+        ("device-hardened", "hardened", "https", 443, 8083),
+        ("mqtt-broker-insecure", "insecure", "mqtt", 1883, 18830),
+        ("mqtt-broker-secure", "hardened", "mqtts", 8883, None),
+        ("telnet-sim", "insecure", "telnet", 23, None),
+    ],
+)
+def test_seed_data_is_complete_and_correct(
+    conn, device_id, tier, service_type, port, published_port
+):
+    """Verify all six seeded devices have correct (tier, service_type, port, published_port).
+
+    This test ensures the seed data is the single source of truth for device identity
+    before the frontend modules are deleted in a later task. NULL published_port values
+    must genuinely come back as None from the database round-trip.
+    """
+    seed(conn)
+
+    device_row = conn.execute(
+        "SELECT tier FROM devices WHERE device_id = %s",
+        (device_id,),
+    ).fetchone()
+    assert device_row is not None
+    assert device_row[0] == tier
+
+    service_row = conn.execute(
+        """
+        SELECT service_type, port, published_port FROM device_services
+        WHERE device_id = %s AND service_type = %s
+        """,
+        (device_id, service_type),
+    ).fetchone()
+    assert service_row is not None
+    assert service_row == (service_type, port, published_port)
