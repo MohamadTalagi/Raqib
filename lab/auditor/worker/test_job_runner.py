@@ -20,7 +20,10 @@ def test_process_job_runs_whitelisted_command_and_marks_awaiting_finding(mock_ru
         _mock_completed(stdout="Nmap version 7.95\n"),     # tool --version probe
     ]
 
-    process_job({"id": 1, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"})
+    process_job({
+        "id": 1, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN",
+        "host": "device-insecure", "service_type": "http", "port": 80,
+    })
 
     scan_call_args = mock_run.call_args_list[0].args[0]
     assert scan_call_args[0] == "nmap"
@@ -34,7 +37,12 @@ def test_process_job_runs_whitelisted_command_and_marks_awaiting_finding(mock_ru
 
 @patch("job_runner.requests.patch")
 def test_process_job_rejects_disallowed_device_test_combo(mock_patch):
-    process_job({"id": 2, "device_id": "telnet-sim", "test_id": "TEST-AUTH-DEFAULT-CREDS"})
+    # telnet-sim only exposes telnet, so the HTTP-only default-creds test does
+    # not apply - rejected by is_applicable, not a device/test whitelist.
+    process_job({
+        "id": 2, "device_id": "telnet-sim", "test_id": "TEST-AUTH-DEFAULT-CREDS",
+        "host": "telnet-sim", "service_type": "telnet", "port": 23,
+    })
 
     mock_patch.assert_called_once()
     call = mock_patch.call_args
@@ -47,7 +55,10 @@ def test_process_job_rejects_disallowed_device_test_combo(mock_patch):
 def test_process_job_marks_failed_on_timeout(mock_run, mock_patch):
     mock_run.side_effect = subprocess.TimeoutExpired(cmd=["nmap"], timeout=30)
 
-    process_job({"id": 3, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"})
+    process_job({
+        "id": 3, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN",
+        "host": "device-insecure", "service_type": "http", "port": 80,
+    })
 
     final_call = mock_patch.call_args_list[-1]
     assert final_call.kwargs["json"]["status"] == "failed"
@@ -71,3 +82,51 @@ def test_poll_once_processes_every_pending_job(mock_process_job, mock_get):
     assert mock_process_job.call_count == 2
     mock_get.assert_called_once()
     assert mock_get.call_args.kwargs["params"] == {"status": "pending"}
+
+
+import pytest
+
+from device_validation import ValidationError
+from job_runner import resolve_target
+
+
+def test_rejects_malicious_host_written_directly_to_the_database():
+    # Simulates a row that bypassed the API entirely (buggy or older version).
+    # The worker must not trust the database.
+    job = {
+        "id": 1, "device_id": "evil", "test_id": "TEST-NET-PORTSCAN",
+        "host": "--script=http-shellshock", "service_type": "http", "port": 80,
+    }
+    with pytest.raises(ValidationError):
+        resolve_target(job)
+
+
+def test_rejects_out_of_range_host_from_the_database():
+    job = {
+        "id": 2, "device_id": "evil", "test_id": "TEST-NET-PORTSCAN",
+        "host": "10.0.0.5", "service_type": "http", "port": 80,
+    }
+    with pytest.raises(ValidationError):
+        resolve_target(job)
+
+
+def test_rejects_job_whose_device_was_deregistered():
+    # The LEFT JOIN yields NULLs when the device row is gone, so the job must
+    # fail cleanly rather than crash the poll loop.
+    job = {
+        "id": 4, "device_id": "gone", "test_id": "TEST-NET-PORTSCAN",
+        "host": None, "service_type": None, "port": None,
+    }
+    with pytest.raises(ValidationError):
+        resolve_target(job)
+
+
+def test_accepts_a_legitimate_target():
+    job = {
+        "id": 3, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN",
+        "host": "device-insecure", "service_type": "http", "port": 80,
+    }
+    assert resolve_target(job) == {
+        "device_id": "device-insecure", "host": "device-insecure",
+        "service_type": "http", "port": 80,
+    }

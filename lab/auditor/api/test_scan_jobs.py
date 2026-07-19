@@ -71,7 +71,26 @@ def test_get_scan_jobs_lists_created_jobs(client):
     client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"})
     response = client.get("/scan-jobs")
     assert response.status_code == 200
-    assert len(response.json()) == 1
+    jobs = response.json()
+    assert len(jobs) == 1
+    # The worker resolves its target from these fields - they must be joined
+    # in from the current device/service state, not stored on scan_jobs.
+    assert jobs[0]["host"] == "device-insecure"
+    assert jobs[0]["service_type"] == "http"
+    assert jobs[0]["port"] == 80
+
+
+def test_get_scan_jobs_target_is_null_when_device_deregistered(client):
+    _register_device(client, "device-insecure")
+    job = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"}).json()
+    delete_response = client.delete("/devices/device-insecure")
+    assert delete_response.status_code == 204
+
+    jobs = client.get("/scan-jobs").json()
+    matching = next(j for j in jobs if j["id"] == job["id"])
+    assert matching["host"] is None
+    assert matching["service_type"] is None
+    assert matching["port"] is None
 
 
 def test_get_scan_jobs_filters_by_status(client):

@@ -111,6 +111,7 @@ services:
     volumes:
       - ../policies:/work/policies:ro
       - ./auditor/worker:/work/lab/auditor/worker
+      - ./auditor/api/device_validation.py:/work/device_validation.py:ro
       - ../document-store:/work/document-store
     networks:
       - audit-network

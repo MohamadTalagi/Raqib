@@ -2,11 +2,13 @@
 
 This is the only place in the whole platform that actually runs a command
 against a live device. auditor-api never executes anything itself - it only
-manages scan_jobs rows. Every command run here comes from the fixed
-policies.catalog.scan_tests whitelist: device_id/test_id are re-validated
-against that catalog before anything runs, and commands are built as argv
-lists (subprocess.run without shell=True), so there is no interpolation of
-free-form text into a shell.
+manages scan_jobs rows. The database is treated as untrusted input: the
+target read back from GET /scan-jobs is re-validated by resolve_target
+(the second of two independent validation passes - the API validates at
+registration time, this module validates again at execute time) before any
+command is built, and commands are built as argv lists (subprocess.run
+without shell=True), so there is no interpolation of free-form text into a
+shell.
 """
 import os
 import subprocess
@@ -15,11 +17,27 @@ import time
 
 import requests
 
-from policies.catalog.scan_tests import SCAN_CATALOG, is_allowed
+from device_validation import ValidationError, validate_host, validate_port
+from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
 POLL_INTERVAL_SECONDS = float(os.environ.get("JOB_POLL_INTERVAL_SECONDS", "2"))
 COMMAND_TIMEOUT_SECONDS = 30
+
+
+def resolve_target(job: dict) -> dict:
+    """Re-validate the target read from the database before building a command.
+
+    The database is untrusted input: a row written by a buggy or older API
+    version must still be refused here. This is the second of the two
+    independent validation passes.
+    """
+    return {
+        "device_id": job["device_id"],
+        "host": validate_host(job.get("host", "")),
+        "service_type": job.get("service_type", ""),
+        "port": validate_port(job.get("port")),
+    }
 
 
 def _tool_version(command: list[str]) -> str:
@@ -38,17 +56,22 @@ def _patch(job_id: int, fields: dict) -> None:
 
 def process_job(job: dict) -> None:
     job_id = job["id"]
-    device_id = job["device_id"]
     test_id = job["test_id"]
 
-    if not is_allowed(device_id, test_id):
-        _patch(job_id, {"status": "failed", "error": "device_id/test_id not in the scan catalog"})
+    try:
+        target = resolve_target(job)
+    except ValidationError as exc:
+        _patch(job_id, {"status": "failed", "error": f"invalid target: {exc.message}"})
+        return
+
+    if not is_applicable(target, test_id):
+        _patch(job_id, {"status": "failed", "error": "test does not apply to this service"})
         return
 
     spec = SCAN_CATALOG[test_id]
     _patch(job_id, {"status": "running"})
 
-    command = spec["build_command"](device_id)
+    command = spec["build_command"](target)
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
         raw_output = (result.stdout or "") + (result.stderr or "")
@@ -59,7 +82,7 @@ def process_job(job: dict) -> None:
         _patch(job_id, {"status": "failed", "error": str(exc)})
         return
 
-    observations = spec["parse_observations"](device_id, raw_output)
+    observations = spec["parse_observations"](target, raw_output)
     tool_version = _tool_version(spec["tool_version_command"])
 
     _patch(job_id, {

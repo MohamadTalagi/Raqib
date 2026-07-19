@@ -218,18 +218,43 @@ def post_scan_job(payload: dict):
 
 @app.get("/scan-jobs")
 def get_scan_jobs(status: str | None = None):
+    # The worker resolves each job's target (host/service_type/port) from the
+    # current device state via this LEFT JOIN, rather than from columns on
+    # scan_jobs itself - scan_jobs stays a pure audit row (device_id, test_id
+    # only), and a deregistered device yields NULLs that resolve_target must
+    # reject rather than a KeyError that would crash the poll loop.
     conn = get_connection()
     try:
-        query = f"SELECT {SCAN_JOB_COLUMNS} FROM scan_jobs WHERE 1=1"
+        query = """
+            SELECT j.id, j.device_id, j.test_id, j.status, j.tool, j.tool_version,
+                   j.command, j.raw_output, j.observations, j.error, j.evidence_id,
+                   j.created_at, j.updated_at,
+                   d.host, s.service_type, s.port
+            FROM scan_jobs j
+            LEFT JOIN devices d ON d.device_id = j.device_id
+            LEFT JOIN LATERAL (
+                SELECT service_type, port FROM device_services
+                WHERE device_id = j.device_id AND enabled = true
+                ORDER BY id LIMIT 1
+            ) s ON true
+            WHERE 1=1
+        """
         params: list = []
         if status is not None:
-            query += " AND status = %s"
+            query += " AND j.status = %s"
             params.append(status)
-        query += " ORDER BY id DESC"
+        query += " ORDER BY j.created_at"
         rows = conn.execute(query, params).fetchall()
     finally:
         conn.close()
-    return [_row_to_scan_job(row) for row in rows]
+    jobs = []
+    for row in rows:
+        job = _row_to_scan_job(row[:13])
+        job["host"] = row[13]
+        job["service_type"] = row[14]
+        job["port"] = row[15]
+        jobs.append(job)
+    return jobs
 
 
 @app.get("/scan-jobs/{job_id}")
