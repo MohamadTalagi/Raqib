@@ -38,6 +38,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(ValidationError)
+async def validation_error_handler(request, exc: ValidationError):
+    return JSONResponse(
+        status_code=400, content={"field": exc.field, "detail": exc.message}
+    )
+
 SCHEMA_PATH = Path("/work/policies/schema/evidence.schema.json")
 
 
@@ -734,7 +741,9 @@ def update_device(device_id: str, payload: dict) -> dict:
     validate_device_id(device_id)
     updates = {k: v for k, v in payload.items() if k in PATCHABLE_DEVICE_FIELDS}
     if not updates:
-        raise HTTPException(status_code=400, detail="no updatable fields supplied")
+        return JSONResponse(
+            status_code=400, content={"field": "body", "detail": "no updatable fields supplied"}
+        )
 
     try:
         if "host" in updates:

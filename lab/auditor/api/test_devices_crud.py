@@ -174,3 +174,30 @@ def test_add_and_remove_a_service(client):
 
     assert client.delete(f"/devices/test-camera/services/{service_id}").status_code == 204
     assert len(client.get("/devices/test-camera").json()["services"]) == 1
+
+
+def test_get_device_with_malformed_device_id_returns_400_with_field(client):
+    response = client.get("/devices/Bad_Device")
+    assert response.status_code == 400
+    body = response.json()
+    assert body["field"] == "device_id"
+    assert "device_id must be" in body["detail"]
+
+
+def test_delete_device_with_malformed_device_id_returns_400_with_field(client):
+    response = client.delete("/devices/Bad_Device")
+    assert response.status_code == 400
+    body = response.json()
+    assert body["field"] == "device_id"
+    assert "device_id must be" in body["detail"]
+
+
+def test_patch_device_with_no_updatable_fields_returns_400_with_body_field(client):
+    client.post("/devices", json=_payload())
+    response = client.patch(
+        "/devices/test-camera", json={"device_id": "hacked"}
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["field"] == "body"
+    assert "no updatable fields supplied" in body["detail"]
