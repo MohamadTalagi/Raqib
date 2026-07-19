@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, X, CheckCircle2, CircleDashed, ArrowUpRight } from "lucide-react";
+import { Plus, X, CheckCircle2, CircleDashed, ArrowUpRight, HardDrive } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { StatusBadge } from "@/components/ui/severity-badge";
 import { RegisterDeviceForm } from "@/components/devices/RegisterDeviceForm";
-import { getDeviceMeta, getTierBadge } from "@/lib/deviceMeta";
+import { getTierBadge } from "@/lib/deviceTier";
+import { serviceIcon } from "@/lib/serviceIcons";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -74,10 +75,9 @@ export function DevicesPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {devices.data.map((device) => {
-            const meta = getDeviceMeta(device.device_id);
-            const tier = getTierBadge(meta.tier);
+            const tier = getTierBadge(device.tier);
             const TierIcon = tier.icon;
-            const Icon = meta.icon;
+            const Icon = device.services[0] ? serviceIcon(device.services[0].service_type) : HardDrive;
             const counts = verdictCounts((verdicts.data ?? []).filter((v) => v.device_id === device.device_id));
             const isSelected = selected === device.device_id;
 
@@ -129,9 +129,9 @@ export function DevicesPage() {
                       {device.registered ? "Registered" : "Unregistered"}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{meta.label}</p>
+                  <p className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{device.display_name}</p>
                   <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-text-secondary)]">
-                    {meta.description}
+                    {device.description}
                   </p>
                   <div className="mt-4 flex items-center gap-4 border-t border-[var(--color-border)] pt-3 text-xs">
                     <span className="text-[var(--color-text-muted)]">

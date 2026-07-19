@@ -6,6 +6,8 @@ import { EvidencePage } from "@/pages/EvidencePage";
 import { VerdictsPage } from "@/pages/VerdictsPage";
 import { RunScanPage } from "@/pages/RunScanPage";
 import { DeviceConsolePage } from "@/pages/DeviceConsolePage";
+import { ControlsPage } from "@/pages/ControlsPage";
+import { ControlDetailPage } from "@/pages/ControlDetailPage";
 
 export default function App() {
   return (
@@ -18,6 +20,8 @@ export default function App() {
         <Route path="/verdicts" element={<VerdictsPage />} />
         <Route path="/run-scan" element={<RunScanPage />} />
         <Route path="/console" element={<DeviceConsolePage />} />
+        <Route path="/controls" element={<ControlsPage />} />
+        <Route path="/controls/:controlId" element={<ControlDetailPage />} />
       </Routes>
     </BrowserRouter>
   );

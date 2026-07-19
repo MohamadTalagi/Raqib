@@ -65,7 +65,7 @@ export interface Summary {
 export interface ScanTestSpec {
   test_id: string;
   label: string;
-  allowed_devices: string[];
+  applicable_service_types: ServiceType[];
 }
 
 export type ScanJobStatus = "pending" | "running" | "awaiting_finding" | "recorded" | "failed";

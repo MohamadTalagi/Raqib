@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/state";
 import { api, ApiError } from "@/lib/api";
 import { useFetch } from "@/lib/useFetch";
-import type { ScanJob } from "@/lib/types";
+import type { ScanJob, ServiceType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 1200;
@@ -54,6 +54,7 @@ const STATUS_COPY: Record<ScanJob["status"], { label: string; tone: string }> = 
 };
 
 export function RunScanPage() {
+  const devices = useFetch(api.devices, []);
   const scanTests = useFetch(api.scanTests, []);
   const [deviceId, setDeviceId] = useState<string>("");
   const [testId, setTestId] = useState<string>("");
@@ -67,10 +68,21 @@ export function RunScanPage() {
 
   const [job, setJob] = useScanJob(jobId);
 
-  const availableDevices = Array.from(
-    new Set((scanTests.data ?? []).flatMap((t) => t.allowed_devices)),
+  // Registered devices are the only valid scan targets - a scan job resolves
+  // its target from the devices table, so an unregistered device has no
+  // enabled service for the worker to hit.
+  const registeredDevices = (devices.data ?? []).filter((d) => d.registered);
+
+  const selectedDevice = registeredDevices.find((d) => d.device_id === deviceId);
+  const deviceServiceTypes = new Set<ServiceType>(
+    (selectedDevice?.services ?? []).filter((s) => s.enabled).map((s) => s.service_type),
   );
-  const testsForDevice = (scanTests.data ?? []).filter((t) => t.allowed_devices.includes(deviceId));
+  // A test applies to a device if any of the test's applicable service types
+  // matches one of the service types that device actually exposes - an
+  // intersection, not a lookup of the device by name against a fixed list.
+  const testsForDevice = (scanTests.data ?? []).filter((t) =>
+    t.applicable_service_types.some((st) => deviceServiceTypes.has(st)),
+  );
 
   async function handleRun() {
     setLaunchError(null);
@@ -109,10 +121,12 @@ export function RunScanPage() {
     }
   }
 
+  const pageError = devices.error ?? scanTests.error;
+
   return (
     <Shell title="Run Scan" subtitle="Trigger a real, whitelisted test against a live device from here">
-      {scanTests.error ? (
-        <ErrorState message={scanTests.error} />
+      {pageError ? (
+        <ErrorState message={pageError} />
       ) : (
         <div className="space-y-6">
           <Card>
@@ -134,9 +148,9 @@ export function RunScanPage() {
                   className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
                 >
                   <option value="">Select a device…</option>
-                  {availableDevices.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
+                  {registeredDevices.map((d) => (
+                    <option key={d.device_id} value={d.device_id}>
+                      {d.device_id}
                     </option>
                   ))}
                 </select>
