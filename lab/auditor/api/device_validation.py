@@ -15,7 +15,7 @@ ALLOWED_NETWORK = ipaddress.ip_network("172.30.0.0/24")
 
 # The auditor is not an audit target.
 INFRASTRUCTURE_HOSTS = frozenset(
-    {"auditor-api", "auditor-database", "auditor-web", "auditor-worker", "localhost"}
+    {"auditor-api", "auditor-database", "auditor-web", "auditor-worker"}
 )
 
 # Leading char must be alphanumeric: that is what stops a value like
@@ -62,9 +62,17 @@ def validate_host(value: str) -> str:
             )
         return value
 
-    # Reject any dotted form that is not a valid IP but looks like one, so
-    # "0172.030.0.1" cannot slip through as a hostname.
-    if re.fullmatch(r"[0-9a-fA-FxX.:]+", value):
+    # Reject loopback aliases (localhost is a name for 127.0.0.1, which fails the
+    # IP range check above).
+    if value == "localhost":
+        raise ValidationError(
+            "host", "localhost is a loopback alias and cannot be a target"
+        )
+
+    # Reject any dotted or colon-separated form that is not a valid IP but looks
+    # like one, so "0172.030.0.1" cannot slip through as a hostname. Only apply
+    # this guard to strings that actually have dots or colons (the shape of IPs).
+    if ("." in value or ":" in value) and re.fullmatch(r"[0-9a-fA-FxX.:]+", value):
         raise ValidationError("host", "host looks like an IP but is not a valid address")
 
     if value in INFRASTRUCTURE_HOSTS:
