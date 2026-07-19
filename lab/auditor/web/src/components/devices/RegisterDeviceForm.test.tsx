@@ -52,6 +52,46 @@ describe("RegisterDeviceForm", () => {
     expect(await screen.findByText(/172\.30\.0\.0\/24/)).toBeInTheDocument();
   });
 
+  it("shows a service-row API error even though the backend doesn't say which row", async () => {
+    vi.spyOn(api, "createDevice").mockRejectedValue(
+      new ApiError("port must be between 1 and 65535", 400, "port"),
+    );
+
+    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/device id/i), {
+      target: { value: "test-camera" },
+    });
+    fireEvent.change(screen.getByLabelText(/display name/i), {
+      target: { value: "Test Camera" },
+    });
+    fireEvent.change(screen.getByLabelText(/host/i), {
+      target: { value: "test-camera" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /register device/i }));
+
+    expect(await screen.findByText(/port must be between 1 and 65535/)).toBeInTheDocument();
+  });
+
+  it("still surfaces the message for a field name the frontend does not recognize", async () => {
+    vi.spyOn(api, "createDevice").mockRejectedValue(
+      new ApiError("some future validation failed", 400, "some_future_field"),
+    );
+
+    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/device id/i), {
+      target: { value: "test-camera" },
+    });
+    fireEvent.change(screen.getByLabelText(/display name/i), {
+      target: { value: "Test Camera" },
+    });
+    fireEvent.change(screen.getByLabelText(/host/i), {
+      target: { value: "test-camera" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /register device/i }));
+
+    expect(await screen.findByText(/some future validation failed/)).toBeInTheDocument();
+  });
+
   it("can add and remove service rows", async () => {
     render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
     expect(screen.getAllByLabelText(/service type/i)).toHaveLength(1);

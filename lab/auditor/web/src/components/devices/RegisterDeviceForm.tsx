@@ -54,6 +54,27 @@ interface FormError {
   message: string;
 }
 
+// Every `field` value the backend's validation can send in a 400 response —
+// see validate_device_id/validate_host/validate_port/validate_service_type
+// and the tier/display_name/services checks in
+// lab/auditor/api/device_validation.py and _validate_device_payload in
+// lab/auditor/api/main.py. Each of these has a dedicated inline renderer
+// below (fieldError() for the top-level fields, serviceFieldError() for the
+// three service-row fields, which the backend reports without a row index).
+// Keep this set in sync with the backend: any field NOT in this set falls
+// through to the banner instead of vanishing, so a backend field added later
+// still surfaces its message even before a matching inline renderer exists.
+const KNOWN_ERROR_FIELDS = new Set<string>([
+  "device_id",
+  "display_name",
+  "host",
+  "tier",
+  "services",
+  "service_type",
+  "port",
+  "published_port",
+]);
+
 interface RegisterDeviceFormProps {
   onRegistered: (device: DeviceMutationResult) => void;
   onCancel: () => void;
@@ -129,6 +150,18 @@ export function RegisterDeviceForm({ onRegistered, onCancel }: RegisterDeviceFor
 
   function fieldError(name: string) {
     if (error?.field !== name) return null;
+    return <p className="mt-1 text-xs text-[var(--color-critical)]">{error.message}</p>;
+  }
+
+  // service_type/port/published_port errors come back from the backend as a
+  // bare field name with no row index (see device_validation.py), so we
+  // can't know which service row was at fault. Render the message once
+  // against the repeater as a whole rather than inventing an indexing
+  // convention the backend doesn't send.
+  function serviceFieldError() {
+    if (!error?.field || !["service_type", "port", "published_port"].includes(error.field)) {
+      return null;
+    }
     return <p className="mt-1 text-xs text-[var(--color-critical)]">{error.message}</p>;
   }
 
@@ -323,9 +356,12 @@ export function RegisterDeviceForm({ onRegistered, onCancel }: RegisterDeviceFor
           <Plus className="h-3.5 w-3.5" /> Add service
         </button>
         {fieldError("services")}
+        {serviceFieldError()}
       </div>
 
-      {error && !error.field && <p className="text-sm text-[var(--color-critical)]">{error.message}</p>}
+      {error && !KNOWN_ERROR_FIELDS.has(error.field ?? "") && (
+        <p className="text-sm text-[var(--color-critical)]">{error.message}</p>
+      )}
 
       <div className="flex gap-2">
         <button
