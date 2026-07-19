@@ -30,7 +30,7 @@ services:
     networks:
       - audit-network
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "23"]
+      test: ["CMD-SHELL", "nc -w 2 127.0.0.1 23 < /dev/null"]
       interval: 10s
       timeout: 3s
       retries: 3
