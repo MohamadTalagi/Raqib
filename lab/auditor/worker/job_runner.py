@@ -17,7 +17,12 @@ import time
 
 import requests
 
-from device_validation import ValidationError, validate_host, validate_port
+from device_validation import (
+    ValidationError,
+    validate_host,
+    validate_port,
+    validate_service_type,
+)
 from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
@@ -35,7 +40,7 @@ def resolve_target(job: dict) -> dict:
     return {
         "device_id": job["device_id"],
         "host": validate_host(job.get("host", "")),
-        "service_type": job.get("service_type", ""),
+        "service_type": validate_service_type(job.get("service_type", "")),
         "port": validate_port(job.get("port")),
     }
 

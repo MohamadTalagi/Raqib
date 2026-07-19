@@ -75,6 +75,29 @@ def validate_host(value: str) -> str:
     if ("." in value or ":" in value) and re.fullmatch(r"[0-9a-fA-FxX.:]+", value):
         raise ValidationError("host", "host looks like an IP but is not a valid address")
 
+    # glibc's getaddrinfo (used by nmap's resolver, curl, requests, etc.) does
+    # not require dotted-quad notation: it also accepts a bare integer
+    # ("134744072") or a 0x/0X-prefixed hex string ("0x8080808") and resolves
+    # it as an IPv4 address via inet_aton semantics - both of those examples
+    # resolve to 8.8.8.8. Neither form contains a "." or ":", so the guard
+    # above never sees them, and NAME_PATTERN happily matches them because
+    # they are valid lowercase-alphanumeric strings. A real container name is
+    # never also a valid integer/hex literal, so reject any host that parses
+    # cleanly as one with Python's own int-literal grammar before treating it
+    # as a container name. Do not delete this thinking it is redundant with
+    # NAME_PATTERN - it is the only thing that catches this bypass.
+    try:
+        int(value, 0)
+    except ValueError:
+        pass
+    else:
+        raise ValidationError(
+            "host",
+            "host is a bare integer or hex value, which resolves as an IP "
+            "address via inet_aton semantics and is not accepted as a "
+            "container name",
+        )
+
     if value in INFRASTRUCTURE_HOSTS:
         raise ValidationError("host", f"{value} is infrastructure and cannot be a target")
 

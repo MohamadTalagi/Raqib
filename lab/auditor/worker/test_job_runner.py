@@ -121,6 +121,18 @@ def test_rejects_job_whose_device_was_deregistered():
         resolve_target(job)
 
 
+def test_rejects_bogus_service_type_from_the_database():
+    # resolve_target's docstring promises host AND port get re-validated on
+    # this second pass; service_type must get the same treatment, since it is
+    # read raw from the (untrusted) database row just like host and port are.
+    job = {
+        "id": 5, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN",
+        "host": "device-insecure", "service_type": "gopher", "port": 80,
+    }
+    with pytest.raises(ValidationError):
+        resolve_target(job)
+
+
 def test_accepts_a_legitimate_target():
     job = {
         "id": 3, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN",

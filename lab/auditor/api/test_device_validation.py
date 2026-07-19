@@ -90,3 +90,35 @@ def test_infrastructure_hosts_exact_set():
     # INFRASTRUCTURE_HOSTS must contain exactly the four auditor-* names, not localhost
     expected = {"auditor-api", "auditor-database", "auditor-web", "auditor-worker"}
     assert INFRASTRUCTURE_HOSTS == expected
+
+
+def test_integer_form_of_ip_rejected():
+    # glibc's getaddrinfo resolves this bare integer as 8.8.8.8 via inet_aton
+    # semantics, even though it has neither "." nor ":" and matches NAME_PATTERN.
+    with pytest.raises(ValidationError):
+        validate_host("134744072")
+
+
+def test_hex_form_of_ip_rejected():
+    # Hex form of 8.8.8.8 - contains no "." or ":" either, and NAME_PATTERN
+    # matches it too, so it must be caught by the integer/hex literal check.
+    with pytest.raises(ValidationError):
+        validate_host("0x8080808")
+
+
+def test_integer_form_of_in_range_ip_still_rejected():
+    # Integer form of 172.30.0.1 (an in-range address). The point isn't that
+    # the resolved address happens to be in range - it's that this notation
+    # is never an acceptable host value in the first place.
+    with pytest.raises(ValidationError):
+        validate_host("2887778305")
+
+
+def test_bare_number_rejected():
+    with pytest.raises(ValidationError):
+        validate_host("12345")
+
+
+def test_legitimate_names_still_accepted():
+    for hostname in ("device-insecure", "cam2", "a1"):
+        assert validate_host(hostname) == hostname
