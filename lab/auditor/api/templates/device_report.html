@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Device Security Assessment — {{ device.display_name }}</title></head>
+<body>
+
+<h1>{{ device.display_name }}</h1>
+<p class="subtitle mono">{{ device.device_id }} &middot; {{ device.tier }} &middot; {{ device.host }}</p>
+<p class="cite">Assessed against NCA CGIoT-1:2024 &middot; generated {{ generated_at }}</p>
+
+<h2>1. Device profile</h2>
+<div class="grid">
+  {% for label, value in [
+      ("Vendor", device.vendor), ("Model", device.model), ("Location", device.location),
+      ("Owner", device.owner), ("Notes", device.notes), ("Source", device.source)] %}
+  <div>
+    <div class="label">{{ label }}</div>
+    {% if value %}<div class="value">{{ value }}</div>
+    {% else %}<div class="value empty">Not recorded</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% if device.description %}<p class="value" style="margin-top:3mm">{{ device.description }}</p>{% endif %}
+
+<h2>2. Exposed services</h2>
+<p class="cite">Internal port is what the auditor targets inside the lab network. Published port is what a browser on the host reaches.</p>
+{% if services %}
+<table>
+  <thead><tr><th>Service</th><th>Internal port</th><th>Published port</th><th>Enabled</th></tr></thead>
+  <tbody>
+  {% for s in services %}
+    <tr>
+      <td class="mono">{{ s.service_type }}</td>
+      <td class="mono">{{ s.port }}</td>
+      <td class="mono">{% if s.published_port %}{{ s.published_port }}{% else %}<span class="empty">not browser-reachable</span>{% endif %}</td>
+      <td>{{ "yes" if s.enabled else "no" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No services recorded for this device.</p>{% endif %}
+
+<h2>3. Compliance summary</h2>
+{% if controls %}
+<p class="cite">
+  {{ counts.PASS }} pass &middot; {{ counts.FAIL }} fail &middot;
+  {{ counts.PARTIAL }} partial &middot; {{ counts.INCONCLUSIVE }} inconclusive
+</p>
+<table>
+  <thead><tr><th>Control</th><th>Title</th><th>Severity</th><th>Reference</th><th>Verdict</th></tr></thead>
+  <tbody>
+  {% for c in controls %}
+    <tr>
+      <td class="mono">{{ c.control_id }}</td>
+      <td>{% if c.title %}{{ c.title }}{% else %}<span class="incomplete">control definition unavailable</span>{% endif %}</td>
+      <td>{{ c.severity }}</td>
+      <td class="mono">{% if c.framework %}{{ c.framework }} &sect;{{ c.reference }}{% else %}&mdash;{% endif %}</td>
+      <td class="status status-{{ c.status }}">{{ c.status }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No compliance verdicts recorded for this device.</p>{% endif %}
+
+<h2>4. Findings</h2>
+{% if controls %}
+  {% for c in controls %}
+  <div class="finding">
+    <div><span class="mono">{{ c.control_id }}</span> &mdash;
+      <span class="status status-{{ c.status }}">{{ c.status }}</span>
+      {% if c.title %}&middot; {{ c.title }}{% endif %}
+    </div>
+    {% if c.clause %}<div class="clause">&ldquo;{{ c.clause }}&rdquo;</div>
+    {% else %}<div class="clause incomplete">Control definition unavailable; verdict shown from stored record.</div>{% endif %}
+    <div class="reason">{{ c.reason }}</div>
+    {% if c.remediation %}<div class="remediation"><strong>Remediation.</strong> {{ c.remediation }}</div>{% endif %}
+  </div>
+  {% endfor %}
+{% else %}<p class="empty-state">No findings recorded for this device.</p>{% endif %}
+
+<h2>5. Evidence provenance</h2>
+{% if evidence %}
+<p class="cite">Each record is reproducible from its command and verifiable against its SHA-256.</p>
+<table class="provenance">
+  <thead><tr><th>Evidence</th><th>Tool</th><th>Command</th><th>Finding</th><th>Confidence</th><th>SHA-256</th></tr></thead>
+  <tbody>
+  {% for e in evidence %}
+    <tr>
+      <td class="mono">{{ e.evidence_id }}<br><span class="cite">{{ e.timestamp }}</span></td>
+      <td class="mono">{{ e.tool }}<br><span class="cite">{{ e.tool_version }}</span></td>
+      <td class="mono">{{ e.command }}</td>
+      <td>{{ e.finding }}</td>
+      <td>{{ e.confidence }}</td>
+      <td class="mono">{{ e.sha256 }}<br><span class="cite">{{ e.raw_output_path }}</span></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No evidence recorded for this device.</p>{% endif %}
+
+</body>
+</html>

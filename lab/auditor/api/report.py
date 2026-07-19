@@ -130,3 +130,35 @@ def build_report_model(conn, device_id: str) -> dict | None:
         "evidence": evidence,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+
+
+TEMPLATE_DIR = Path(__file__).parent / "templates"
+
+
+def render_report_pdf(model: dict) -> bytes:
+    """Render the report model to PDF bytes. This is the only WeasyPrint step."""
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    from weasyprint import CSS, HTML
+    from weasyprint.text.fonts import FontConfiguration
+
+    env = Environment(
+        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        autoescape=select_autoescape(["html"]),
+    )
+    html = env.get_template("device_report.html").render(**model)
+
+    # font_config MUST be passed to BOTH CSS() and write_pdf(), or WeasyPrint
+    # silently ignores every @font-face rule and falls back to DejaVu Sans.
+    # The fallback is invisible to the eye: DejaVu covers the section sign, the
+    # em-dash and hex digits, and has distinct weights, so a rendered PDF looks
+    # correct while using none of the vendored fonts. Verify with `pdffonts`,
+    # never by looking.
+    font_config = FontConfiguration()
+
+    # base_url lets the stylesheet's relative ../assets/fonts/ paths resolve.
+    return HTML(string=html, base_url=str(TEMPLATE_DIR)).write_pdf(
+        stylesheets=[
+            CSS(filename=str(TEMPLATE_DIR / "report.css"), font_config=font_config)
+        ],
+        font_config=font_config,
+    )

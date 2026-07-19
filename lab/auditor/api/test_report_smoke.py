@@ -143,3 +143,86 @@ def test_omitting_font_config_reproduces_the_dejavu_fallback() -> None:
         "no longer reproduces, WeasyPrint's default behaviour changed"
     )
     assert b"Inter" not in inflated
+
+
+# Reused by test_renders_the_real_template_end_to_end and by the manual
+# render-and-open step (see .superpowers/sdd/task-3-report.md) so the sample
+# used for a visual check is exactly the sample covered by an automated test.
+SAMPLE_MODEL = {
+    "device": {
+        "device_id": "device-insecure", "display_name": "Smart Camera — Insecure",
+        "description": "Default creds, plain HTTP.", "tier": "insecure",
+        "host": "device-insecure", "vendor": "AcmeCam", "model": None,
+        "location": None, "owner": None, "notes": None, "source": "seeded",
+        "created_at": "2026-07-19T00:00:00+00:00",
+        "updated_at": "2026-07-19T00:00:00+00:00",
+    },
+    "services": [
+        {"service_type": "http", "port": 80, "published_port": 8081, "enabled": True},
+        {"service_type": "mqtt", "port": 1883, "published_port": None, "enabled": True},
+    ],
+    "controls": [
+        {
+            "control_id": "SA-IOT-002", "title": "No default or hard-coded credentials",
+            "severity": "high", "framework": "CGIoT-1:2024", "reference": "2-2-2",
+            "clause": "Prevent the users from using default and hard-coded passwords.",
+            "remediation": "Force a unique strong password on first boot.",
+            "status": "FAIL", "reason": "observations.default_creds equals True",
+            "verdict_id": "VD-1", "timestamp": "2026-07-08T08:58:44+00:00",
+            "control_found": True,
+        },
+        {
+            "control_id": "SA-IOT-999", "title": None, "severity": "high",
+            "framework": None, "reference": None, "clause": None,
+            "remediation": None, "status": "FAIL", "reason": "stored reason",
+            "verdict_id": "VD-2", "timestamp": "2026-07-08T08:58:44+00:00",
+            "control_found": False,
+        },
+    ],
+    "counts": {"PASS": 0, "FAIL": 2, "PARTIAL": 0, "INCONCLUSIVE": 0},
+    "evidence": [
+        {
+            "evidence_id": "EV-1", "test_id": "TEST-AUTH-DEFAULT-CREDS",
+            "tool": "curl", "tool_version": "8.5.0",
+            "command": "curl -s -X POST http://device-insecure/login",
+            "timestamp": "2026-07-08T08:58:44+00:00",
+            "finding": "Default creds admin/admin accepted", "confidence": "high",
+            "raw_output_path": "document-store/raw/EV-1.txt",
+            "sha256": "7421af31aecc115c92498182563413bdb941aed43c90ff7d528544d52945ed61",
+        }
+    ],
+    "generated_at": "2026-07-19T12:00:00+00:00",
+}
+
+
+def test_renders_the_real_template_end_to_end():
+    from report import render_report_pdf
+
+    pdf = render_report_pdf(SAMPLE_MODEL)
+    assert pdf.startswith(b"%PDF-")
+    assert len(pdf) > 3000
+
+
+def test_renders_a_device_with_no_evidence():
+    from report import render_report_pdf
+
+    pdf = render_report_pdf(
+        {
+            "device": {
+                "device_id": "telnet-sim", "display_name": "Telnet Service Simulator",
+                "description": "", "tier": "insecure", "host": "telnet-sim",
+                "vendor": None, "model": None, "location": None, "owner": None,
+                "notes": None, "source": "seeded",
+                "created_at": "2026-07-19T00:00:00+00:00",
+                "updated_at": "2026-07-19T00:00:00+00:00",
+            },
+            "services": [
+                {"service_type": "telnet", "port": 23, "published_port": None, "enabled": True}
+            ],
+            "controls": [],
+            "counts": {"PASS": 0, "FAIL": 0, "PARTIAL": 0, "INCONCLUSIVE": 0},
+            "evidence": [],
+            "generated_at": "2026-07-19T12:00:00+00:00",
+        }
+    )
+    assert pdf.startswith(b"%PDF-")
