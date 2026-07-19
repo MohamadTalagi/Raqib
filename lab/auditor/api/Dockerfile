@@ -1,14 +1,13 @@
 FROM python:3.12-slim
 WORKDIR /app
 
-# WeasyPrint renders via pango/cairo; python:slim ships neither.
+# WeasyPrint 63.1 renders via pango + harfbuzz (pydyf/Pillow replaced the old
+# cairo/gdk-pixbuf pipeline in WeasyPrint 53+). Package list matches what
+# WeasyPrint's own docs specify for Debian/python:3.12-slim.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpango-1.0-0 \
         libpangoft2-1.0-0 \
-        libcairo2 \
-        libgdk-pixbuf-2.0-0 \
-        libffi8 \
-        shared-mime-info \
+        libharfbuzz-subset0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
