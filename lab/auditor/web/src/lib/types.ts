@@ -90,3 +90,77 @@ export interface RecomputeVerdictsResult {
   created: number;
   verdicts: VerdictRecord[];
 }
+
+export type ServiceType = "http" | "https" | "mqtt" | "mqtts" | "telnet" | "ssh";
+export type DeviceTier = "insecure" | "partial" | "hardened" | "unknown";
+
+export interface DeviceService {
+  id: number;
+  service_type: ServiceType;
+  port: number;
+  published_port: number | null;
+  enabled: boolean;
+}
+
+export interface Device {
+  device_id: string;
+  display_name: string;
+  description: string;
+  tier: DeviceTier;
+  host: string | null;
+  vendor: string | null;
+  model: string | null;
+  location: string | null;
+  owner: string | null;
+  notes: string | null;
+  source: "seeded" | "manual" | null;
+  registered: boolean;
+  evidence_count: number;
+  verdict_count: number;
+  services: DeviceService[];
+}
+
+export interface DeviceDetail {
+  device: Device;
+  services: DeviceService[];
+  evidence: Array<{
+    evidence_id: string;
+    test_id: string;
+    tool: string;
+    finding: string;
+    confidence: string;
+    timestamp: string;
+  }>;
+  verdicts: Array<{
+    verdict_id: string;
+    control_id: string;
+    status: string;
+    severity: string;
+    reason: string;
+    timestamp: string;
+  }>;
+  scan_jobs: Array<{
+    id: number;
+    test_id: string;
+    status: string;
+    created_at: string;
+  }>;
+}
+
+export interface ControlVerdictRollup {
+  control_id: string;
+  verdicts: Array<{
+    verdict_id: string;
+    device_id: string;
+    status: string;
+    severity: string;
+    reason: string;
+    timestamp: string;
+  }>;
+  counts: { PASS: number; FAIL: number; PARTIAL: number; INCONCLUSIVE: number };
+}
+
+export interface ApiFieldError {
+  field: string;
+  detail: string;
+}
