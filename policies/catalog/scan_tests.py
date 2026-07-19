@@ -25,8 +25,10 @@ def _scheme_for(target: dict) -> str:
 
 
 def _nmap_command(target: dict) -> list[str]:
-    port = target["port"]
-    return ["nmap", "-sV", "-p", str(port), target["host"]]
+    # Full range, not just the registered port: this test is the evidence
+    # source for the "unnecessary services" control, which requires finding
+    # services BEYOND the ones already registered.
+    return ["nmap", "-sV", "-p-", target["host"]]
 
 
 def _parse_nmap_observations(target: dict, output: str) -> dict:

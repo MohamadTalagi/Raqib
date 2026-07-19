@@ -8,6 +8,10 @@ MQTT_TARGET = {
     "device_id": "mqtt-broker-insecure", "host": "mqtt-broker-insecure",
     "service_type": "mqtt", "port": 1883,
 }
+HTTPS_TARGET = {
+    "device_id": "device-hardened", "host": "device-hardened",
+    "service_type": "https", "port": 443,
+}
 
 
 def test_portscan_applies_to_any_service_type():
@@ -37,17 +41,69 @@ def test_login_command_uses_target_scheme_and_host():
     assert all(isinstance(part, str) for part in command)
 
 
+def test_login_command_omits_insecure_flag_for_http():
+    command = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["build_command"](HTTP_TARGET)
+    assert "-k" not in command
+
+
+def test_login_command_uses_https_and_insecure_flag_for_hardened():
+    command = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["build_command"](HTTPS_TARGET)
+    assert "https://device-hardened/login" in command
+    assert "-k" in command  # self-signed lab certs
+
+
 def test_https_target_builds_https_url_with_insecure_flag():
-    target = {
-        "device_id": "device-hardened", "host": "device-hardened",
-        "service_type": "https", "port": 443,
-    }
-    command = SCAN_CATALOG["TEST-HTTP-HEADERS"]["build_command"](target)
+    command = SCAN_CATALOG["TEST-HTTP-HEADERS"]["build_command"](HTTPS_TARGET)
     assert "https://device-hardened/" in command
     assert "-k" in command  # self-signed lab certs
 
 
-def test_portscan_targets_the_service_port():
+def test_headers_command_omits_insecure_flag_for_http():
+    command = SCAN_CATALOG["TEST-HTTP-HEADERS"]["build_command"](HTTP_TARGET)
+    assert "-k" not in command
+
+
+def test_portscan_scans_the_full_port_range():
     command = SCAN_CATALOG["TEST-NET-PORTSCAN"]["build_command"](MQTT_TARGET)
     assert command[0] == "nmap"
+    assert "-p-" in command
     assert "mqtt-broker-insecure" in command
+
+
+def test_parse_nmap_observations_detects_telnet_open():
+    output = "23/tcp   open  telnet\n80/tcp   open  http\n"
+    obs = SCAN_CATALOG["TEST-NET-PORTSCAN"]["parse_observations"](MQTT_TARGET, output)
+    assert obs == {"open_ports": [23, 80], "telnet_open": True}
+
+
+def test_parse_nmap_observations_no_telnet():
+    output = "80/tcp   open  http\n"
+    obs = SCAN_CATALOG["TEST-NET-PORTSCAN"]["parse_observations"](MQTT_TARGET, output)
+    assert obs == {"open_ports": [80], "telnet_open": False}
+
+
+def test_parse_login_observations_detects_success():
+    obs = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["parse_observations"](
+        HTTP_TARGET, '{"status":"ok","message":"Login successful"}'
+    )
+    assert obs == {"default_creds": True}
+
+
+def test_parse_login_observations_detects_failure():
+    obs = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["parse_observations"](
+        HTTPS_TARGET, '{"detail":"Invalid credentials"}'
+    )
+    assert obs == {"default_creds": False}
+
+
+def test_parse_headers_observations_flags_missing_headers():
+    obs = SCAN_CATALOG["TEST-HTTP-HEADERS"]["parse_observations"](
+        HTTP_TARGET, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
+    )
+    assert obs == {"missing_security_headers": ["X-Frame-Options", "Content-Security-Policy"]}
+
+
+def test_parse_headers_observations_empty_when_present():
+    output = "HTTP/1.1 200 OK\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'self'\r\n"
+    obs = SCAN_CATALOG["TEST-HTTP-HEADERS"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs == {"missing_security_headers": []}
