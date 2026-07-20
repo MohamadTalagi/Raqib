@@ -152,4 +152,17 @@ describe("device api", () => {
       message: "device has recorded evidence",
     });
   });
+
+  it("encodes the device id path segment so special characters don't truncate the request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ device: { device_id: "a b" }, evidence: [], verdicts: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.device("a b");
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("a%20b"));
+  });
 });

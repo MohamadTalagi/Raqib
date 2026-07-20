@@ -153,14 +153,15 @@ export const api = {
     postJson<RecomputeVerdictsResult>("/verdicts/recompute", {}),
 
   device: (deviceId: string): Promise<DeviceDetail> =>
-    getJson<DeviceDetail>(`/devices/${deviceId}`),
+    getJson<DeviceDetail>(`/devices/${encodeURIComponent(deviceId)}`),
   createDevice: (payload: CreateDevicePayload): Promise<DeviceMutationResult> =>
     postJson<DeviceMutationResult>("/devices", payload),
   updateDevice: (deviceId: string, patch: UpdateDevicePayload): Promise<DeviceMutationResult> =>
-    patchJson<DeviceMutationResult>(`/devices/${deviceId}`, patch),
-  deleteDevice: (deviceId: string): Promise<void> => deleteRequest(`/devices/${deviceId}`),
+    patchJson<DeviceMutationResult>(`/devices/${encodeURIComponent(deviceId)}`, patch),
+  deleteDevice: (deviceId: string): Promise<void> =>
+    deleteRequest(`/devices/${encodeURIComponent(deviceId)}`),
   controlVerdicts: (controlId: string): Promise<ControlVerdictRollup> =>
-    getJson<ControlVerdictRollup>(`/controls/${controlId}/verdicts`),
+    getJson<ControlVerdictRollup>(`/controls/${encodeURIComponent(controlId)}/verdicts`),
 
   // Returns a URL rather than fetching: the browser must perform the download
   // itself so the server's Content-Disposition filename is honoured. Fetching

@@ -92,6 +92,20 @@ describe("RegisterDeviceForm", () => {
     expect(await screen.findByText(/some future validation failed/)).toBeInTheDocument();
   });
 
+  it("pre-fills the device id field when an initialDeviceId is given", () => {
+    render(
+      <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} initialDeviceId="device-unregistered-cam" />,
+    );
+
+    expect(screen.getByLabelText(/device id/i)).toHaveValue("device-unregistered-cam");
+  });
+
+  it("leaves the device id field empty when no initialDeviceId is given", () => {
+    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+
+    expect(screen.getByLabelText(/device id/i)).toHaveValue("");
+  });
+
   it("can add and remove service rows", async () => {
     render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
     expect(screen.getAllByLabelText(/service type/i)).toHaveLength(1);

@@ -78,14 +78,23 @@ const KNOWN_ERROR_FIELDS = new Set<string>([
 interface RegisterDeviceFormProps {
   onRegistered: (device: DeviceMutationResult) => void;
   onCancel: () => void;
+  /**
+   * Pre-fills the device ID field — used when the form is opened from an
+   * unregistered device card, where the ID is already known from evidence
+   * and must match exactly for that evidence to attach to the new record.
+   */
+  initialDeviceId?: string;
 }
 
 const INPUT_CLASS =
   "mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-brand)] focus:outline-none";
 const LABEL_CLASS = "text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase";
 
-export function RegisterDeviceForm({ onRegistered, onCancel }: RegisterDeviceFormProps) {
-  const [fields, setFields] = useState<FormFields>(EMPTY_FIELDS);
+export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: RegisterDeviceFormProps) {
+  const [fields, setFields] = useState<FormFields>({
+    ...EMPTY_FIELDS,
+    device_id: initialDeviceId ?? EMPTY_FIELDS.device_id,
+  });
   const [services, setServices] = useState<ServiceRow[]>([{ ...EMPTY_SERVICE }]);
   const [error, setError] = useState<FormError | null>(null);
   const [submitting, setSubmitting] = useState(false);
