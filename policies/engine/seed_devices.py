@@ -66,7 +66,17 @@ SEED_DEVICES = [
 
 
 def seed(conn) -> int:
-    """Insert any missing seed devices. Returns how many devices were inserted."""
+    """Insert any missing seed devices and repair any missing service rows.
+
+    Returns how many *devices* were newly inserted (not how many service rows
+    were touched) - a second run against a fully-seeded database returns 0
+    even though the service inserts below still ran, because they are all
+    ON CONFLICT DO NOTHING no-ops at that point. Service inserts always run,
+    independent of whether the device row was already present, so this can
+    repair a database where a device row survived but its device_services
+    rows were lost - that used to be unreachable because the service inserts
+    were nested inside the "device was newly inserted" branch.
+    """
     inserted = 0
     for device in SEED_DEVICES:
         result = conn.execute(
@@ -80,9 +90,8 @@ def seed(conn) -> int:
                 device["tier"], device["host"],
             ),
         )
-        if result.rowcount == 0:
-            continue
-        inserted += 1
+        if result.rowcount != 0:
+            inserted += 1
         for service in device["services"]:
             conn.execute(
                 """

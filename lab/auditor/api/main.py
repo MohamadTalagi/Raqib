@@ -615,6 +615,12 @@ def get_control_by_id(control_id: str):
     return yaml.safe_load(path.read_text())
 
 
+def _validate_display_name(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("display_name", "display_name is required")
+    return value.strip()
+
+
 def _validate_device_payload(payload: dict) -> dict:
     device_id = validate_device_id(payload.get("device_id", ""))
     host = validate_host(payload.get("host", ""))
@@ -623,9 +629,7 @@ def _validate_device_payload(payload: dict) -> dict:
     if tier not in TIERS:
         raise ValidationError("tier", f"tier must be one of {', '.join(TIERS)}")
 
-    display_name = payload.get("display_name", "")
-    if not isinstance(display_name, str) or not display_name.strip():
-        raise ValidationError("display_name", "display_name is required")
+    display_name = _validate_display_name(payload.get("display_name", ""))
 
     raw_services = payload.get("services", [])
     if not isinstance(raw_services, list) or not raw_services:
@@ -649,7 +653,7 @@ def _validate_device_payload(payload: dict) -> dict:
 
     return {
         "device_id": device_id,
-        "display_name": display_name.strip(),
+        "display_name": display_name,
         "description": payload.get("description", "") or "",
         "tier": tier,
         "host": host,
@@ -910,6 +914,8 @@ def update_device(device_id: str, payload: dict) -> dict:
             validate_host(updates["host"])
         if "tier" in updates and updates["tier"] not in TIERS:
             raise ValidationError("tier", f"tier must be one of {', '.join(TIERS)}")
+        if "display_name" in updates:
+            updates["display_name"] = _validate_display_name(updates["display_name"])
     except ValidationError as exc:
         return JSONResponse(
             status_code=400, content={"field": exc.field, "detail": exc.message}

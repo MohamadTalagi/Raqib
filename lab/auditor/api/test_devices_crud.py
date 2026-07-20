@@ -201,3 +201,32 @@ def test_patch_device_with_no_updatable_fields_returns_400_with_body_field(clien
     body = response.json()
     assert body["field"] == "body"
     assert "no updatable fields supplied" in body["detail"]
+
+
+def test_patch_with_empty_display_name_returns_400(client):
+    client.post("/devices", json=_payload())
+    response = client.patch(
+        "/devices/test-camera", json={"display_name": ""}
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["field"] == "display_name"
+
+
+def test_patch_with_non_string_display_name_returns_400_not_500(client):
+    client.post("/devices", json=_payload())
+    response = client.patch(
+        "/devices/test-camera", json={"display_name": 123}
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["field"] == "display_name"
+
+
+def test_patch_with_valid_display_name_succeeds(client):
+    client.post("/devices", json=_payload())
+    response = client.patch(
+        "/devices/test-camera", json={"display_name": "Renamed Camera"}
+    )
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Renamed Camera"

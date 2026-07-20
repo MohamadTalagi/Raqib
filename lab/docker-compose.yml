@@ -104,14 +104,15 @@ services:
       retries: 3
 
   auditor-worker:
-    build: ./auditor/worker
+    build:
+      context: ./auditor
+      dockerfile: worker/Dockerfile
     environment:
       - PYTHONPATH=/work
       - AUDITOR_API_URL=http://auditor-api:8000
     volumes:
       - ../policies:/work/policies:ro
       - ./auditor/worker:/work/lab/auditor/worker
-      - ./auditor/api/device_validation.py:/work/device_validation.py:ro
       - ../document-store:/work/document-store
     networks:
       - audit-network

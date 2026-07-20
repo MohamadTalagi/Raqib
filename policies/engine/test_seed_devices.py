@@ -52,6 +52,25 @@ def test_second_run_is_a_noop(conn):
     assert count == 6
 
 
+def test_rerun_restores_deleted_service_rows_without_reinserting_device(conn):
+    # Simulates a database where a device row survived but its
+    # device_services rows were lost. Re-running seed() must repair the
+    # service rows even though the device row already exists, and the
+    # return value must still reflect devices inserted (0), not services
+    # touched - the seeder's idempotency contract is about devices, and a
+    # caller relying on "0 means nothing to do" must not be misled.
+    seed(conn)
+    conn.execute("DELETE FROM device_services WHERE device_id = 'device-partial'")
+    conn.commit()
+
+    assert seed(conn) == 0
+
+    row = conn.execute(
+        "SELECT port, published_port FROM device_services WHERE device_id = 'device-partial'"
+    ).fetchone()
+    assert row == (443, 8082)
+
+
 def test_all_seeded_devices_marked_seeded(conn):
     seed(conn)
     rows = conn.execute("SELECT source FROM devices").fetchall()
