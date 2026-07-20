@@ -196,11 +196,36 @@ SAMPLE_MODEL = {
 
 
 def test_renders_the_real_template_end_to_end():
+    """End-to-end render through the real templates/report.css.
+
+    Unlike test_vendored_font_is_actually_embedded_not_dejavu_fallback above
+    (which builds a synthetic CSS string with an absolute file:// @font-face
+    URI), this goes through the actual shipped stylesheet, whose @font-face
+    rules use a *relative* url("../assets/fonts/...") resolved against
+    CSS(filename=...)'s own base. That relative-URL resolution is the one
+    link in the font-embedding chain the synthetic test above cannot cover,
+    and it is the same blind spot that previously produced a false "fonts
+    verified" claim for this report. If report.css's relative font paths
+    ever stop resolving, WeasyPrint fails silently and falls back to
+    DejaVu -- so assert the embedding directly rather than trusting a plain
+    PDF-shaped byte string.
+    """
     from report import render_report_pdf
 
     pdf = render_report_pdf(SAMPLE_MODEL)
     assert pdf.startswith(b"%PDF-")
     assert len(pdf) > 3000
+
+    inflated = _decompressed_pdf_text(pdf)
+    assert b"Inter" in inflated, (
+        "the real report.css did not embed the vendored Inter family -- "
+        "its relative url(\"../assets/fonts/...\") @font-face paths may not "
+        "be resolving against CSS(filename=...)'s base"
+    )
+    assert b"DejaVu" not in inflated, (
+        "rendering the real template fell back to DejaVu Sans -- the "
+        "vendored fonts in templates/report.css were never loaded"
+    )
 
 
 def test_renders_a_device_with_no_evidence():

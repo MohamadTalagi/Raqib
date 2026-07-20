@@ -50,7 +50,7 @@ td { padding: 1.8mm 2mm 1.8mm 0; border-bottom: 1px solid #eef0f3; vertical-alig
 /* The dense one. Long commands wrap instead of overflowing; a 64-char hash
    wraps rather than shrinking to unreadability. */
 .provenance td, .provenance th { font-size: 7.5pt; }
-.provenance .mono { overflow-wrap: anywhere; word-break: break-all; }
+.provenance .mono { overflow-wrap: anywhere; word-break: break-all; white-space: pre-wrap; }
 
 /* Status is never colour alone - the word always renders, because this will be
    printed in greyscale and read by colourblind people. */

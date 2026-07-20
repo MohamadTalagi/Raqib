@@ -157,3 +157,29 @@ def test_verdict_with_missing_control_yaml_still_appears(postgres_url):
     assert control["title"] is None
     assert control["clause"] is None
     assert model["counts"]["FAIL"] == 1
+
+
+def test_verdict_with_path_traversal_control_id_still_appears_and_does_not_raise(
+    postgres_url,
+):
+    # verdict.schema.json leaves control_id an unconstrained string, so a
+    # verdict written with a path-traversal control_id must be handled the
+    # same way as a missing control file: control_found False, no exception,
+    # and - critically - the verdict itself must not be dropped, since
+    # dropping it would silently remove a FAIL from a compliance document.
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register_device(conn)
+        _add_verdict(conn, "../../etc/passwd", "FAIL")
+        conn.commit()
+        model = build_report_model(conn, "report-cam")
+    finally:
+        conn.close()
+
+    control = model["controls"][0]
+    assert control["control_id"] == "../../etc/passwd"
+    assert control["control_found"] is False
+    assert control["status"] == "FAIL"
+    assert control["title"] is None
+    assert control["clause"] is None
+    assert model["counts"]["FAIL"] == 1

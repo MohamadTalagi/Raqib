@@ -10,12 +10,19 @@ copied verbatim from a control YAML - a generated summary paragraph would
 contradict the report's own determinism claim.
 """
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
 VERDICT_STATUSES = ("PASS", "FAIL", "PARTIAL", "INCONCLUSIVE")
+
+# Same allow-list main.py's get_control_by_id() applies before touching the
+# filesystem. control_id comes from a verdict row - verdict.schema.json
+# leaves it an unconstrained string - so a stored value like
+# "../../../../etc/ssl/whatever" must never reach the filesystem.
+_CONTROL_ID_RE = re.compile(r"^[A-Za-z0-9\-]+$")
 
 
 # Read lazily rather than as a module-level constant so it reflects the
@@ -25,10 +32,16 @@ def _controls_dir() -> Path:
 
 
 def _load_control(control_id: str) -> dict | None:
-    """Load one control YAML, or None if the file is gone.
+    """Load one control YAML, or None if the file is gone or the id is invalid.
 
-    Controls are files and verdicts are database rows, so they can drift.
+    Controls are files and verdicts are database rows, so they can drift. A
+    control_id that fails the filename allow-list is treated exactly like a
+    missing control - returning None here (never raising) so the verdict
+    still renders in the report marked control_found: False instead of being
+    silently dropped, which would remove a FAIL from a compliance document.
     """
+    if not _CONTROL_ID_RE.match(control_id):
+        return None
     path = _controls_dir() / f"{control_id}.yaml"
     if not path.exists():
         return None
