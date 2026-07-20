@@ -229,24 +229,28 @@ def post_scan_job(payload: dict):
 @app.get("/scan-jobs")
 def get_scan_jobs(status: str | None = None):
     # The worker resolves each job's target (host/service_type/port) from the
-    # current device state via this LEFT JOIN, rather than from columns on
-    # scan_jobs itself - scan_jobs stays a pure audit row (device_id, test_id
-    # only), and a deregistered device yields NULLs that resolve_target must
-    # reject rather than a KeyError that would crash the poll loop.
+    # current device state, rather than from columns on scan_jobs itself -
+    # scan_jobs stays a pure audit row (device_id, test_id only), and a
+    # deregistered device (or a device with no service the job's test
+    # applies to) yields NULLs that resolve_target must reject rather than a
+    # KeyError that would crash the poll loop.
+    #
+    # Service resolution must be test-aware: a device can carry several
+    # enabled services of different types (e.g. mqtt + http), so we fetch
+    # every enabled service per device and let is_applicable() - the same
+    # rule post_scan_job uses - pick the one that matches each job's test_id.
+    # This can't be expressed as a single correlated SQL join because
+    # applicability is a Python-side rule (SCAN_CATALOG), not a DB column, so
+    # the join is finished here instead of duplicating that rule in SQL.
     conn = get_connection()
     try:
         query = """
             SELECT j.id, j.device_id, j.test_id, j.status, j.tool, j.tool_version,
                    j.command, j.raw_output, j.observations, j.error, j.evidence_id,
                    j.created_at, j.updated_at,
-                   d.host, s.service_type, s.port
+                   d.host
             FROM scan_jobs j
             LEFT JOIN devices d ON d.device_id = j.device_id
-            LEFT JOIN LATERAL (
-                SELECT service_type, port FROM device_services
-                WHERE device_id = j.device_id AND enabled = true
-                ORDER BY id LIMIT 1
-            ) s ON true
             WHERE 1=1
         """
         params: list = []
@@ -254,15 +258,44 @@ def get_scan_jobs(status: str | None = None):
             query += " AND j.status = %s"
             params.append(status)
         query += " ORDER BY j.created_at"
-        rows = conn.execute(query, params).fetchall()
+        job_rows = conn.execute(query, params).fetchall()
+
+        device_ids = {row[1] for row in job_rows}
+        services_by_device: dict[str, list[tuple[str, int]]] = {}
+        if device_ids:
+            service_rows = conn.execute(
+                """
+                SELECT device_id, service_type, port FROM device_services
+                WHERE device_id = ANY(%s) AND enabled = true
+                ORDER BY device_id, id
+                """,
+                (list(device_ids),),
+            ).fetchall()
+            for device_id, service_type, port in service_rows:
+                services_by_device.setdefault(device_id, []).append((service_type, port))
     finally:
         conn.close()
+
     jobs = []
-    for row in rows:
+    for row in job_rows:
         job = _row_to_scan_job(row[:13])
-        job["host"] = row[13]
-        job["service_type"] = row[14]
-        job["port"] = row[15]
+        host = row[13]
+        device_id, test_id = job["device_id"], job["test_id"]
+
+        target = None
+        if host is not None:
+            for service_type, port in services_by_device.get(device_id, []):
+                candidate = {
+                    "device_id": device_id, "host": host,
+                    "service_type": service_type, "port": port,
+                }
+                if is_applicable(candidate, test_id):
+                    target = candidate
+                    break
+
+        job["host"] = target["host"] if target else None
+        job["service_type"] = target["service_type"] if target else None
+        job["port"] = target["port"] if target else None
         jobs.append(job)
     return jobs
 

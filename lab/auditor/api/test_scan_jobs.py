@@ -119,6 +119,72 @@ def test_get_scan_jobs_lists_created_jobs(client):
     assert jobs[0]["port"] == 80
 
 
+def test_get_scan_jobs_resolves_matching_service_when_first_service_does_not_apply(client):
+    # Regression: service #1 (mqtt) does not match an HTTP-only test, but
+    # service #2 (http) does. The old LATERAL join took "first enabled
+    # service by insertion order" and would hand the worker the mqtt service
+    # for an HTTP-only test, so process_job's is_applicable() check would
+    # fail at execution time even though post_scan_job had already accepted
+    # the job. GET /scan-jobs must resolve the http service instead.
+    response = client.post(
+        "/devices",
+        json={
+            "device_id": "multi-service-device",
+            "display_name": "multi-service-device",
+            "tier": "unknown",
+            "host": "multi-service-device",
+            "services": [
+                {"service_type": "mqtt", "port": 1883},
+                {"service_type": "http", "port": 80},
+            ],
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    created = client.post(
+        "/scan-jobs",
+        json={"device_id": "multi-service-device", "test_id": "TEST-AUTH-DEFAULT-CREDS"},
+    ).json()
+
+    jobs = client.get("/scan-jobs", params={"status": "pending"}).json()
+    matching = next(j for j in jobs if j["id"] == created["id"])
+    assert matching["service_type"] == "http"
+    assert matching["port"] == 80
+    assert matching["host"] == "multi-service-device"
+
+
+def test_get_scan_jobs_target_is_null_when_no_enabled_service_matches_test(client):
+    # A device that only ever speaks mqtt has no service an HTTP-only test
+    # applies to. This must resolve to the same all-NULL target contract as
+    # a deregistered device, not to the (wrong) mqtt service, since
+    # resolve_target's validate_host(None) is what makes the worker fail the
+    # job cleanly instead of crashing on an inapplicable target.
+    _register_device(client, "mqtt-only-device-2", service_type="mqtt", port=1883)
+
+    # post_scan_job itself already rejects this combo (test_post_scan_job_
+    # rejects_when_only_mqtt_service_for_http_test covers that at creation
+    # time), so insert the pending job directly to exercise GET /scan-jobs's
+    # resolution in isolation, the way a job created by an older API version
+    # (before the test-aware fix) could still be sitting in the table.
+    from db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO scan_jobs (device_id, test_id) VALUES (%s, %s)",
+            ("mqtt-only-device-2", "TEST-AUTH-DEFAULT-CREDS"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    jobs = client.get("/scan-jobs", params={"status": "pending"}).json()
+    matching = next(j for j in jobs if j["device_id"] == "mqtt-only-device-2")
+    assert matching["host"] is None
+    assert matching["service_type"] is None
+    assert matching["port"] is None
+
+
 def test_get_scan_jobs_target_is_null_when_device_deregistered(client):
     _register_device(client, "device-insecure")
     job = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"}).json()
