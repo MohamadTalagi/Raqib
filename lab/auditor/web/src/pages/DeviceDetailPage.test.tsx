@@ -73,4 +73,12 @@ describe("DeviceDetailPage", () => {
     renderPage();
     await waitFor(() => expect(screen.getByText(/device not found/i)).toBeInTheDocument());
   });
+
+  it("offers a download link to the device report", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL as never);
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /download report/i });
+    expect(link).toHaveAttribute("href", expect.stringContaining("/devices/device-insecure/report.pdf"));
+  });
 });

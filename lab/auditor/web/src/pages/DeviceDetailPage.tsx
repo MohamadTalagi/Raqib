@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { FileDown, HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -121,6 +121,13 @@ export function DeviceDetailPage() {
             <span className="ml-auto text-xs text-[var(--color-text-muted)]">
               Source: {device.source ?? "unknown"}
             </span>
+            <a
+              href={api.deviceReportUrl(device.device_id)}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
+            >
+              <FileDown className="h-4 w-4" />
+              Download report
+            </a>
           </CardContent>
         </Card>
 

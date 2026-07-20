@@ -161,4 +161,10 @@ export const api = {
   deleteDevice: (deviceId: string): Promise<void> => deleteRequest(`/devices/${deviceId}`),
   controlVerdicts: (controlId: string): Promise<ControlVerdictRollup> =>
     getJson<ControlVerdictRollup>(`/controls/${controlId}/verdicts`),
+
+  // Returns a URL rather than fetching: the browser must perform the download
+  // itself so the server's Content-Disposition filename is honoured. Fetching
+  // would yield a blob we'd then have to name ourselves.
+  deviceReportUrl: (deviceId: string): string =>
+    `${API_BASE_URL}/devices/${encodeURIComponent(deviceId)}/report.pdf`,
 };
