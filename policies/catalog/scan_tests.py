@@ -19,9 +19,26 @@ this mirrors (record_evidence.py).
 HTTP_SERVICE_TYPES = ("http", "https")
 ALL_SERVICE_TYPES = ("http", "https", "mqtt", "mqtts", "telnet", "ssh")
 
+DEFAULT_SCHEME_PORTS = {"http": 80, "https": 443}
+
 
 def _scheme_for(target: dict) -> str:
     return "https" if target["service_type"] == "https" else "http"
+
+
+def _authority_for(target: dict, scheme: str) -> str:
+    """Build the URL authority (host[:port]) for a target.
+
+    The port is included only when it differs from the scheme's default
+    (80 for http, 443 for https), so existing commands built against
+    default-port targets stay byte-identical - historical evidence records
+    reference exact command strings.
+    """
+    host = target["host"]
+    port = target["port"]
+    if port == DEFAULT_SCHEME_PORTS.get(scheme):
+        return host
+    return f"{host}:{port}"
 
 
 def _nmap_command(target: dict) -> list[str]:
@@ -41,8 +58,9 @@ def _parse_nmap_observations(target: dict, output: str) -> dict:
 def _login_command(target: dict) -> list[str]:
     scheme = _scheme_for(target)
     flags = ["-s", "-k"] if scheme == "https" else ["-s"]
+    authority = _authority_for(target, scheme)
     return [
-        "curl", *flags, "-X", "POST", f"{scheme}://{target['host']}/login",
+        "curl", *flags, "-X", "POST", f"{scheme}://{authority}/login",
         "-d", "username=admin&password=admin",
     ]
 
@@ -54,7 +72,8 @@ def _parse_login_observations(target: dict, output: str) -> dict:
 def _headers_command(target: dict) -> list[str]:
     scheme = _scheme_for(target)
     flags = ["-s", "-k", "-I"] if scheme == "https" else ["-s", "-I"]
-    return ["curl", *flags, f"{scheme}://{target['host']}/"]
+    authority = _authority_for(target, scheme)
+    return ["curl", *flags, f"{scheme}://{authority}/"]
 
 
 def _parse_headers_observations(target: dict, output: str) -> dict:

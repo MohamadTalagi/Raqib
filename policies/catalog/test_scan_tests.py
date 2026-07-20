@@ -12,6 +12,14 @@ HTTPS_TARGET = {
     "device_id": "device-hardened", "host": "device-hardened",
     "service_type": "https", "port": 443,
 }
+HTTP_NONDEFAULT_PORT_TARGET = {
+    "device_id": "device-insecure", "host": "device-insecure",
+    "service_type": "http", "port": 8080,
+}
+HTTPS_NONDEFAULT_PORT_TARGET = {
+    "device_id": "device-hardened", "host": "device-hardened",
+    "service_type": "https", "port": 8443,
+}
 
 
 def test_portscan_applies_to_any_service_type():
@@ -61,6 +69,56 @@ def test_https_target_builds_https_url_with_insecure_flag():
 def test_headers_command_omits_insecure_flag_for_http():
     command = SCAN_CATALOG["TEST-HTTP-HEADERS"]["build_command"](HTTP_TARGET)
     assert "-k" not in command
+
+
+def test_login_command_includes_nondefault_http_port():
+    command = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["build_command"](HTTP_NONDEFAULT_PORT_TARGET)
+    assert "http://device-insecure:8080/login" in command
+
+
+def test_login_command_on_default_http_port_is_byte_identical_to_no_port():
+    # Regression: the resolved port must never leak into the URL when it is
+    # the scheme default - historical evidence records reference this exact
+    # command string.
+    command = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["build_command"](HTTP_TARGET)
+    assert command == [
+        "curl", "-s", "-X", "POST", "http://device-insecure/login",
+        "-d", "username=admin&password=admin",
+    ]
+
+
+def test_login_command_on_default_https_port_omits_port():
+    command = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["build_command"](HTTPS_TARGET)
+    assert "https://device-hardened/login" in command
+    assert "https://device-hardened:443/login" not in command
+
+
+def test_login_command_includes_nondefault_https_port():
+    command = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["build_command"](HTTPS_NONDEFAULT_PORT_TARGET)
+    assert "https://device-hardened:8443/login" in command
+
+
+def test_headers_command_includes_nondefault_http_port():
+    command = SCAN_CATALOG["TEST-HTTP-HEADERS"]["build_command"](HTTP_NONDEFAULT_PORT_TARGET)
+    assert "http://device-insecure:8080/" in command
+
+
+def test_headers_command_on_default_http_port_is_byte_identical_to_no_port():
+    # Regression: byte-identical to the pre-fix command for default-port
+    # targets (every seeded lab device uses http:80 or https:443 today).
+    command = SCAN_CATALOG["TEST-HTTP-HEADERS"]["build_command"](HTTP_TARGET)
+    assert command == ["curl", "-s", "-I", "http://device-insecure/"]
+
+
+def test_headers_command_on_default_https_port_omits_port():
+    command = SCAN_CATALOG["TEST-HTTP-HEADERS"]["build_command"](HTTPS_TARGET)
+    assert "https://device-hardened/" in command
+    assert "https://device-hardened:443/" not in command
+
+
+def test_headers_command_includes_nondefault_https_port():
+    command = SCAN_CATALOG["TEST-HTTP-HEADERS"]["build_command"](HTTPS_NONDEFAULT_PORT_TARGET)
+    assert "https://device-hardened:8443/" in command
 
 
 def test_portscan_scans_the_full_port_range():

@@ -178,29 +178,38 @@ def post_scan_job(payload: dict):
 
     conn = get_connection()
     try:
-        service = conn.execute(
+        services = conn.execute(
             """
             SELECT d.host, s.service_type, s.port
             FROM devices d
             JOIN device_services s ON s.device_id = d.device_id
             WHERE d.device_id = %s AND s.enabled = true
-            ORDER BY s.id LIMIT 1
+            ORDER BY s.id
             """,
             (device_id,),
-        ).fetchone()
+        ).fetchall()
     finally:
         conn.close()
 
-    if service is None:
+    if not services:
         raise HTTPException(
             status_code=400, detail="device is not registered or has no enabled service"
         )
 
-    target = {
-        "device_id": device_id, "host": service[0],
-        "service_type": service[1], "port": service[2],
-    }
-    if not is_applicable(target, test_id):
+    # A device can carry several enabled services of different types (e.g.
+    # mqtt + http); pick whichever enabled service the chosen test actually
+    # applies to, rather than blindly taking the first row by insertion order.
+    target = None
+    for host, service_type, port in services:
+        candidate = {
+            "device_id": device_id, "host": host,
+            "service_type": service_type, "port": port,
+        }
+        if is_applicable(candidate, test_id):
+            target = candidate
+            break
+
+    if target is None:
         raise HTTPException(
             status_code=400, detail="test does not apply to this device's services"
         )

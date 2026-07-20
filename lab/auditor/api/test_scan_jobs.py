@@ -55,6 +55,45 @@ def test_post_scan_job_rejects_disallowed_combo(client):
     assert response.status_code == 400
 
 
+def test_post_scan_job_resolves_matching_service_when_first_service_does_not_apply(client):
+    # Regression: service #1 (mqtt) does not match an HTTP-only test, but
+    # service #2 (http) does. The old query took "first enabled service by
+    # insertion order" and would 400 even though the device genuinely speaks
+    # HTTP. This must succeed by picking the http service instead of mqtt.
+    response = client.post(
+        "/devices",
+        json={
+            "device_id": "multi-service-device",
+            "display_name": "multi-service-device",
+            "tier": "unknown",
+            "host": "multi-service-device",
+            "services": [
+                {"service_type": "mqtt", "port": 1883},
+                {"service_type": "http", "port": 80},
+            ],
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    response = client.post(
+        "/scan-jobs",
+        json={"device_id": "multi-service-device", "test_id": "TEST-AUTH-DEFAULT-CREDS"},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["device_id"] == "multi-service-device"
+    assert body["test_id"] == "TEST-AUTH-DEFAULT-CREDS"
+
+
+def test_post_scan_job_rejects_when_only_mqtt_service_for_http_test(client):
+    _register_device(client, "mqtt-only-device", service_type="mqtt", port=1883)
+    response = client.post(
+        "/scan-jobs",
+        json={"device_id": "mqtt-only-device", "test_id": "TEST-AUTH-DEFAULT-CREDS"},
+    )
+    assert response.status_code == 400
+
+
 def test_post_scan_job_rejects_unknown_test_id(client):
     _register_device(client, "device-insecure")
     response = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-DOES-NOT-EXIST"})
