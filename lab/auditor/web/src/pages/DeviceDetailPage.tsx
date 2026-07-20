@@ -1,14 +1,16 @@
 import type { LucideIcon } from "lucide-react";
-import { FileDown, HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { FileDown, HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { ConfidenceLabel, SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { serviceIcon } from "@/lib/serviceIcons";
 import { useFetch } from "@/lib/useFetch";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { Confidence, DeviceTier, Severity, VerdictStatus } from "@/lib/types";
 
@@ -73,9 +75,34 @@ function MetaField({ label, value }: MetaFieldProps) {
   );
 }
 
+function deregisterErrorMessage(caught: unknown): string {
+  if (caught instanceof ApiError || caught instanceof Error) {
+    return caught.message;
+  }
+  return "Could not deregister the device.";
+}
+
 export function DeviceDetailPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
+  const navigate = useNavigate();
   const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId]);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deregistering, setDeregistering] = useState(false);
+  const [deregisterError, setDeregisterError] = useState<string | null>(null);
+
+  async function handleConfirmDeregister() {
+    if (!deviceId) return;
+    setDeregistering(true);
+    setDeregisterError(null);
+    try {
+      await api.deleteDevice(deviceId);
+      navigate("/devices");
+    } catch (caught) {
+      setDeregisterError(deregisterErrorMessage(caught));
+      setDeregistering(false);
+      setConfirmOpen(false);
+    }
+  }
 
   if (detail.error) {
     return (
@@ -128,8 +155,36 @@ export function DeviceDetailPage() {
               <FileDown className="h-4 w-4" />
               Download report
             </a>
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-critical)] hover:text-[var(--color-critical)]"
+            >
+              <Trash2 className="h-4 w-4" />
+              Deregister
+            </button>
+            {deregisterError && (
+              <p className="w-full text-xs text-[var(--color-critical)]">{deregisterError}</p>
+            )}
           </CardContent>
         </Card>
+
+        <ConfirmDialog
+          open={confirmOpen}
+          title="Deregister this device?"
+          description={
+            <>
+              This removes <span className="font-mono text-[var(--color-text)]">{device.device_id}</span> and its
+              registered services from the inventory. Evidence and verdicts already recorded are kept — they are
+              immutable audit records and are not deleted. The device will reappear in the device list as
+              unregistered, and re-registering it with the same ID will reattach its full history.
+            </>
+          }
+          confirmLabel="Deregister device"
+          pending={deregistering}
+          onConfirm={handleConfirmDeregister}
+          onCancel={() => setConfirmOpen(false)}
+        />
 
         <Card>
           <CardHeader>

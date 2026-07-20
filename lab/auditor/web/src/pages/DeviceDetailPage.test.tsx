@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeviceDetailPage } from "./DeviceDetailPage";
@@ -80,5 +81,62 @@ describe("DeviceDetailPage", () => {
 
     const link = await screen.findByRole("link", { name: /download report/i });
     expect(link).toHaveAttribute("href", expect.stringContaining("/devices/device-insecure/report.pdf"));
+  });
+
+  it("shows a Deregister control on the detail page", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: /deregister/i })).toBeInTheDocument();
+  });
+
+  it("does not call deleteDevice immediately on click — a confirmation appears first", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    const deleteSpy = vi.spyOn(api, "deleteDevice").mockResolvedValue(undefined);
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /deregister/i }));
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("calls deleteDevice with the correct device id when the confirmation is confirmed", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    const deleteSpy = vi.spyOn(api, "deleteDevice").mockResolvedValue(undefined);
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /deregister/i }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /deregister device/i }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("device-insecure"));
+  });
+
+  it("does not call deleteDevice when the confirmation is cancelled", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    const deleteSpy = vi.spyOn(api, "deleteDevice").mockResolvedValue(undefined);
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /deregister/i }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /cancel/i }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it("states in the confirmation that evidence and verdicts are kept, not deleted", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /deregister/i }));
+    const dialog = await screen.findByRole("alertdialog");
+
+    expect(within(dialog).getByText(/evidence.*(kept|preserved|retained|not deleted)/i)).toBeInTheDocument();
   });
 });
