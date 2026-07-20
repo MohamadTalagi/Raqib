@@ -63,17 +63,44 @@ Beyond the Day-1/2/3 core, the lab now includes:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
-### One-time migration of Phase 0-5 evidence
+### One-time seeding, on a fresh clone
 
-If `document-store/evidence/*.json` and `document-store/verdicts/*.json` already contain records from
-before Phases 6-8 (they will, from the Phase 0-5 sprint), load them into the database once:
+Run **both** of these once, in this order. Skipping the first leaves the dashboard with an empty
+device list, which looks broken rather than empty.
+
+**1. Seed the six lab devices** into the `devices` / `device_services` tables:
+
+```
+docker compose exec -e PYTHONPATH=/work \
+  -e DATABASE_URL=postgresql://auditor:auditor-lab-pw@auditor-database:5432/auditor \
+  auditor-api python -m policies.engine.seed_devices
+```
+
+Expected: `Seeded 6 devices`. Running it again prints `Seeded 0 devices` — it is idempotent, so it is
+safe to re-run, and it will also restore service rows if they are ever lost.
+
+Note this runs in **auditor-api**, not `auditor-worker`. The worker talks to the API over HTTP and has
+no PostgreSQL driver installed; the seeder writes to the database directly.
+
+**2. Load the recorded evidence and verdicts** from `document-store/evidence/*.json` and
+`document-store/verdicts/*.json`:
 
 ```
 docker compose exec auditor-worker sh -c "cd /work && python -m policies.engine.migrate_existing_records"
 ```
 
+This one *does* run in the worker — it POSTs to `auditor-api` rather than touching the database.
+
 ### Verify
 
-- Dashboard: http://localhost:8080 — should show the Overview screen with non-zero evidence/verdict counts
-  after migration.
-- API directly: http://localhost:8000/summary
+- Dashboard: http://localhost:8080 — Devices should list six devices, and Overview should show
+  non-zero evidence/verdict counts.
+- API directly: http://localhost:8000/summary — expect
+  `{"total_evidence": 13, "total_verdicts": 8, "verdicts_by_status": {"PASS": 4, "FAIL": 4, "PARTIAL": 0, "INCONCLUSIVE": 0}}`
+
+### A note on where data lives
+
+Evidence recorded through the dashboard's **Run Scan** flow is written to the database only — it does
+not create a `document-store/evidence/*.json` file. So a database can drift ahead of what a fresh clone
+would reproduce. If you record new evidence you want other clones to have, export it from
+`GET /evidence/{id}` into `document-store/evidence/` and commit it alongside its raw output file.
