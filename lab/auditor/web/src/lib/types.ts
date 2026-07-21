@@ -62,9 +62,12 @@ export interface Summary {
   verdicts_by_status: Record<VerdictStatus, number>;
 }
 
+export type ScanTestCategory = "web-and-auth" | "network-and-protocol" | "firmware";
+
 export interface ScanTestSpec {
   test_id: string;
   label: string;
+  category: ScanTestCategory;
   applicable_service_types: ServiceType[];
 }
 
@@ -105,13 +108,14 @@ export interface DeviceService {
 /**
  * Fields present in EVERY device object the API returns, regardless of which
  * endpoint produced it. Verified against `lab/auditor/api/main.py`:
- *   - GET  /devices          (list, main.py:690-742)   — full row incl. registered/counts/services
- *   - POST /devices          (main.py:642-687)          — no evidence_count/verdict_count
- *   - PATCH /devices/{id}    (main.py:830-863)           — no registered/evidence_count/verdict_count
- *   - GET  /devices/{id}     (.device, main.py:772-807, via _device_row) — no registered/counts/services
- * Only the fields common to all four live here; endpoint-specific extras are
- * added by the narrower types below instead of being declared (and lied
- * about) on every device object.
+ *   - GET  /devices             (list, get_devices)       — full row incl. registered/counts/services
+ *   - POST /devices             (create_device)           — no evidence_count/verdict_count
+ *   - PATCH /devices/{id}       (update_device, via _device_row) — no registered/evidence_count/verdict_count
+ *   - GET  /devices/{id}        (.device, via _device_row) — no registered/counts/services
+ *   - POST/DELETE .../firmware  (via _device_row)          — no registered/evidence_count/verdict_count
+ * Only the fields common to all endpoints live here; endpoint-specific
+ * extras are added by the narrower types below instead of being declared
+ * (and lied about) on every device object.
  */
 export interface DeviceBase {
   device_id: string;
@@ -125,6 +129,9 @@ export interface DeviceBase {
   owner: string | null;
   notes: string | null;
   source: "seeded" | "manual" | null;
+  firmware_filename: string | null;
+  firmware_sha256: string | null;
+  firmware_uploaded_at: string | null;
 }
 
 /**

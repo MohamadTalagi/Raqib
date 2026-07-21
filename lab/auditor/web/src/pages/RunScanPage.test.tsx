@@ -21,6 +21,9 @@ const DEVICES: Device[] = [
     owner: null,
     notes: null,
     source: "seeded",
+    firmware_filename: null,
+    firmware_sha256: null,
+    firmware_uploaded_at: null,
     registered: true,
     evidence_count: 0,
     verdict_count: 0,
@@ -38,10 +41,33 @@ const DEVICES: Device[] = [
     owner: null,
     notes: null,
     source: "seeded",
+    firmware_filename: null,
+    firmware_sha256: null,
+    firmware_uploaded_at: null,
     registered: true,
     evidence_count: 0,
     verdict_count: 0,
     services: [{ id: 2, service_type: "telnet", port: 23, published_port: null, enabled: true }],
+  },
+  {
+    device_id: "device-with-firmware",
+    display_name: "Smart Camera — With Firmware",
+    description: "Has an uploaded firmware archive.",
+    tier: "insecure",
+    host: "device-with-firmware",
+    vendor: null,
+    model: null,
+    location: null,
+    owner: null,
+    notes: null,
+    source: "seeded",
+    firmware_filename: "cam-fw-1.2.0.tar.gz",
+    firmware_sha256: "b".repeat(64),
+    firmware_uploaded_at: "2026-07-21T12:00:00+00:00",
+    registered: true,
+    evidence_count: 0,
+    verdict_count: 0,
+    services: [{ id: 3, service_type: "http", port: 80, published_port: 8084, enabled: true }],
   },
   {
     device_id: "device-unregistered-cam",
@@ -55,6 +81,9 @@ const DEVICES: Device[] = [
     owner: null,
     notes: null,
     source: null,
+    firmware_filename: null,
+    firmware_sha256: null,
+    firmware_uploaded_at: null,
     registered: false,
     evidence_count: 0,
     verdict_count: 0,
@@ -66,11 +95,25 @@ const SCAN_TESTS: ScanTestSpec[] = [
   {
     test_id: "TEST-NET-PORTSCAN",
     label: "Nmap service/port scan",
+    category: "network-and-protocol",
     applicable_service_types: ["http", "https", "mqtt", "mqtts", "telnet", "ssh"],
+  },
+  {
+    test_id: "TEST-FW-VERSION",
+    label: "Version file",
+    category: "firmware",
+    applicable_service_types: [],
+  },
+  {
+    test_id: "TEST-FW-UPDATESCRIPT",
+    label: "Update script",
+    category: "firmware",
+    applicable_service_types: [],
   },
   {
     test_id: "TEST-AUTH-DEFAULT-CREDS",
     label: "Default credentials (admin/admin)",
+    category: "web-and-auth",
     applicable_service_types: ["http", "https"],
   },
 ];
@@ -103,16 +146,55 @@ describe("RunScanPage", () => {
     await waitFor(() => expect(screen.getByRole("option", { name: "telnet-sim" })).toBeInTheDocument());
 
     await user.selectOptions(screen.getByLabelText("Device"), "telnet-sim");
-    expect(screen.getByRole("option", { name: "Nmap service/port scan" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("option", { name: "Default credentials (admin/admin)" }),
-    ).not.toBeInTheDocument();
+    expect(await screen.findByText("Nmap service/port scan")).toBeInTheDocument();
+    expect(screen.queryByText("Default credentials (admin/admin)")).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
-    expect(screen.getByRole("option", { name: "Default credentials (admin/admin)" })).toBeInTheDocument();
+    expect(await screen.findByText("Default credentials (admin/admin)")).toBeInTheDocument();
   });
 
-  it("runs the full flow: select, run, read output, record evidence, recompute verdicts", async () => {
+  it("shows the firmware section as disabled with an upload hint when no firmware is uploaded", async () => {
+    render(
+      <MemoryRouter>
+        <RunScanPage />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+
+    expect(await screen.findByText(/Simulated Firmware Analysis/i)).toBeInTheDocument();
+    const versionFileCheckbox = screen.getByRole("checkbox", { name: "Version file" });
+    expect(versionFileCheckbox).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Update script" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: /upload firmware/i })).toHaveAttribute(
+      "href",
+      "/devices/device-insecure",
+    );
+  });
+
+  it("enables the firmware section once the device has firmware uploaded", async () => {
+    render(
+      <MemoryRouter>
+        <RunScanPage />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-with-firmware" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-with-firmware");
+
+    const versionFileCheckbox = await screen.findByRole("checkbox", { name: "Version file" });
+    expect(versionFileCheckbox).toBeEnabled();
+
+    const selectAllBoxes = screen.getAllByRole("checkbox", { name: /select all/i });
+    for (const box of selectAllBoxes) {
+      await user.click(box);
+    }
+    expect(versionFileCheckbox).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Update script" })).toBeChecked();
+  });
+
+  it("runs the full flow: select tests, run selected, read output, record evidence, recompute verdicts", async () => {
     let jobState: ScanJob = {
       id: 1,
       device_id: "device-insecure",
@@ -160,8 +242,9 @@ describe("RunScanPage", () => {
 
     await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
     await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
-    await user.selectOptions(screen.getByLabelText("Test"), "TEST-NET-PORTSCAN");
-    await user.click(screen.getByRole("button", { name: /run test/i }));
+
+    await user.click(await screen.findByRole("checkbox", { name: "Nmap service/port scan" }));
+    await user.click(screen.getByRole("button", { name: /run selected \(1\)/i }));
 
     expect(await screen.findByText(/Awaiting your finding/i)).toBeInTheDocument();
     expect(screen.getByText("nmap -sV -p- device-insecure")).toBeInTheDocument();
@@ -175,6 +258,44 @@ describe("RunScanPage", () => {
 
     await user.click(screen.getByRole("button", { name: /recompute verdicts/i }));
     expect(await screen.findByText(/1 new verdict generated/i)).toBeInTheDocument();
+  });
+
+  it("can select every test in a section at once via Select all", async () => {
+    vi.spyOn(api, "createScanJob").mockImplementation(async (_deviceId, testId) => ({
+      id: testId === "TEST-NET-PORTSCAN" ? 1 : 2,
+      device_id: "device-insecure",
+      test_id: testId,
+      status: "pending",
+      tool: null,
+      tool_version: null,
+      command: null,
+      raw_output: null,
+      observations: null,
+      error: null,
+      evidence_id: null,
+      created_at: "2026-07-12T00:00:00Z",
+      updated_at: "2026-07-12T00:00:00Z",
+    }));
+
+    render(
+      <MemoryRouter>
+        <RunScanPage />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+
+    const selectAllBoxes = await screen.findAllByRole("checkbox", { name: /select all/i });
+    for (const box of selectAllBoxes) {
+      await user.click(box);
+    }
+    expect(screen.getByRole("checkbox", { name: "Nmap service/port scan" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Default credentials (admin/admin)" })).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: /run selected \(2\)/i }));
+    await waitFor(() => expect(api.createScanJob).toHaveBeenCalledTimes(2));
   });
 
   it("disables Record evidence until a finding is typed", async () => {
@@ -205,8 +326,8 @@ describe("RunScanPage", () => {
 
     await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
     await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
-    await user.selectOptions(screen.getByLabelText("Test"), "TEST-NET-PORTSCAN");
-    await user.click(screen.getByRole("button", { name: /run test/i }));
+    await user.click(await screen.findByRole("checkbox", { name: "Nmap service/port scan" }));
+    await user.click(screen.getByRole("button", { name: /run selected \(1\)/i }));
 
     await screen.findByText(/Awaiting your finding/i);
     expect(screen.getByRole("button", { name: /record evidence/i })).toBeDisabled();

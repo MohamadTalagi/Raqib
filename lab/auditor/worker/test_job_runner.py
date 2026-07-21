@@ -142,3 +142,37 @@ def test_accepts_a_legitimate_target():
         "device_id": "device-insecure", "host": "device-insecure",
         "service_type": "http", "port": 80,
     }
+
+
+def test_firmware_job_bypasses_live_target_validators_entirely():
+    # A firmware job's row has no host/service_type/port at all - unlike the
+    # live-device tests above, empty/None values here must NOT raise, since
+    # firmware tests never had a network target to validate in the first place.
+    job = {
+        "id": 6, "device_id": "device-insecure", "test_id": "TEST-FW-SECRETS",
+        "host": None, "service_type": None, "port": None,
+    }
+    assert resolve_target(job) == {
+        "device_id": "device-insecure", "host": None, "service_type": None, "port": None,
+    }
+
+
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_job_runs_a_firmware_test_without_a_live_target(mock_run, mock_patch):
+    mock_run.side_effect = [
+        _mock_completed(stdout="hardcoded_secret_found=True\n"),
+        _mock_completed(stdout="yara 4.5.1\n"),
+    ]
+
+    process_job({
+        "id": 7, "device_id": "device-insecure", "test_id": "TEST-FW-SECRETS",
+        "host": None, "service_type": None, "port": None,
+    })
+
+    scan_call_args = mock_run.call_args_list[0].args[0]
+    assert scan_call_args[-2:] == ["device-insecure", "secrets"]
+
+    final_call = mock_patch.call_args_list[-1]
+    assert final_call.kwargs["json"]["status"] == "awaiting_finding"
+    assert final_call.kwargs["json"]["observations"] == {"hardcoded_secret_found": True}

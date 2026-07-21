@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mosquitto-clients \
     curl \
     ca-certificates \
+    tcpdump \
     && rm -rf /var/lib/apt/lists/*
 
 # Syft + Grype (SBOM + vuln scan) — official install scripts, pinned versions

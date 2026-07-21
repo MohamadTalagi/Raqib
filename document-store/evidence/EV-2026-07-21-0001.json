@@ -1,0 +1,17 @@
+{
+  "evidence_id": "EV-2026-07-21-0001",
+  "device_id": "device-insecure",
+  "test_id": "TEST-NET-PKTCAPTURE",
+  "tool": "tcpdump",
+  "tool_version": "tcpdump version 4.99.5",
+  "command": "python3 /work/lab/auditor/worker/scan_scripts/packet_capture.py device-insecure 80 http",
+  "timestamp": "2026-07-21T09:24:15+00:00",
+  "finding": "Cleartext GET / HTTP/1.1 visible in the capture; plaintext HTTP confirmed.",
+  "observations": {
+    "packets_captured": 30,
+    "plaintext_get_visible": true
+  },
+  "raw_output_path": "document-store/raw/EV-2026-07-21-0001.txt",
+  "confidence": "high",
+  "sha256": "4f3b751f2a4db8d40d77a1dd76c54904b0a0a3a8d1bf2ec26a9272a2f557821e"
+}

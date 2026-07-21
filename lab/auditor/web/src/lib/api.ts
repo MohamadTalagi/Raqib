@@ -160,6 +160,20 @@ export const api = {
     patchJson<DeviceMutationResult>(`/devices/${encodeURIComponent(deviceId)}`, patch),
   deleteDevice: (deviceId: string): Promise<void> =>
     deleteRequest(`/devices/${encodeURIComponent(deviceId)}`),
+  uploadFirmware: async (deviceId: string, file: File): Promise<DeviceMutationResult> => {
+    const body = new FormData();
+    body.append("firmware", file);
+    const response = await fetch(
+      `${API_BASE_URL}/devices/${encodeURIComponent(deviceId)}/firmware`,
+      { method: "POST", body },
+    );
+    if (!response.ok) {
+      throw await apiErrorFrom("/firmware", response);
+    }
+    return (await response.json()) as DeviceMutationResult;
+  },
+  deleteFirmware: (deviceId: string): Promise<void> =>
+    deleteRequest(`/devices/${encodeURIComponent(deviceId)}/firmware`),
   controlVerdicts: (controlId: string): Promise<ControlVerdictRollup> =>
     getJson<ControlVerdictRollup>(`/controls/${encodeURIComponent(controlId)}/verdicts`),
 

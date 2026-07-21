@@ -61,6 +61,9 @@ CREATE TABLE devices (
     owner            TEXT,
     notes            TEXT,
     source           TEXT NOT NULL CHECK (source IN ('seeded', 'manual')),
+    firmware_filename     TEXT,
+    firmware_sha256       TEXT,
+    firmware_uploaded_at  TIMESTAMPTZ,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );

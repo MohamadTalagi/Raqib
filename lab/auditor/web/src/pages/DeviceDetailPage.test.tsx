@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeviceDetailPage } from "./DeviceDetailPage";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { DeviceDetail } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
@@ -21,6 +21,9 @@ const DETAIL: DeviceDetail = {
     owner: null,
     notes: null,
     source: "seeded",
+    firmware_filename: null,
+    firmware_sha256: null,
+    firmware_uploaded_at: null,
   },
   services: [{ id: 1, service_type: "http", port: 80, published_port: 8081, enabled: true }],
   evidence: [
@@ -138,5 +141,76 @@ describe("DeviceDetailPage", () => {
     const dialog = await screen.findByRole("alertdialog");
 
     expect(within(dialog).getByText(/evidence.*(kept|preserved|retained|not deleted)/i)).toBeInTheDocument();
+  });
+
+  it("shows an upload control when no firmware has been uploaded yet", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    renderPage();
+
+    expect(await screen.findByLabelText(/firmware archive/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /upload firmware/i })).toBeDisabled();
+  });
+
+  it("uploads firmware and then shows its filename and hash", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    const uploadSpy = vi.spyOn(api, "uploadFirmware").mockResolvedValue({
+      ...DETAIL.device,
+      firmware_filename: "cam-fw-1.2.0.tar.gz",
+      firmware_sha256: "b".repeat(64),
+      firmware_uploaded_at: "2026-07-21T12:00:00+00:00",
+      services: DETAIL.services,
+    });
+    renderPage();
+
+    const file = new File(["dummy"], "cam-fw-1.2.0.tar.gz", { type: "application/gzip" });
+    const input = await screen.findByLabelText(/firmware archive/i);
+    await user.upload(input, file);
+
+    const uploadButton = screen.getByRole("button", { name: /upload firmware/i });
+    expect(uploadButton).toBeEnabled();
+    await user.click(uploadButton);
+
+    await waitFor(() => expect(uploadSpy).toHaveBeenCalledWith("device-insecure", file));
+    expect(await screen.findByText("cam-fw-1.2.0.tar.gz")).toBeInTheDocument();
+    expect(screen.getByText(/b{16}…/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove firmware/i })).toBeInTheDocument();
+  });
+
+  it("surfaces the API's error message when a firmware upload is rejected", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    vi.spyOn(api, "uploadFirmware").mockRejectedValue(
+      new ApiError("not a valid .tar.gz archive", 400),
+    );
+    renderPage();
+
+    const file = new File(["dummy"], "cam-fw.tar.gz", { type: "application/gzip" });
+    const input = await screen.findByLabelText(/firmware archive/i);
+    await user.upload(input, file);
+    await user.click(screen.getByRole("button", { name: /upload firmware/i }));
+
+    expect(await screen.findByText(/not a valid \.tar\.gz archive/i)).toBeInTheDocument();
+  });
+
+  it("removes firmware and reverts to the upload control", async () => {
+    const user = userEvent.setup();
+    const withFirmware: DeviceDetail = {
+      ...DETAIL,
+      device: {
+        ...DETAIL.device,
+        firmware_filename: "cam-fw-1.2.0.tar.gz",
+        firmware_sha256: "b".repeat(64),
+        firmware_uploaded_at: "2026-07-21T12:00:00+00:00",
+      },
+    };
+    vi.spyOn(api, "device").mockResolvedValue(withFirmware);
+    const deleteSpy = vi.spyOn(api, "deleteFirmware").mockResolvedValue(undefined);
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /remove firmware/i }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("device-insecure"));
+    expect(await screen.findByLabelText(/firmware archive/i)).toBeInTheDocument();
   });
 });

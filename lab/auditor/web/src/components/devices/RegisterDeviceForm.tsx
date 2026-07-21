@@ -96,6 +96,13 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
     device_id: initialDeviceId ?? EMPTY_FIELDS.device_id,
   });
   const [services, setServices] = useState<ServiceRow[]>([{ ...EMPTY_SERVICE }]);
+  const [firmwareFile, setFirmwareFile] = useState<File | null>(null);
+  const [firmwareWarning, setFirmwareWarning] = useState<string | null>(null);
+  // Set only when the device registered successfully but the firmware
+  // upload failed - the form stays open on the warning instead of closing
+  // immediately, so the message is actually seen before the parent unmounts
+  // this component (its onRegistered closes the form right away).
+  const [registeredDevice, setRegisteredDevice] = useState<DeviceMutationResult | null>(null);
   const [error, setError] = useState<FormError | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -122,6 +129,7 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setFirmwareWarning(null);
     setSubmitting(true);
 
     const payload: CreateDevicePayload = {
@@ -144,7 +152,24 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
 
     try {
       const device = await api.createDevice(payload);
-      onRegistered(device);
+      // A failed firmware upload here must not look like a failed
+      // registration - the device already exists at this point - so it gets
+      // its own distinct, non-blocking warning rather than reusing `error`.
+      if (firmwareFile) {
+        try {
+          const withFirmware = await api.uploadFirmware(device.device_id, firmwareFile);
+          onRegistered(withFirmware);
+        } catch (firmwareErr) {
+          const message =
+            firmwareErr instanceof ApiError
+              ? firmwareErr.message
+              : "Device registered, but the firmware upload failed.";
+          setFirmwareWarning(message);
+          setRegisteredDevice(device);
+        }
+      } else {
+        onRegistered(device);
+      }
     } catch (caught) {
       if (caught instanceof ApiError) {
         setError({ field: caught.field, message: caught.message });
@@ -368,26 +393,59 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
         {serviceFieldError()}
       </div>
 
+      <div>
+        <label className={LABEL_CLASS} htmlFor="register-firmware">
+          Firmware archive (optional)
+        </label>
+        <input
+          id="register-firmware"
+          aria-label="Firmware archive"
+          type="file"
+          accept=".tar.gz,.tgz"
+          onChange={(e) => setFirmwareFile(e.target.files?.[0] ?? null)}
+          className={`${INPUT_CLASS} cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-[var(--color-surface-hover)] file:px-3 file:py-1.5 file:text-sm file:text-[var(--color-text)]`}
+        />
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+          A .tar.gz archive enables automated firmware analysis for this device from the Run Scan page.
+        </p>
+      </div>
+
       {error && !KNOWN_ERROR_FIELDS.has(error.field ?? "") && (
         <p className="text-sm text-[var(--color-critical)]">{error.message}</p>
       )}
 
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {submitting ? "Registering…" : "Register device"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]"
-        >
-          Cancel
-        </button>
-      </div>
+      {registeredDevice ? (
+        <div className="space-y-3 rounded-md border border-[var(--color-medium)] bg-[var(--color-surface)] p-3">
+          <p className="text-sm text-[var(--color-medium)]">
+            Device registered as <span className="font-mono">{registeredDevice.device_id}</span>, but the
+            firmware upload failed: {firmwareWarning}. You can upload it later from the device's detail page.
+          </p>
+          <button
+            type="button"
+            onClick={() => onRegistered(registeredDevice)}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)]"
+          >
+            Continue
+          </button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {submitting ? "Registering…" : "Register device"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
     </form>
   );
 }

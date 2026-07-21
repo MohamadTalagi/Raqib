@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
-import { FileDown, HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { FileDown, HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion, Trash2, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,6 +82,19 @@ function deregisterErrorMessage(caught: unknown): string {
   return "Could not deregister the device.";
 }
 
+function firmwareErrorMessage(caught: unknown): string {
+  if (caught instanceof ApiError || caught instanceof Error) {
+    return caught.message;
+  }
+  return "Could not update firmware for this device.";
+}
+
+interface FirmwareState {
+  firmware_filename: string | null;
+  firmware_sha256: string | null;
+  firmware_uploaded_at: string | null;
+}
+
 export function DeviceDetailPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
@@ -89,6 +102,52 @@ export function DeviceDetailPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deregistering, setDeregistering] = useState(false);
   const [deregisterError, setDeregisterError] = useState<string | null>(null);
+  const [firmwareOverride, setFirmwareOverride] = useState<FirmwareState | null>(null);
+  const [pendingFirmwareFile, setPendingFirmwareFile] = useState<File | null>(null);
+  const [firmwareBusy, setFirmwareBusy] = useState(false);
+  const [firmwareError, setFirmwareError] = useState<string | null>(null);
+
+  // A device switch (navigating from one detail page to another without a
+  // full remount) must not carry over the previous device's upload state.
+  useEffect(() => {
+    setFirmwareOverride(null);
+    setPendingFirmwareFile(null);
+    setFirmwareBusy(false);
+    setFirmwareError(null);
+  }, [deviceId]);
+
+  async function handleUploadFirmware() {
+    if (!deviceId || !pendingFirmwareFile) return;
+    setFirmwareBusy(true);
+    setFirmwareError(null);
+    try {
+      const result = await api.uploadFirmware(deviceId, pendingFirmwareFile);
+      setFirmwareOverride({
+        firmware_filename: result.firmware_filename,
+        firmware_sha256: result.firmware_sha256,
+        firmware_uploaded_at: result.firmware_uploaded_at,
+      });
+      setPendingFirmwareFile(null);
+    } catch (caught) {
+      setFirmwareError(firmwareErrorMessage(caught));
+    } finally {
+      setFirmwareBusy(false);
+    }
+  }
+
+  async function handleRemoveFirmware() {
+    if (!deviceId) return;
+    setFirmwareBusy(true);
+    setFirmwareError(null);
+    try {
+      await api.deleteFirmware(deviceId);
+      setFirmwareOverride({ firmware_filename: null, firmware_sha256: null, firmware_uploaded_at: null });
+    } catch (caught) {
+      setFirmwareError(firmwareErrorMessage(caught));
+    } finally {
+      setFirmwareBusy(false);
+    }
+  }
 
   async function handleConfirmDeregister() {
     if (!deviceId) return;
@@ -127,6 +186,7 @@ export function DeviceDetailPage() {
   const { device, services, evidence, verdicts, scan_jobs } = detail.data;
   const tier = TIER_META[device.tier];
   const TierIcon = tier.icon;
+  const firmware: FirmwareState = firmwareOverride ?? device;
 
   return (
     <Shell title={device.display_name} subtitle={device.description}>
@@ -237,6 +297,57 @@ export function DeviceDetailPage() {
                 })}
               </ul>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Firmware</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-2">
+            {firmware.firmware_filename ? (
+              <>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <MetaField label="Filename" value={firmware.firmware_filename} />
+                  <MetaField label="Uploaded" value={firmware.firmware_uploaded_at} />
+                </div>
+                <p className="text-xs">
+                  <span className="text-[var(--color-text-muted)]">SHA-256: </span>
+                  <span className="font-mono text-[var(--color-text-secondary)]">
+                    {firmware.firmware_sha256?.slice(0, 16)}…
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  onClick={handleRemoveFirmware}
+                  disabled={firmwareBusy}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-critical)] hover:text-[var(--color-critical)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Remove firmware
+                </button>
+              </>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  type="file"
+                  aria-label="Firmware archive"
+                  accept=".tar.gz,.tgz"
+                  onChange={(e) => setPendingFirmwareFile(e.target.files?.[0] ?? null)}
+                  className="text-sm text-[var(--color-text-secondary)]"
+                />
+                <button
+                  type="button"
+                  onClick={handleUploadFirmware}
+                  disabled={!pendingFirmwareFile || firmwareBusy}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload firmware
+                </button>
+              </div>
+            )}
+            {firmwareError && <p className="text-xs text-[var(--color-critical)]">{firmwareError}</p>}
           </CardContent>
         </Card>
 

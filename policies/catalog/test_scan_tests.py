@@ -1,4 +1,4 @@
-from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable
+from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable, is_firmware_test
 
 HTTP_TARGET = {
     "device_id": "device-insecure", "host": "device-insecure",
@@ -121,6 +121,202 @@ def test_headers_command_includes_nondefault_https_port():
     assert "https://device-hardened:8443/" in command
 
 
+# --- categories ---
+
+def test_web_and_auth_tests_are_categorized():
+    for test_id in (
+        "TEST-AUTH-DEFAULT-CREDS", "TEST-HTTP-HEADERS", "TEST-AUTH-ANON-ACCESS",
+        "TEST-AUTH-SESSION", "TEST-ADMIN-UNAUTH",
+    ):
+        assert SCAN_CATALOG[test_id]["category"] == "web-and-auth"
+
+
+def test_network_and_protocol_tests_are_categorized():
+    for test_id in (
+        "TEST-NET-PORTSCAN", "TEST-NET-HTTP-INSPECT", "TEST-MQTT-OPEN",
+        "TEST-TLS-CONFIG", "TEST-NET-PKTCAPTURE",
+    ):
+        assert SCAN_CATALOG[test_id]["category"] == "network-and-protocol"
+
+
+# --- TEST-AUTH-ANON-ACCESS ---
+
+def test_anon_access_command_hits_config_endpoint_with_no_credentials():
+    command = SCAN_CATALOG["TEST-AUTH-ANON-ACCESS"]["build_command"](HTTP_TARGET)
+    assert command == ["curl", "-s", "http://device-insecure/api/config"]
+
+
+def test_parse_anon_access_observations_flags_exposed_api_key():
+    output = '{"cred_mode":"default","mqtt_host":"mqtt-broker-insecure","api_key":"abc123"}'
+    obs = SCAN_CATALOG["TEST-AUTH-ANON-ACCESS"]["parse_observations"](HTTP_TARGET, output)
+    assert obs == {"anonymous_access_allowed": True, "api_key_exposed": True}
+
+
+def test_parse_anon_access_observations_no_api_key():
+    output = '{"cred_mode":"changed","mqtt_host":"mqtt-broker-secure"}'
+    obs = SCAN_CATALOG["TEST-AUTH-ANON-ACCESS"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs == {"anonymous_access_allowed": True, "api_key_exposed": False}
+
+
+# --- TEST-AUTH-SESSION ---
+
+def test_session_command_chains_login_and_dashboard_in_one_curl():
+    command = SCAN_CATALOG["TEST-AUTH-SESSION"]["build_command"](HTTP_TARGET)
+    assert command[0] == "curl"
+    assert "http://device-insecure/login" in command
+    assert "http://device-insecure/dashboard" in command
+    assert "--next" in command
+
+
+def test_parse_session_observations_detects_no_cookie_and_open_dashboard():
+    output = (
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n"
+        '{"status":"ok","message":"Login successful"}'
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html>dashboard</html>"
+    )
+    obs = SCAN_CATALOG["TEST-AUTH-SESSION"]["parse_observations"](HTTP_TARGET, output)
+    assert obs == {"session_cookie_issued": False, "dashboard_accessible_without_session": True}
+
+
+def test_parse_session_observations_detects_cookie_issued():
+    output = (
+        "HTTP/1.1 200 OK\r\nSet-Cookie: session=abc123\r\n\r\n{}"
+        "HTTP/1.1 401 Unauthorized\r\n\r\n"
+    )
+    obs = SCAN_CATALOG["TEST-AUTH-SESSION"]["parse_observations"](HTTP_TARGET, output)
+    assert obs == {"session_cookie_issued": True, "dashboard_accessible_without_session": False}
+
+
+# --- TEST-ADMIN-UNAUTH ---
+
+def test_admin_unauth_command_hits_reset_endpoint():
+    command = SCAN_CATALOG["TEST-ADMIN-UNAUTH"]["build_command"](HTTP_TARGET)
+    assert command == ["curl", "-s", "-i", "http://device-insecure/api/admin/reset"]
+
+
+def test_parse_admin_unauth_observations_detects_unauthenticated_success():
+    obs = SCAN_CATALOG["TEST-ADMIN-UNAUTH"]["parse_observations"](
+        HTTP_TARGET, 'HTTP/1.1 200 OK\r\n\r\n{"status":"reset-triggered"}'
+    )
+    assert obs == {"admin_unauthenticated": True}
+
+
+def test_parse_admin_unauth_observations_detects_protected_endpoint():
+    obs = SCAN_CATALOG["TEST-ADMIN-UNAUTH"]["parse_observations"](
+        HTTPS_TARGET, 'HTTP/1.1 401 Unauthorized\r\n\r\n{"detail":"Unauthorized"}'
+    )
+    assert obs == {"admin_unauthenticated": False}
+
+
+# --- TEST-NET-HTTP-INSPECT ---
+
+def test_http_inspect_command_requests_root_with_version_writeout():
+    command = SCAN_CATALOG["TEST-NET-HTTP-INSPECT"]["build_command"](HTTP_TARGET)
+    assert command[0] == "curl"
+    assert "http://device-insecure/" in command
+    assert "-w" in command
+
+
+def test_parse_http_inspect_observations_extracts_banner_and_version():
+    output = "HTTP/1.1 200 OK\r\nServer: uvicorn\r\n\r\n<html></html>\nHTTP_VERSION:1.1\n"
+    obs = SCAN_CATALOG["TEST-NET-HTTP-INSPECT"]["parse_observations"](HTTP_TARGET, output)
+    assert obs == {
+        "server_banner": "uvicorn",
+        "http_version": "1.1",
+        "banner_discloses_framework": True,
+    }
+
+
+def test_parse_http_inspect_observations_handles_missing_server_header():
+    output = "HTTP/1.1 200 OK\r\n\r\n<html></html>\nHTTP_VERSION:1.1\n"
+    obs = SCAN_CATALOG["TEST-NET-HTTP-INSPECT"]["parse_observations"](HTTP_TARGET, output)
+    assert obs == {"server_banner": None, "http_version": "1.1", "banner_discloses_framework": False}
+
+
+# --- TEST-MQTT-OPEN ---
+
+def test_mqtt_command_subscribes_with_a_bounded_wait():
+    command = SCAN_CATALOG["TEST-MQTT-OPEN"]["build_command"](MQTT_TARGET)
+    assert command[0] == "mosquitto_sub"
+    assert "mqtt-broker-insecure" in command
+    assert "-W" in command
+
+
+def test_parse_mqtt_observations_detects_anonymous_connection():
+    output = "devices/device-insecure/telemetry {\"device_id\": \"device-insecure\"}\n"
+    obs = SCAN_CATALOG["TEST-MQTT-OPEN"]["parse_observations"](MQTT_TARGET, output)
+    assert obs == {"mqtt_tls": False, "mqtt_anonymous": True}
+
+
+def test_parse_mqtt_observations_detects_rejected_connection():
+    secure_target = {
+        "device_id": "mqtt-broker-secure", "host": "mqtt-broker-secure",
+        "service_type": "mqtts", "port": 8883,
+    }
+    output = "Connection error: Connection Refused: not authorised.\n"
+    obs = SCAN_CATALOG["TEST-MQTT-OPEN"]["parse_observations"](secure_target, output)
+    assert obs == {"mqtt_tls": True, "mqtt_anonymous": False}
+
+
+# --- TEST-TLS-CONFIG ---
+
+def test_tls_command_connects_with_brief_output():
+    command = SCAN_CATALOG["TEST-TLS-CONFIG"]["build_command"](HTTPS_TARGET)
+    assert command == ["openssl", "s_client", "-connect", "device-hardened:443", "-brief"]
+
+
+def test_parse_tls_observations_detects_weak_cert():
+    # Real committed raw output for the weak 1024-bit cert (document-store/raw/EV-2026-07-08-0019.txt)
+    output = (
+        "Connecting to 172.30.0.2\n"
+        "depth=0 CN=device-partial\n"
+        "verify error:num=66:EE certificate key too weak\n"
+        "CONNECTION ESTABLISHED\n"
+        "Protocol version: TLSv1.3\n"
+        "Ciphersuite: TLS_AES_256_GCM_SHA384\n"
+        "DONE\n"
+    )
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs == {"tls_version": "TLSv1.3", "weak_cipher": True}
+
+
+def test_parse_tls_observations_detects_strong_cert():
+    # Real committed raw output for the strong 2048-bit cert (document-store/raw/EV-2026-07-08-0020.txt)
+    output = (
+        "Connecting to 172.30.0.6\n"
+        "depth=0 CN=device-hardened\n"
+        "verify error:num=20:unable to get local issuer certificate\n"
+        "CONNECTION ESTABLISHED\n"
+        "Protocol version: TLSv1.3\n"
+        "Ciphersuite: TLS_AES_256_GCM_SHA384\n"
+        "DONE\n"
+    )
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs == {"tls_version": "TLSv1.3", "weak_cipher": False}
+
+
+# --- TEST-NET-PKTCAPTURE ---
+
+def test_pktcapture_command_invokes_helper_script():
+    command = SCAN_CATALOG["TEST-NET-PKTCAPTURE"]["build_command"](HTTP_TARGET)
+    assert command == [
+        "python3", "/work/lab/auditor/worker/scan_scripts/packet_capture.py",
+        "device-insecure", "80", "http",
+    ]
+
+
+def test_parse_pktcapture_observations_detects_plaintext_request():
+    output = "packets_captured=6\nplaintext_get_visible=True\n--- packet summary ---\n...\n"
+    obs = SCAN_CATALOG["TEST-NET-PKTCAPTURE"]["parse_observations"](HTTP_TARGET, output)
+    assert obs == {"packets_captured": 6, "plaintext_get_visible": True}
+
+
+def test_parse_pktcapture_observations_detects_no_plaintext_on_https():
+    output = "packets_captured=10\nplaintext_get_visible=False\n--- packet summary ---\n...\n"
+    obs = SCAN_CATALOG["TEST-NET-PKTCAPTURE"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs == {"packets_captured": 10, "plaintext_get_visible": False}
+
+
 def test_portscan_scans_the_full_port_range():
     command = SCAN_CATALOG["TEST-NET-PORTSCAN"]["build_command"](MQTT_TARGET)
     assert command[0] == "nmap"
@@ -165,3 +361,106 @@ def test_parse_headers_observations_empty_when_present():
     output = "HTTP/1.1 200 OK\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'self'\r\n"
     obs = SCAN_CATALOG["TEST-HTTP-HEADERS"]["parse_observations"](HTTPS_TARGET, output)
     assert obs == {"missing_security_headers": []}
+
+
+# --- firmware tests: category, is_firmware_test, and command/parse shapes ---
+
+FIRMWARE_TEST_IDS = (
+    "TEST-FW-VERSION", "TEST-FW-CONFIG", "TEST-FW-SECRETS", "TEST-FW-APIKEY",
+    "TEST-FW-CERTKEY", "TEST-FW-MANIFEST", "TEST-FW-UPDATESCRIPT",
+)
+
+FIRMWARE_TARGET = {"device_id": "device-insecure", "host": None, "service_type": None, "port": None}
+
+
+def test_firmware_tests_are_categorized_and_flagged():
+    for test_id in FIRMWARE_TEST_IDS:
+        assert SCAN_CATALOG[test_id]["category"] == "firmware"
+        assert is_firmware_test(test_id)
+
+
+def test_non_firmware_tests_are_not_flagged():
+    assert not is_firmware_test("TEST-NET-PORTSCAN")
+    assert not is_firmware_test("TEST-DOES-NOT-EXIST")
+
+
+def test_firmware_tests_never_match_a_real_service_type():
+    # applicable_service_types=() means is_applicable() must return False no
+    # matter what service_type a candidate target carries - firmware tests
+    # are gated entirely through is_firmware_test(), never is_applicable().
+    for test_id in FIRMWARE_TEST_IDS:
+        assert not is_applicable(HTTP_TARGET, test_id)
+        assert not is_applicable(HTTPS_TARGET, test_id)
+        assert not is_applicable(MQTT_TARGET, test_id)
+
+
+def test_firmware_commands_invoke_the_check_script_with_device_id_and_check_name():
+    expected_check_names = {
+        "TEST-FW-VERSION": "version",
+        "TEST-FW-CONFIG": "config",
+        "TEST-FW-SECRETS": "secrets",
+        "TEST-FW-APIKEY": "apikey",
+        "TEST-FW-CERTKEY": "certkey",
+        "TEST-FW-MANIFEST": "manifest",
+        "TEST-FW-UPDATESCRIPT": "updatescript",
+    }
+    for test_id, check_name in expected_check_names.items():
+        command = SCAN_CATALOG[test_id]["build_command"](FIRMWARE_TARGET)
+        assert command == [
+            "python3", "/work/lab/auditor/worker/scan_scripts/firmware_check.py",
+            "device-insecure", check_name,
+        ]
+
+
+def test_parse_fw_version_observations():
+    obs = SCAN_CATALOG["TEST-FW-VERSION"]["parse_observations"](
+        FIRMWARE_TARGET, "version_file_present=True\nfirmware_version=1.0.0-old\n"
+    )
+    assert obs == {"version_file_present": True, "firmware_version": "1.0.0-old"}
+
+
+def test_parse_fw_version_observations_when_absent():
+    obs = SCAN_CATALOG["TEST-FW-VERSION"]["parse_observations"](FIRMWARE_TARGET, "version_file_present=False\n")
+    assert obs == {"version_file_present": False, "firmware_version": None}
+
+
+def test_parse_fw_config_observations():
+    obs = SCAN_CATALOG["TEST-FW-CONFIG"]["parse_observations"](
+        FIRMWARE_TARGET, "config_files_present=True\nconfig_files=etc/config.ini\n"
+    )
+    assert obs == {"config_files_present": True, "config_files": ["etc/config.ini"]}
+
+
+def test_parse_fw_secrets_observations():
+    obs = SCAN_CATALOG["TEST-FW-SECRETS"]["parse_observations"](FIRMWARE_TARGET, "hardcoded_secret_found=True\n")
+    assert obs == {"hardcoded_secret_found": True}
+
+
+def test_parse_fw_apikey_observations():
+    obs = SCAN_CATALOG["TEST-FW-APIKEY"]["parse_observations"](FIRMWARE_TARGET, "api_key_found=False\n")
+    assert obs == {"api_key_found": False}
+
+
+def test_parse_fw_certkey_observations():
+    obs = SCAN_CATALOG["TEST-FW-CERTKEY"]["parse_observations"](FIRMWARE_TARGET, "cert_or_key_present=True\n")
+    assert obs == {"cert_or_key_present": True}
+
+
+def test_parse_fw_manifest_observations():
+    output = "manifest_present=True\npackages=openssl:1.0.1e,busybox:1.19.4\n"
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, output)
+    assert obs == {
+        "manifest_present": True,
+        "packages": [{"name": "openssl", "version": "1.0.1e"}, {"name": "busybox", "version": "1.19.4"}],
+    }
+
+
+def test_parse_fw_manifest_observations_when_absent():
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, "manifest_present=False\npackages=\n")
+    assert obs == {"manifest_present": False, "packages": []}
+
+
+def test_parse_fw_updatescript_observations():
+    output = "update_script_present=True\nfirst_line=#!/bin/sh\n"
+    obs = SCAN_CATALOG["TEST-FW-UPDATESCRIPT"]["parse_observations"](FIRMWARE_TARGET, output)
+    assert obs == {"update_script_present": True, "update_script_first_line": "#!/bin/sh"}

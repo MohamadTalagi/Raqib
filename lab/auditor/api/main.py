@@ -2,12 +2,14 @@ import hashlib
 import json
 import os
 import re
+import tarfile
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
 import jsonschema
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
@@ -20,7 +22,7 @@ from device_validation import (
     validate_port,
     validate_service_type,
 )
-from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable
+from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable, is_firmware_test
 from report import build_report_model, render_report_pdf
 
 
@@ -163,6 +165,7 @@ def get_scan_tests():
         {
             "test_id": test_id,
             "label": spec["label"],
+            "category": spec["category"],
             "applicable_service_types": list(spec["applicable_service_types"]),
         }
         for test_id, spec in SCAN_CATALOG.items()
@@ -175,6 +178,29 @@ def post_scan_job(payload: dict):
     test_id = payload.get("test_id")
     if not device_id or not test_id:
         raise HTTPException(status_code=422, detail="device_id and test_id are required")
+
+    # Firmware tests inspect an uploaded archive keyed only by device_id, not
+    # a live host:port - a device can have zero enabled services and still
+    # have firmware uploaded, so this must short-circuit before the
+    # device_services query below (which 400s on "no enabled service").
+    if is_firmware_test(test_id):
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT firmware_sha256 FROM devices WHERE device_id = %s", (device_id,)
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=400, detail="device is not registered")
+            if row[0] is None:
+                raise HTTPException(status_code=400, detail="device has no firmware uploaded")
+            insert_row = conn.execute(
+                f"INSERT INTO scan_jobs (device_id, test_id) VALUES (%s, %s) RETURNING {SCAN_JOB_COLUMNS}",
+                (device_id, test_id),
+            ).fetchone()
+            conn.commit()
+        finally:
+            conn.close()
+        return _row_to_scan_job(insert_row)
 
     conn = get_connection()
     try:
@@ -731,7 +757,10 @@ def create_device(payload: dict) -> dict:
     finally:
         conn.close()
 
-    return {**device, "source": "manual", "services": services, "registered": True}
+    return {
+        **device, "source": "manual", "services": services, "registered": True,
+        "firmware_filename": None, "firmware_sha256": None, "firmware_uploaded_at": None,
+    }
 
 
 @app.get("/devices")
@@ -749,7 +778,8 @@ def get_devices() -> list[dict]:
                 d.vendor, d.model, d.location, d.owner, d.notes, d.source,
                 (d.device_id IS NOT NULL) AS registered,
                 COALESCE(e.evidence_count, 0),
-                COALESCE(v.verdict_count, 0)
+                COALESCE(v.verdict_count, 0),
+                d.firmware_filename, d.firmware_sha256, d.firmware_uploaded_at
             FROM (
                 SELECT device_id FROM devices
                 UNION SELECT device_id FROM evidence
@@ -781,6 +811,9 @@ def get_devices() -> list[dict]:
                     "registered": r[11],
                     "evidence_count": r[12],
                     "verdict_count": r[13],
+                    "firmware_filename": r[14],
+                    "firmware_sha256": r[15],
+                    "firmware_uploaded_at": r[16].isoformat() if r[16] else None,
                     "services": _services_for(conn, device_id) if r[11] else [],
                 }
             )
@@ -799,7 +832,8 @@ def _device_row(conn, device_id: str) -> dict | None:
     row = conn.execute(
         """
         SELECT device_id, display_name, description, tier, host, vendor, model,
-               location, owner, notes, source, created_at, updated_at
+               location, owner, notes, source, created_at, updated_at,
+               firmware_filename, firmware_sha256, firmware_uploaded_at
         FROM devices WHERE device_id = %s
         """,
         (device_id,),
@@ -809,10 +843,13 @@ def _device_row(conn, device_id: str) -> dict | None:
     keys = (
         "device_id", "display_name", "description", "tier", "host", "vendor",
         "model", "location", "owner", "notes", "source", "created_at", "updated_at",
+        "firmware_filename", "firmware_sha256", "firmware_uploaded_at",
     )
     device = dict(zip(keys, row))
     device["created_at"] = device["created_at"].isoformat()
     device["updated_at"] = device["updated_at"].isoformat()
+    if device["firmware_uploaded_at"] is not None:
+        device["firmware_uploaded_at"] = device["firmware_uploaded_at"].isoformat()
     return device
 
 
@@ -1002,6 +1039,106 @@ def delete_device_service(device_id: str, service_id: int) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+MAX_FIRMWARE_UPLOAD_BYTES = 20 * 1024 * 1024
+
+
+def _firmware_path(device_id: str) -> Path:
+    return _document_store_dir() / "firmware" / f"{device_id}.tar.gz"
+
+
+async def _read_capped(upload: UploadFile, max_bytes: int) -> bytes:
+    # Never trust Content-Length alone - it's a client-supplied header and
+    # can lie. Read in chunks and stop the instant the real byte count would
+    # exceed the cap, rather than buffering an arbitrarily large body first.
+    chunks = []
+    total = 0
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail="firmware archive exceeds the 20MB limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _validate_firmware_archive(data: bytes) -> None:
+    try:
+        with tarfile.open(fileobj=BytesIO(data), mode="r:gz") as tar:
+            for member in tar.getmembers():
+                # Defense in depth: scan_archive()/firmware_check.py never
+                # extract to disk (they read member bytes in memory only),
+                # so this can't be exploited today, but a future maintainer
+                # might add extractall() without knowing that assumption.
+                if member.name.startswith("/") or ".." in member.name.split("/"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="archive contains an unsafe member path",
+                    )
+    except tarfile.TarError:
+        raise HTTPException(status_code=400, detail="not a valid .tar.gz archive")
+
+
+@app.post("/devices/{device_id}/firmware", status_code=201)
+async def upload_device_firmware(device_id: str, firmware: UploadFile) -> dict:
+    validate_device_id(device_id)
+    if not firmware.filename or not firmware.filename.lower().endswith((".tar.gz", ".tgz")):
+        raise HTTPException(status_code=400, detail="firmware must be a .tar.gz or .tgz archive")
+
+    conn = get_connection()
+    try:
+        if _device_row(conn, device_id) is None:
+            raise HTTPException(status_code=404, detail="device not found")
+
+        data = await _read_capped(firmware, MAX_FIRMWARE_UPLOAD_BYTES)
+        _validate_firmware_archive(data)
+
+        path = _firmware_path(device_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        sha256 = hashlib.sha256(data).hexdigest()
+        now = datetime.now(timezone.utc)
+
+        conn.execute(
+            """
+            UPDATE devices
+            SET firmware_filename = %s, firmware_sha256 = %s, firmware_uploaded_at = %s
+            WHERE device_id = %s
+            """,
+            (firmware.filename, sha256, now, device_id),
+        )
+        conn.commit()
+        device = _device_row(conn, device_id)
+        device["services"] = _services_for(conn, device_id)
+    finally:
+        conn.close()
+    return device
+
+
+@app.delete("/devices/{device_id}/firmware", status_code=204)
+def delete_device_firmware(device_id: str) -> None:
+    validate_device_id(device_id)
+    conn = get_connection()
+    try:
+        if _device_row(conn, device_id) is None:
+            raise HTTPException(status_code=404, detail="device not found")
+        conn.execute(
+            """
+            UPDATE devices
+            SET firmware_filename = NULL, firmware_sha256 = NULL, firmware_uploaded_at = NULL
+            WHERE device_id = %s
+            """,
+            (device_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    path = _firmware_path(device_id)
+    path.unlink(missing_ok=True)
 
 
 @app.get("/summary")

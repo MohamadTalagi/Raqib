@@ -114,6 +114,14 @@ services:
       - ../policies:/work/policies:ro
       - ./auditor/worker:/work/lab/auditor/worker
       - ../document-store:/work/document-store
+    # NET_ADMIN/NET_RAW are needed only for TEST-NET-PKTCAPTURE, which runs
+    # tcpdump on the worker's own interface (mirrors traffic-capture's
+    # identical cap_add above - a Docker bridge won't let a passive third
+    # party see other containers' unicast traffic, so the worker can only
+    # ever capture its own request/response, which is what this test needs).
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     networks:
       - audit-network
       - internal-network
