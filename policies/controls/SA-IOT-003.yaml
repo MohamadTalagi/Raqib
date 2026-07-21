@@ -14,8 +14,8 @@ required_evidence:
 automated_test_ids: [TEST-NET-PORTSCAN]
 severity: high
 conditions:
-  pass: { field: "observations.telnet_open", op: "equals", value: false }
-  fail: { field: "observations.telnet_open", op: "equals", value: true }
+  pass: { field: "observations.open_ports", op: "not_contains", value: 23 }
+  fail: { field: "observations.open_ports", op: "contains", value: 23 }
   partial: null
   inconclusive: { when: "evidence_missing_or_low_confidence" }
 remediation: "Remove Telnet and any other non-essential listening service from the device image."

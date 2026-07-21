@@ -33,7 +33,6 @@ def test_process_job_runs_whitelisted_command_and_marks_awaiting_finding(mock_ru
     assert final_call.kwargs["json"]["status"] == "awaiting_finding"
     observations = final_call.kwargs["json"]["observations"]
     assert observations["open_ports"] == [80]
-    assert observations["telnet_open"] is False
     assert final_call.kwargs["json"]["tool"] == "nmap"
 
 

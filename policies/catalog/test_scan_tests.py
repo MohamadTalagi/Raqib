@@ -76,15 +76,18 @@ def test_login_command_includes_nondefault_http_port():
     assert "http://device-insecure:8080/login" in command
 
 
-def test_login_command_on_default_http_port_is_byte_identical_to_no_port():
-    # Regression: the resolved port must never leak into the URL when it is
-    # the scheme default - historical evidence records reference this exact
-    # command string.
+def test_login_command_tries_all_ten_default_credential_pairs_chained():
+    from policies.catalog.scan_tests import DEFAULT_CREDENTIAL_PAIRS
+
     command = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["build_command"](HTTP_TARGET)
-    assert command == [
-        "curl", "-s", "-X", "POST", "http://device-insecure/login",
-        "-d", "username=admin&password=admin",
-    ]
+    assert len(DEFAULT_CREDENTIAL_PAIRS) == 10
+    assert command.count("--next") == 9
+    for username, password in DEFAULT_CREDENTIAL_PAIRS:
+        assert f"username={username}&password={password}" in command
+    # The resolved port must never leak into the URL when it is the scheme
+    # default - historical evidence records reference exact command strings.
+    assert "http://device-insecure/login" in command
+    assert "http://device-insecure:80/login" not in command
 
 
 def test_login_command_on_default_https_port_omits_port():
@@ -254,6 +257,15 @@ def test_parse_http_inspect_observations_looks_up_a_versioned_banner():
     assert {c["id"] for c in obs["component_advisory"]["cves"]} == {"CVE-2014-0160", "CVE-2014-0224"}
 
 
+def test_parse_http_inspect_observations_disclosure_is_not_tied_to_one_named_product():
+    # Any registered product's Server header counts as disclosure, not just
+    # this lab's own smart-camera app's uvicorn banner.
+    output = "HTTP/1.1 200 OK\r\nServer: nginx\r\n\r\n<html></html>\nHTTP_VERSION:1.1\n"
+    obs = SCAN_CATALOG["TEST-NET-HTTP-INSPECT"]["parse_observations"](HTTP_TARGET, output)
+    assert obs["server_banner"] == "nginx"
+    assert obs["banner_discloses_framework"] is True
+
+
 # --- TEST-MQTT-OPEN ---
 
 def test_mqtt_command_subscribes_with_a_bounded_wait():
@@ -373,7 +385,7 @@ def test_parse_nmap_observations_detects_telnet_open():
     output = "23/tcp   open  telnet\n80/tcp   open  http\n"
     obs = SCAN_CATALOG["TEST-NET-PORTSCAN"]["parse_observations"](MQTT_TARGET, output)
     assert obs["open_ports"] == [23, 80]
-    assert obs["telnet_open"] is True
+    assert "telnet_open" not in obs
     assert obs["services"] == [
         {"port": 23, "service": "telnet", "version": None},
         {"port": 80, "service": "http", "version": None},
@@ -385,7 +397,7 @@ def test_parse_nmap_observations_no_telnet():
     output = "80/tcp   open  http\n"
     obs = SCAN_CATALOG["TEST-NET-PORTSCAN"]["parse_observations"](MQTT_TARGET, output)
     assert obs["open_ports"] == [80]
-    assert obs["telnet_open"] is False
+    assert "telnet_open" not in obs
     assert obs["notes"] == []
 
 
@@ -398,20 +410,40 @@ def test_parse_nmap_observations_captures_version_when_disclosed():
     assert any("disclosed version information" in n for n in obs["notes"])
 
 
+def _chained_login_output(success_indices: set[int], total: int = 10) -> str:
+    chunks = []
+    for i in range(total):
+        body = '{"status":"ok","message":"Login successful"}' if i in success_indices else '{"detail":"Invalid credentials"}'
+        chunks.append(f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{body}")
+    return "".join(chunks)
+
+
 def test_parse_login_observations_detects_success():
     obs = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["parse_observations"](
-        HTTP_TARGET, '{"status":"ok","message":"Login successful"}'
+        HTTP_TARGET, _chained_login_output({0}),  # index 0 = admin:admin
     )
     assert obs["default_creds"] is True
+    assert obs["working_credentials"] == [{"username": "admin", "password": "admin"}]
+    assert len(obs["credentials_tried"]) == 10
     assert obs["notes"]
 
 
 def test_parse_login_observations_detects_failure():
     obs = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["parse_observations"](
-        HTTPS_TARGET, '{"detail":"Invalid credentials"}'
+        HTTPS_TARGET, _chained_login_output(set()),
     )
     assert obs["default_creds"] is False
-    assert obs["notes"] == ["Default admin/admin credentials were rejected."]
+    assert obs["working_credentials"] == []
+    assert obs["notes"] == ["None of the 10 tried default credential pairs were accepted."]
+
+
+def test_parse_login_observations_detects_a_non_admin_pair_working():
+    obs = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["parse_observations"](
+        HTTP_TARGET, _chained_login_output({3}),  # index 3 = root:root
+    )
+    assert obs["default_creds"] is True
+    assert obs["working_credentials"] == [{"username": "root", "password": "root"}]
+    assert "root:root" in obs["notes"][0]
 
 
 def test_parse_headers_observations_flags_missing_headers():

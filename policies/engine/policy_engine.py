@@ -12,6 +12,7 @@ OPS = {
     "greater_than": lambda a, b: a is not None and a > b,
     "less_than": lambda a, b: a is not None and a < b,
     "contains": lambda a, b: b in a if a is not None else False,
+    "not_contains": lambda a, b: b not in a if a is not None else True,
 }
 
 STATUS_MAP = {"fail": "FAIL", "partial": "PARTIAL", "pass": "PASS", "inconclusive": "INCONCLUSIVE"}

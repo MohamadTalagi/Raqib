@@ -51,6 +51,24 @@ CATEGORY_FIRMWARE = "firmware"
 
 FIRMWARE_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/firmware_check.py"
 
+# The 10 most commonly documented IoT default credential pairs (widely
+# published, e.g. in the Mirai botnet's credential list and OWASP IoT
+# guidance) - checked against whatever product is registered, not one
+# specific device's known seed credentials, so this stays meaningful for
+# any IoT product an auditor registers, not just this lab's smart camera.
+DEFAULT_CREDENTIAL_PAIRS: list[tuple[str, str]] = [
+    ("admin", "admin"),
+    ("admin", "password"),
+    ("admin", "1234"),
+    ("root", "root"),
+    ("root", "toor"),
+    ("root", "admin"),
+    ("admin", ""),
+    ("admin", "12345"),
+    ("user", "user"),
+    ("guest", "guest"),
+]
+
 
 def _scheme_for(target: dict) -> str:
     return "https" if target["service_type"] == "https" else "http"
@@ -113,7 +131,6 @@ def _parse_nmap_observations(target: dict, output: str) -> dict:
         )
     return {
         "open_ports": ports,
-        "telnet_open": telnet_open,
         "services": services,
         "notes": notes,
     }
@@ -121,26 +138,48 @@ def _parse_nmap_observations(target: dict, output: str) -> dict:
 
 def _login_command(target: dict) -> list[str]:
     scheme = _scheme_for(target)
-    flags = _http_flags(scheme)
     authority = _authority_for(target, scheme)
-    return [
-        "curl", *flags, "-X", "POST", f"{scheme}://{authority}/login",
-        "-d", "username=admin&password=admin",
-    ]
+    login_url = f"{scheme}://{authority}/login"
+    # One curl invocation, chained via --next - still a single argv list
+    # (never a shell string), just one request per credential pair. -i is
+    # needed (not just -s) so each response's status line is available as a
+    # delimiter when splitting the concatenated output back into per-pair
+    # chunks in _parse_login_observations.
+    command: list[str] = ["curl"]
+    for index, (username, password) in enumerate(DEFAULT_CREDENTIAL_PAIRS):
+        if index > 0:
+            command.append("--next")
+        command += _http_flags(scheme, "-i", "-X", "POST")
+        command += [login_url, "-d", f"username={username}&password={password}"]
+    return command
 
 
 def _parse_login_observations(target: dict, output: str) -> dict:
-    default_creds = "Login successful" in output
+    chunks = [c for c in re.split(r"(?=HTTP/\d(?:\.\d)? \d{3})", output) if c.strip()]
+    tried = [{"username": u, "password": p} for u, p in DEFAULT_CREDENTIAL_PAIRS]
+    working = [
+        pair
+        for pair, chunk in zip(tried, chunks)
+        if "Login successful" in chunk
+    ]
+    default_creds = bool(working)
     notes = (
         [
-            "Default admin/admin credentials were accepted - this gives any "
-            "network-adjacent party full administrative control. Force a "
-            "unique password on first boot, not just at manual setup time.",
+            "Accepted default credential pair(s): "
+            + ", ".join(f"{c['username']}:{c['password'] or '(blank)'}" for c in working)
+            + " - this gives any network-adjacent party full administrative "
+            "control. Force a unique password on first boot, not just at "
+            "manual setup time.",
         ]
         if default_creds
-        else ["Default admin/admin credentials were rejected."]
+        else [f"None of the {len(tried)} tried default credential pairs were accepted."]
     )
-    return {"default_creds": default_creds, "notes": notes}
+    return {
+        "default_creds": default_creds,
+        "credentials_tried": tried,
+        "working_credentials": working,
+        "notes": notes,
+    }
 
 
 def _headers_command(target: dict) -> list[str]:
@@ -282,7 +321,11 @@ def _parse_http_inspect_observations(target: dict, output: str) -> dict:
     server = re.search(r"^Server:\s*(.+)$", output, re.MULTILINE | re.IGNORECASE)
     version = re.search(r"HTTP_VERSION:(\S+)", output)
     banner = server.group(1).strip() if server else None
-    banner_discloses_framework = bool(banner and "uvicorn" in banner.lower())
+    # Any non-empty Server header discloses something about the underlying
+    # stack to reconnaissance - this isn't limited to one named framework so
+    # it stays meaningful for whatever product is registered, not just this
+    # lab's own smart-camera app.
+    banner_discloses_framework = bool(banner)
     # Best-effort "name/version" or "name version" split (e.g. "nginx/1.18.0")
     # so a recognized component gets a real vuln_reference lookup instead of
     # only being flagged as "discloses a framework" with no follow-up data.

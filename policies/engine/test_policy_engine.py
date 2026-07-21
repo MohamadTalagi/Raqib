@@ -1,4 +1,8 @@
-from policies.engine.policy_engine import evaluate, _get_field
+from pathlib import Path
+
+from policies.engine.policy_engine import evaluate, load_control, _get_field
+
+CONTROLS_DIR = Path(__file__).resolve().parents[1] / "controls"
 
 CONTROL = {
     "control_id": "SA-IOT-002",
@@ -71,3 +75,30 @@ def test_inconclusive_when_nothing_matches():
     }
     verdict = evaluate(no_match_control, _evidence(True))
     assert verdict["status"] == "INCONCLUSIVE"
+
+
+def test_not_contains_op():
+    control = dict(CONTROL)
+    control["conditions"] = {
+        "fail": {"field": "observations.open_ports", "op": "contains", "value": 23},
+        "partial": None,
+        "pass": {"field": "observations.open_ports", "op": "not_contains", "value": 23},
+        "inconclusive": {"when": "evidence_missing_or_low_confidence"},
+    }
+    evidence_with_telnet = {**_evidence(None), "observations": {"open_ports": [23, 80]}}
+    evidence_without_telnet = {**_evidence(None), "observations": {"open_ports": [80]}}
+    assert evaluate(control, evidence_with_telnet)["status"] == "FAIL"
+    assert evaluate(control, evidence_without_telnet)["status"] == "PASS"
+
+
+def test_sa_iot_003_real_control_reproduces_historical_verdicts_via_open_ports():
+    # SA-IOT-003 used to key on a boolean observations.telnet_open field that
+    # scan_tests.py no longer emits; it was migrated to open_ports contains/
+    # not_contains 23 instead. Both fields co-existed in the real committed
+    # Day-2 evidence, so this must reproduce the exact same historical
+    # verdicts (EV-2026-07-08-0013 -> PASS, EV-2026-07-08-0014 -> FAIL).
+    control = load_control(str(CONTROLS_DIR / "SA-IOT-003.yaml"))
+    passing_evidence = {**_evidence(None), "observations": {"open_ports": [80]}}
+    failing_evidence = {**_evidence(None), "observations": {"open_ports": [23]}}
+    assert evaluate(control, passing_evidence)["status"] == "PASS"
+    assert evaluate(control, failing_evidence)["status"] == "FAIL"
