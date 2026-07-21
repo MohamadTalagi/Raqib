@@ -20,7 +20,10 @@ SEED_DEVICES = [
         "description": "Default creds, plain HTTP, Telnet, unencrypted MQTT, hard-coded API key.",
         "tier": "insecure",
         "host": "device-insecure",
-        "services": [{"service_type": "http", "port": 80, "published_port": 8081}],
+        "services": [
+            {"service_type": "http", "port": 80, "published_port": 8081},
+            {"service_type": "telnet", "port": 23, "published_port": None},
+        ],
     },
     {
         "device_id": "device-partial",

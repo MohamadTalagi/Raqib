@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     require_admin_auth: bool = False
 
+    # Unencrypted legacy management service - part of the insecure profile's
+    # original posture (default off; only insecure.env turns it on).
+    telnet_enabled: bool = False
+
     logging_mode: str = "off"  # off | basic | security
 
     privacy_doc_path: str = "docs/privacy_insecure.md"

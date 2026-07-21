@@ -13,7 +13,7 @@ RUN chmod +x entrypoint.sh
 
 ENV PYTHONPATH=/app
 
-EXPOSE 80 443
+EXPOSE 80 443 23
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD python -c "\
 import os, ssl, urllib.request; \
