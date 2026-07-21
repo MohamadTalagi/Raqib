@@ -8,7 +8,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { ConfidenceLabel, SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { serviceIcon } from "@/lib/serviceIcons";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -183,7 +182,7 @@ export function DeviceDetailPage() {
     );
   }
 
-  const { device, services, evidence, verdicts, scan_jobs } = detail.data;
+  const { device, evidence, verdicts, scan_jobs } = detail.data;
   const tier = TIER_META[device.tier];
   const TierIcon = tier.icon;
   const firmware: FirmwareState = firmwareOverride ?? device;
@@ -256,47 +255,6 @@ export function DeviceDetailPage() {
             <MetaField label="Location" value={device.location} />
             <MetaField label="Owner" value={device.owner} />
             <MetaField label="Notes" value={device.notes} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Services</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-2">
-            {services.length === 0 ? (
-              <EmptyState message="No services registered for this device." />
-            ) : (
-              <ul className="divide-y divide-[var(--color-border)]">
-                {services.map((service) => {
-                  const Icon = serviceIcon(service.service_type);
-                  return (
-                    <li key={service.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
-                      <Icon className="h-4 w-4 text-[var(--color-text-secondary)]" />
-                      <span className="font-mono text-xs tracking-wide text-[var(--color-text-secondary)] uppercase">
-                        {service.service_type}
-                      </span>
-                      {!service.enabled && (
-                        <span className="text-[10px] font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
-                          disabled
-                        </span>
-                      )}
-                      <span className="ml-auto flex items-center gap-4 font-mono text-xs text-[var(--color-text-muted)]">
-                        <span>Internal port: {service.port}</span>
-                        <span>
-                          Published port:{" "}
-                          {service.published_port !== null ? (
-                            service.published_port
-                          ) : (
-                            <span className="italic">not browser-reachable</span>
-                          )}
-                        </span>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
           </CardContent>
         </Card>
 

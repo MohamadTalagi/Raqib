@@ -60,13 +60,12 @@ function renderPage() {
 }
 
 describe("DeviceDetailPage", () => {
-  it("shows the device, its services, evidence and verdicts together", async () => {
+  it("shows the device, its evidence and verdicts together", async () => {
     vi.spyOn(api, "device").mockResolvedValue(DETAIL);
     renderPage();
 
     expect(await screen.findByText("Smart Camera — Insecure")).toBeInTheDocument();
     expect(screen.getByText("AcmeCam")).toBeInTheDocument();
-    expect(screen.getByText(/8081/)).toBeInTheDocument();
     expect(screen.getByText("Telnet exposed")).toBeInTheDocument();
     expect(screen.getByText("SA-IOT-002")).toBeInTheDocument();
     expect(screen.getByText("FAIL")).toBeInTheDocument();
