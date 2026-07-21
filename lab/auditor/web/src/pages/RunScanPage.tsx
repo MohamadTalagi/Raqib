@@ -63,13 +63,18 @@ interface ScanJobCardProps {
   jobId: number;
   testLabel: string;
   onRecorded: () => void;
+  onStatusChange: (jobId: number, status: ScanJob["status"]) => void;
 }
 
-function ScanJobCard({ jobId, testLabel, onRecorded }: ScanJobCardProps) {
+function ScanJobCard({ jobId, testLabel, onRecorded, onStatusChange }: ScanJobCardProps) {
   const [job, setJob] = useScanJob(jobId);
   const [finding, setFinding] = useState("");
   const [confidence, setConfidence] = useState<"high" | "medium" | "low">("high");
   const [recordError, setRecordError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (job) onStatusChange(jobId, job.status);
+  }, [jobId, job, onStatusChange]);
 
   async function handleRecord() {
     if (job === null) return;
@@ -234,10 +239,20 @@ export function RunScanPage() {
   const [deviceId, setDeviceId] = useState<string>("");
   const [selectedTestIds, setSelectedTestIds] = useState<Set<string>>(new Set());
   const [jobs, setJobs] = useState<RunningJob[]>([]);
+  const [jobStatuses, setJobStatuses] = useState<Record<number, ScanJob["status"]>>({});
   const [launchErrors, setLaunchErrors] = useState<Record<string, string>>({});
   const [launching, setLaunching] = useState(false);
   const [recomputeResult, setRecomputeResult] = useState<number | null>(null);
   const [recomputing, setRecomputing] = useState(false);
+
+  // A scan already in flight (pending/running) blocks launching another one -
+  // there's no need to distinguish which test it is, just whether the
+  // worker is currently busy with something the user started here.
+  const hasRunningJob = Object.values(jobStatuses).some((status) => IN_FLIGHT_STATUSES.has(status));
+
+  function handleJobStatusChange(jobId: number, status: ScanJob["status"]) {
+    setJobStatuses((prev) => (prev[jobId] === status ? prev : { ...prev, [jobId]: status }));
+  }
 
   // Registered devices are the only valid scan targets - a scan job resolves
   // its target from the devices table, so an unregistered device has no
@@ -298,12 +313,17 @@ export function RunScanPage() {
     );
 
     const newJobs: RunningJob[] = [];
+    const newStatuses: Record<number, ScanJob["status"]> = {};
     const errors: Record<string, string> = {};
     results.forEach((result, index) => {
       const testId = testIds[index];
       const label = testsForDevice.find((t) => t.test_id === testId)?.label ?? testId;
       if (result.status === "fulfilled") {
         newJobs.push({ jobId: result.value.id, testId, testLabel: label });
+        // Seed the status from the create response itself (rather than
+        // waiting for ScanJobCard's first poll) so "a scan is running"
+        // is true from the instant it's launched, with no gap.
+        newStatuses[result.value.id] = result.value.status;
       } else {
         const err = result.reason;
         errors[testId] = err instanceof ApiError ? err.message : "Could not start this scan.";
@@ -311,6 +331,7 @@ export function RunScanPage() {
     });
 
     setJobs((prev) => [...newJobs, ...prev]);
+    setJobStatuses((prev) => ({ ...prev, ...newStatuses }));
     setLaunchErrors(errors);
     setLaunching(false);
   }
@@ -459,12 +480,18 @@ export function RunScanPage() {
               <button
                 type="button"
                 onClick={handleRunSelected}
-                disabled={selectedTestIds.size === 0 || launching}
+                disabled={selectedTestIds.size === 0 || launching || hasRunningJob}
+                title={hasRunningJob ? "Wait for the current scan to finish before starting another." : undefined}
                 className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
                 Run selected ({selectedTestIds.size})
               </button>
+              {hasRunningJob && (
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  A scan is already running — wait for it to finish before starting another.
+                </p>
+              )}
               {Object.entries(launchErrors).map(([testId, message]) => (
                 <p key={testId} className="text-sm text-[var(--color-critical)]">
                   {testId}: {message}
@@ -502,6 +529,7 @@ export function RunScanPage() {
                   jobId={j.jobId}
                   testLabel={j.testLabel}
                   onRecorded={() => setRecomputeResult(null)}
+                  onStatusChange={handleJobStatusChange}
                 />
               ))}
             </div>

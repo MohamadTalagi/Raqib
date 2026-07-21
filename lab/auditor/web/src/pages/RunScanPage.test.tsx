@@ -260,6 +260,50 @@ describe("RunScanPage", () => {
     expect(await screen.findByText(/1 new verdict generated/i)).toBeInTheDocument();
   });
 
+  it("disables Run selected while the launched scan is still pending/running, re-enabling once it finishes", async () => {
+    let jobState: ScanJob = {
+      id: 9,
+      device_id: "device-insecure",
+      test_id: "TEST-NET-PORTSCAN",
+      status: "pending",
+      tool: null,
+      tool_version: null,
+      command: null,
+      raw_output: null,
+      observations: null,
+      error: null,
+      evidence_id: null,
+      created_at: "2026-07-21T00:00:00Z",
+      updated_at: "2026-07-21T00:00:00Z",
+    };
+    vi.spyOn(api, "createScanJob").mockImplementation(async () => jobState);
+    vi.spyOn(api, "getScanJob").mockImplementation(async () => jobState);
+
+    render(
+      <MemoryRouter>
+        <RunScanPage />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+    await user.click(await screen.findByRole("checkbox", { name: "Nmap service/port scan" }));
+
+    const runButton = screen.getByRole("button", { name: /run selected \(1\)/i });
+    await user.click(runButton);
+
+    expect(await screen.findByText(/queued/i)).toBeInTheDocument();
+    expect(runButton).toBeDisabled();
+    expect(screen.getByText(/a scan is already running/i)).toBeInTheDocument();
+
+    jobState = { ...jobState, status: "awaiting_finding", command: "nmap -sV -p- device-insecure", raw_output: "80/tcp open http\n" };
+    // The next poll fires POLL_INTERVAL_MS (1200ms) after the previous one -
+    // longer than testing-library's default waitFor timeout.
+    await waitFor(() => expect(runButton).toBeEnabled(), { timeout: 3000 });
+    expect(screen.queryByText(/a scan is already running/i)).not.toBeInTheDocument();
+  });
+
   it("can select every test in a section at once via Select all", async () => {
     vi.spyOn(api, "createScanJob").mockImplementation(async (_deviceId, testId) => ({
       id: testId === "TEST-NET-PORTSCAN" ? 1 : 2,
