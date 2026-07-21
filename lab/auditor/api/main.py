@@ -593,6 +593,37 @@ def _load_all_controls() -> list[dict]:
     return controls
 
 
+NCA_FRAMEWORK = "CGIoT-1:2024"
+
+
+def _compliance_from_verdict_rows(rows: list[tuple]) -> dict:
+    """Percent compliance against the mapped NCA CGIoT-1:2024 controls.
+
+    rows: iterable of (control_id, status, timestamp). A control can carry
+    more than one verdict over time (re-tested with new evidence) - only the
+    most recent verdict per control_id counts, so re-testing a control
+    doesn't dilute or double-count its contribution.
+
+    Denominator is controls that have actually been assessed (have at least
+    one verdict), not the full mapped-control catalog - an unassessed
+    control is reported as missing coverage, never assumed to fail or pass.
+    """
+    latest: dict[str, tuple[str, object]] = {}
+    for control_id, status, timestamp in rows:
+        if control_id not in latest or timestamp > latest[control_id][1]:
+            latest[control_id] = (status, timestamp)
+
+    tested = len(latest)
+    passing = sum(1 for status, _ in latest.values() if status == "PASS")
+    percentage = round(passing / tested * 100) if tested else None
+    return {
+        "framework": NCA_FRAMEWORK,
+        "tested_controls": tested,
+        "passing_controls": passing,
+        "percentage": percentage,
+    }
+
+
 @app.get("/controls")
 def get_controls():
     return _load_all_controls()
@@ -934,6 +965,7 @@ def get_device_detail(device_id: str) -> dict:
             {"id": r[0], "test_id": r[1], "status": r[2], "created_at": r[3].isoformat()}
             for r in jobs
         ],
+        "compliance": _compliance_from_verdict_rows([(r[1], r[2], r[5]) for r in verdicts]),
     }
 
 
@@ -1150,13 +1182,26 @@ def get_summary():
         status_rows = conn.execute(
             "SELECT status, COUNT(*) FROM verdicts GROUP BY status"
         ).fetchall()
+        verdict_rows = conn.execute(
+            "SELECT device_id, control_id, status, timestamp FROM verdicts"
+        ).fetchall()
     finally:
         conn.close()
     verdicts_by_status = {"PASS": 0, "FAIL": 0, "PARTIAL": 0, "INCONCLUSIVE": 0}
     for status, count in status_rows:
         verdicts_by_status[status] = count
+
+    by_device: dict[str, list[tuple]] = {}
+    for device_id, control_id, status, timestamp in verdict_rows:
+        by_device.setdefault(device_id, []).append((control_id, status, timestamp))
+    device_compliance = [
+        {"device_id": device_id, **_compliance_from_verdict_rows(rows)}
+        for device_id, rows in sorted(by_device.items())
+    ]
+
     return {
         "total_evidence": total_evidence,
         "total_verdicts": total_verdicts,
         "verdicts_by_status": verdicts_by_status,
+        "device_compliance": device_compliance,
     }

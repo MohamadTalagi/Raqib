@@ -56,10 +56,22 @@ export interface DeviceSummary {
   verdict_count: number;
 }
 
+export interface ComplianceReport {
+  framework: string;
+  tested_controls: number;
+  passing_controls: number;
+  percentage: number | null;
+}
+
+export interface DeviceComplianceReport extends ComplianceReport {
+  device_id: string;
+}
+
 export interface Summary {
   total_evidence: number;
   total_verdicts: number;
   verdicts_by_status: Record<VerdictStatus, number>;
+  device_compliance: DeviceComplianceReport[];
 }
 
 export type ScanTestCategory = "web-and-auth" | "network-and-protocol" | "firmware";
@@ -183,6 +195,7 @@ export interface DeviceDetail {
     status: string;
     created_at: string;
   }>;
+  compliance: ComplianceReport;
 }
 
 export interface ControlVerdictRollup {

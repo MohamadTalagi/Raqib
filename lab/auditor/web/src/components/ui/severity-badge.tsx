@@ -55,3 +55,24 @@ export function ConfidenceLabel({ confidence }: { confidence: Confidence }) {
     </span>
   );
 }
+
+function complianceStyle(percentage: number | null): string {
+  if (percentage === null) return STATUS_STYLES.INCONCLUSIVE;
+  if (percentage >= 80) return STATUS_STYLES.PASS;
+  if (percentage >= 50) return STATUS_STYLES.PARTIAL;
+  return STATUS_STYLES.FAIL;
+}
+
+/** A percentage-based compliance pill, shared by the device detail page and the Overview fleet breakdown. */
+export function ComplianceBadge({ percentage }: { percentage: number | null }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs font-semibold tracking-wide",
+        complianceStyle(percentage),
+      )}
+    >
+      {percentage === null ? "NOT ASSESSED" : `${percentage}%`}
+    </span>
+  );
+}

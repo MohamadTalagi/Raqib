@@ -30,4 +30,19 @@ describe("OverviewPage", () => {
 
     expect(await screen.findByText("Highest-priority failures")).toBeInTheDocument();
   });
+
+  it("shows per-device NCA compliance, worst first, linking to each device", async () => {
+    render(
+      <MemoryRouter>
+        <OverviewPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("NCA CGIoT-1:2024 compliance by device")).toBeInTheDocument();
+    const rows = screen.getAllByRole("link", { name: /device-/ });
+    expect(rows.map((r) => r.textContent)).toEqual(["device-insecure", "device-hardened"]);
+    expect(rows[0]).toHaveAttribute("href", "/devices/device-insecure");
+    expect(screen.getByText("0%")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
 });

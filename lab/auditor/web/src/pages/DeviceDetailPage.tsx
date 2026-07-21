@@ -6,7 +6,7 @@ import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
-import { ConfidenceLabel, SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
+import { ComplianceBadge, ConfidenceLabel, SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
@@ -182,7 +182,7 @@ export function DeviceDetailPage() {
     );
   }
 
-  const { device, evidence, verdicts, scan_jobs } = detail.data;
+  const { device, evidence, verdicts, scan_jobs, compliance } = detail.data;
   const tier = TIER_META[device.tier];
   const TierIcon = tier.icon;
   const firmware: FirmwareState = firmwareOverride ?? device;
@@ -200,6 +200,13 @@ export function DeviceDetailPage() {
             >
               <TierIcon className="h-3 w-3" />
               {tier.label}
+            </span>
+            <span
+              className="flex items-center gap-1.5"
+              title={`${compliance.tested_controls} of the NCA ${compliance.framework} controls this lab automates have been assessed for this device; ${compliance.passing_controls} pass.`}
+            >
+              <span className="text-xs text-[var(--color-text-muted)]">{compliance.framework}:</span>
+              <ComplianceBadge percentage={compliance.percentage} />
             </span>
             <span className="font-mono text-xs text-[var(--color-text-secondary)]">
               {device.host ?? <span className="text-[var(--color-text-muted)]">No host configured</span>}

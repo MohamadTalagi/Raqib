@@ -47,6 +47,7 @@ const DETAIL: DeviceDetail = {
     },
   ],
   scan_jobs: [],
+  compliance: { framework: "CGIoT-1:2024", tested_controls: 1, passing_controls: 0, percentage: 0 },
 };
 
 function renderPage() {
@@ -60,6 +61,24 @@ function renderPage() {
 }
 
 describe("DeviceDetailPage", () => {
+  it("shows the device's NCA compliance percentage", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    renderPage();
+
+    expect(await screen.findByText("0%")).toBeInTheDocument();
+    expect(screen.getByText(/CGIoT-1:2024:/)).toBeInTheDocument();
+  });
+
+  it("shows 'not assessed' when no controls have been tested for this device", async () => {
+    vi.spyOn(api, "device").mockResolvedValue({
+      ...DETAIL,
+      compliance: { framework: "CGIoT-1:2024", tested_controls: 0, passing_controls: 0, percentage: null },
+    });
+    renderPage();
+
+    expect(await screen.findByText("NOT ASSESSED")).toBeInTheDocument();
+  });
+
   it("shows the device, its evidence and verdicts together", async () => {
     vi.spyOn(api, "device").mockResolvedValue(DETAIL);
     renderPage();

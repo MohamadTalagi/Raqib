@@ -4,6 +4,10 @@ export const summaryFixture: Summary = {
   total_evidence: 12,
   total_verdicts: 8,
   verdicts_by_status: { PASS: 4, FAIL: 4, PARTIAL: 0, INCONCLUSIVE: 0 },
+  device_compliance: [
+    { device_id: "device-insecure", framework: "CGIoT-1:2024", tested_controls: 2, passing_controls: 0, percentage: 0 },
+    { device_id: "device-hardened", framework: "CGIoT-1:2024", tested_controls: 2, passing_controls: 2, percentage: 100 },
+  ],
 };
 
 export const devicesFixture: Device[] = [

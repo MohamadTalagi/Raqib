@@ -65,3 +65,56 @@ def test_get_summary_returns_aggregate_counts(client):
     assert body["total_verdicts"] == 2
     assert body["verdicts_by_status"]["FAIL"] == 1
     assert body["verdicts_by_status"]["PASS"] == 1
+
+
+def test_get_summary_includes_per_device_nca_compliance(client):
+    client.post("/verdicts", json=VERDICT_FAIL)
+    client.post("/verdicts", json=VERDICT_PASS)
+
+    body = client.get("/summary").json()
+    by_device = {d["device_id"]: d for d in body["device_compliance"]}
+    assert by_device["device-insecure"] == {
+        "device_id": "device-insecure", "framework": "CGIoT-1:2024",
+        "tested_controls": 1, "passing_controls": 0, "percentage": 0,
+    }
+    assert by_device["device-hardened"] == {
+        "device_id": "device-hardened", "framework": "CGIoT-1:2024",
+        "tested_controls": 1, "passing_controls": 1, "percentage": 100,
+    }
+
+
+def test_device_compliance_keeps_only_the_latest_verdict_per_control(client):
+    # device-insecure gets two verdicts for the SAME control - an older FAIL
+    # and a newer PASS (re-tested after a fix). Only the newer one should
+    # count, not both (which would otherwise read as 50%).
+    client.post("/devices", json={
+        "device_id": VERDICT_FAIL["device_id"], "display_name": "Device Insecure",
+        "tier": "insecure", "host": VERDICT_FAIL["device_id"],
+        "services": [{"service_type": "http", "port": 80, "published_port": None}],
+    })
+    older_fail = dict(VERDICT_FAIL, timestamp="2026-01-01T00:00:00Z")
+    newer_pass = dict(
+        VERDICT_FAIL, verdict_id="VD-2026-07-08-9003", status="PASS",
+        matched="pass", timestamp="2026-06-01T00:00:00Z",
+    )
+    client.post("/verdicts", json=older_fail)
+    client.post("/verdicts", json=newer_pass)
+
+    body = client.get(f"/devices/{VERDICT_FAIL['device_id']}").json()
+    assert body["compliance"] == {
+        "framework": "CGIoT-1:2024", "tested_controls": 1,
+        "passing_controls": 1, "percentage": 100,
+    }
+
+
+def test_device_compliance_is_none_when_no_controls_tested(client):
+    client.post("/devices", json={
+        "device_id": "untested-device", "display_name": "Untested",
+        "tier": "unknown", "host": "untested-device",
+        "services": [{"service_type": "http", "port": 80, "published_port": None}],
+    })
+    body = client.get("/devices/untested-device").json()
+    assert body["compliance"] == {
+        "framework": "CGIoT-1:2024", "tested_controls": 0,
+        "passing_controls": 0, "percentage": None,
+    }

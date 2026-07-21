@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/state";
 import { StatTile } from "@/components/ui/stat-tile";
-import { StatusBadge, SeverityBadge } from "@/components/ui/severity-badge";
+import { StatusBadge, SeverityBadge, ComplianceBadge } from "@/components/ui/severity-badge";
+import { Link } from "react-router-dom";
 import { VerdictDonut } from "@/components/charts/VerdictDonut";
 import { DeviceActivityBar } from "@/components/charts/DeviceActivityBar";
 import { ComplianceGauge } from "@/components/charts/ComplianceGauge";
@@ -37,6 +38,16 @@ export function OverviewPage() {
     if (decided === 0) return 0;
     const weighted = s.verdicts_by_status.PASS + s.verdicts_by_status.PARTIAL * 0.5;
     return Math.round((weighted / decided) * 100);
+  }, [summary.data]);
+
+  const deviceCompliance = useMemo(() => {
+    const rows = summary.data?.device_compliance ?? [];
+    // Only devices with at least one assessed control have a meaningful
+    // percentage to rank - devices with zero coverage are surfaced
+    // separately rather than sorted in among real scores.
+    return [...rows]
+      .filter((d) => d.percentage !== null)
+      .sort((a, b) => (a.percentage ?? 0) - (b.percentage ?? 0));
   }, [summary.data]);
 
   const topFailures = useMemo(() => {
@@ -161,6 +172,42 @@ export function OverviewPage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>NCA CGIoT-1:2024 compliance by device</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+                Percentage of this device's assessed controls (out of the 5 this lab automates)
+                that currently PASS. Devices with no assessed controls yet aren't scored.
+              </p>
+              {summary.loading || !summary.data ? (
+                <Skeleton className="h-32" />
+              ) : deviceCompliance.length === 0 ? (
+                <p className="py-6 text-center text-sm text-[var(--color-text-muted)]">
+                  No device has an assessed NCA control yet.
+                </p>
+              ) : (
+                <ul className="divide-y divide-[var(--color-border)]">
+                  {deviceCompliance.map((d) => (
+                    <li key={d.device_id} className="flex items-center gap-4 py-2.5 text-sm">
+                      <Link
+                        to={`/devices/${d.device_id}`}
+                        className="min-w-0 flex-1 truncate font-mono text-[var(--color-text)] hover:underline"
+                      >
+                        {d.device_id}
+                      </Link>
+                      <span className="font-mono-tabular text-xs text-[var(--color-text-muted)]">
+                        {d.passing_controls}/{d.tested_controls} passing
+                      </span>
+                      <ComplianceBadge percentage={d.percentage} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
