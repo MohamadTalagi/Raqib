@@ -1,5 +1,4 @@
-import type { LucideIcon } from "lucide-react";
-import { FileDown, HelpCircle, ShieldAlert, ShieldCheck, ShieldQuestion, Trash2, Upload } from "lucide-react";
+import { FileDown, Trash2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Shell } from "@/components/layout/Shell";
@@ -10,37 +9,7 @@ import { ComplianceBadge, ConfidenceLabel, SeverityBadge, StatusBadge } from "@/
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
-import { cn } from "@/lib/utils";
-import type { Confidence, DeviceTier, Severity, VerdictStatus } from "@/lib/types";
-
-interface TierMeta {
-  label: string;
-  icon: LucideIcon;
-  className: string;
-}
-
-const TIER_META: Record<DeviceTier, TierMeta> = {
-  insecure: {
-    label: "Insecure",
-    icon: ShieldAlert,
-    className: "text-[var(--color-critical)] bg-[color-mix(in_oklab,var(--color-critical)_14%,transparent)]",
-  },
-  partial: {
-    label: "Partial",
-    icon: ShieldQuestion,
-    className: "text-[var(--color-medium)] bg-[color-mix(in_oklab,var(--color-medium)_14%,transparent)]",
-  },
-  hardened: {
-    label: "Hardened",
-    icon: ShieldCheck,
-    className: "text-[var(--color-pass)] bg-[color-mix(in_oklab,var(--color-pass)_14%,transparent)]",
-  },
-  unknown: {
-    label: "Unknown",
-    icon: HelpCircle,
-    className: "text-[var(--color-text-muted)] bg-[var(--color-surface-hover)]",
-  },
-};
+import type { Confidence, Severity, VerdictStatus } from "@/lib/types";
 
 const VERDICT_STATUSES: readonly VerdictStatus[] = ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"];
 const SEVERITIES: readonly Severity[] = ["low", "medium", "high", "critical"];
@@ -183,8 +152,6 @@ export function DeviceDetailPage() {
   }
 
   const { device, evidence, verdicts, scan_jobs, compliance } = detail.data;
-  const tier = TIER_META[device.tier];
-  const TierIcon = tier.icon;
   const firmware: FirmwareState = firmwareOverride ?? device;
 
   return (
@@ -192,15 +159,6 @@ export function DeviceDetailPage() {
       <div className="space-y-6">
         <Card>
           <CardContent className="flex flex-wrap items-center gap-3 pt-5">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium",
-                tier.className,
-              )}
-            >
-              <TierIcon className="h-3 w-3" />
-              {tier.label}
-            </span>
             <span
               className="flex items-center gap-1.5"
               title={`${compliance.tested_controls} of the NCA ${compliance.framework} controls this lab automates have been assessed for this device; ${compliance.passing_controls} pass.`}

@@ -136,6 +136,20 @@ describe("DeviceConsolePage", () => {
     expect(screen.getAllByRole("button", { name: "Admin reset" })).toHaveLength(3);
   });
 
+  it("no longer shows a security-tier badge on a console card", async () => {
+    vi.spyOn(api, "devices").mockResolvedValue(DEVICES);
+
+    render(
+      <MemoryRouter>
+        <DeviceConsolePage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("http://localhost:9081");
+    expect(screen.queryByText("Insecure")).not.toBeInTheDocument();
+    expect(screen.queryByText("Hardened")).not.toBeInTheDocument();
+  });
+
   it("explains itself instead of rendering an empty card for a registered device with no browser-reachable HTTP service", async () => {
     vi.spyOn(api, "devices").mockResolvedValue(DEVICES);
 

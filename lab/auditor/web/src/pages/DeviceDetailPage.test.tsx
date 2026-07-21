@@ -90,6 +90,14 @@ describe("DeviceDetailPage", () => {
     expect(screen.getByText("FAIL")).toBeInTheDocument();
   });
 
+  it("no longer shows a security-tier badge", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    renderPage();
+
+    await screen.findByText("Smart Camera — Insecure");
+    expect(screen.queryByText("Insecure")).not.toBeInTheDocument();
+  });
+
   it("renders an error state when the device is missing", async () => {
     vi.spyOn(api, "device").mockRejectedValue(new Error("device not found"));
     renderPage();

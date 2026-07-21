@@ -2,10 +2,9 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { api, ApiError, type CreateDevicePayload } from "@/lib/api";
-import type { DeviceMutationResult, DeviceTier, ServiceType } from "@/lib/types";
+import type { DeviceMutationResult, ServiceType } from "@/lib/types";
 
 const SERVICE_TYPES: ServiceType[] = ["http", "https", "mqtt", "mqtts", "telnet", "ssh"];
-const TIERS: DeviceTier[] = ["insecure", "partial", "hardened", "unknown"];
 
 interface ServiceRow {
   service_type: ServiceType;
@@ -15,19 +14,10 @@ interface ServiceRow {
 
 const EMPTY_SERVICE: ServiceRow = { service_type: "http", port: "80", published_port: "" };
 
-// Quick-picks keep the services repeater from being tedious for the common cases.
-const QUICK_PICKS: Record<string, ServiceRow[]> = {
-  "Smart camera (HTTP)": [{ service_type: "http", port: "80", published_port: "" }],
-  "Smart camera (HTTPS)": [{ service_type: "https", port: "443", published_port: "" }],
-  "MQTT broker": [{ service_type: "mqtt", port: "1883", published_port: "" }],
-  "MQTT broker (TLS)": [{ service_type: "mqtts", port: "8883", published_port: "" }],
-};
-
 interface FormFields {
   device_id: string;
   display_name: string;
   description: string;
-  tier: DeviceTier;
   host: string;
   vendor: string;
   model: string;
@@ -40,7 +30,6 @@ const EMPTY_FIELDS: FormFields = {
   device_id: "",
   display_name: "",
   description: "",
-  tier: "unknown",
   host: "",
   vendor: "",
   model: "",
@@ -122,10 +111,6 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
     setServices((current) => [...current, { ...EMPTY_SERVICE }]);
   }
 
-  function applyQuickPick(rows: ServiceRow[]) {
-    setServices(rows.map((row) => ({ ...row })));
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -136,7 +121,10 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
       device_id: fields.device_id,
       display_name: fields.display_name,
       description: fields.description || undefined,
-      tier: fields.tier,
+      // The dashboard no longer exposes a security-tier control at
+      // registration time - every device registers as "unknown" here,
+      // matching the backend's own default for an omitted tier.
+      tier: "unknown",
       host: fields.host,
       vendor: fields.vendor || null,
       model: fields.model || null,
@@ -244,25 +232,6 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
           />
           {fieldError("host")}
         </div>
-        <div>
-          <label className={LABEL_CLASS} htmlFor="register-tier">
-            Security tier
-          </label>
-          <select
-            id="register-tier"
-            aria-label="Security tier"
-            value={fields.tier}
-            onChange={(e) => setField("tier", e.target.value as DeviceTier)}
-            className={INPUT_CLASS}
-          >
-            {TIERS.map((tier) => (
-              <option key={tier} value={tier}>
-                {tier}
-              </option>
-            ))}
-          </select>
-          {fieldError("tier")}
-        </div>
       </div>
 
       <div>
@@ -313,16 +282,6 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
       <div>
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className={LABEL_CLASS}>Services</span>
-          {Object.keys(QUICK_PICKS).map((label) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => applyQuickPick(QUICK_PICKS[label])}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]"
-            >
-              {label}
-            </button>
-          ))}
         </div>
 
         <div className="space-y-2">

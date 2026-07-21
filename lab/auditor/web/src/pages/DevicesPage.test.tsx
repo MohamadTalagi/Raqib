@@ -10,7 +10,7 @@ describe("DevicesPage", () => {
     vi.stubGlobal("fetch", vi.fn((url: string) => mockFetchImplementation(url)));
   });
 
-  it("renders a card per device with its tier badge", async () => {
+  it("renders a card per device", async () => {
     render(
       <MemoryRouter>
         <DevicesPage />
@@ -20,8 +20,18 @@ describe("DevicesPage", () => {
     expect(await screen.findByText("device-insecure")).toBeInTheDocument();
     expect(screen.getByText("device-hardened")).toBeInTheDocument();
     expect(screen.getByText("device-partial")).toBeInTheDocument();
-    expect(screen.getByText("Insecure")).toBeInTheDocument();
-    expect(screen.getByText("Hardened")).toBeInTheDocument();
+  });
+
+  it("no longer shows a security-tier badge on device cards", async () => {
+    render(
+      <MemoryRouter>
+        <DevicesPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("device-insecure");
+    expect(screen.queryByText("Insecure")).not.toBeInTheDocument();
+    expect(screen.queryByText("Hardened")).not.toBeInTheDocument();
   });
 
   it("renders a device with evidence but no device record as unregistered", async () => {

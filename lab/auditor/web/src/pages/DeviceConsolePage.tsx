@@ -4,7 +4,6 @@ import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
-import { getTierBadge } from "@/lib/deviceTier";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -91,8 +90,6 @@ interface DeviceConsoleCardProps {
 }
 
 function DeviceConsoleCard({ device, service }: DeviceConsoleCardProps) {
-  const tier = getTierBadge(device.tier);
-  const TierIcon = tier.icon;
   const baseUrl = consoleBaseUrl(service);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [result, setResult] = useState<ConsoleResult | null>(null);
@@ -119,15 +116,6 @@ function DeviceConsoleCard({ device, service }: DeviceConsoleCardProps) {
           <CardTitle>{device.display_name}</CardTitle>
           <p className="mt-1 font-mono text-xs text-[var(--color-text-muted)]">{baseUrl}</p>
         </div>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium",
-            tier.className,
-          )}
-        >
-          <TierIcon className="h-3 w-3" />
-          {tier.label}
-        </span>
       </CardHeader>
       <CardContent className="pt-2">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

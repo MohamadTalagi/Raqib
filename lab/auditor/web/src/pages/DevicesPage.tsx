@@ -6,7 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { RegisterDeviceForm } from "@/components/devices/RegisterDeviceForm";
-import { getTierBadge } from "@/lib/deviceTier";
 import { serviceIcon } from "@/lib/serviceIcons";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
@@ -30,22 +29,12 @@ interface DeviceCardProps {
 // unregistered (plain, non-navigating) presentations below so the two stay
 // visually identical apart from the affordance that differs between them.
 function DeviceCardBody({ device, failCount, onRegisterClick }: DeviceCardProps) {
-  const tier = getTierBadge(device.tier);
-  const TierIcon = tier.icon;
   const Icon = device.services[0] ? serviceIcon(device.services[0].service_type) : HardDrive;
 
   return (
     <CardContent className="pt-5">
-      <div className="flex items-start justify-between">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-surface-hover)]">
-          <Icon className="h-5 w-5 text-[var(--color-text-secondary)]" strokeWidth={1.75} />
-        </div>
-        <span
-          className={cn("inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium", tier.className)}
-        >
-          <TierIcon className="h-3 w-3" />
-          {tier.label}
-        </span>
+      <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-surface-hover)]">
+        <Icon className="h-5 w-5 text-[var(--color-text-secondary)]" strokeWidth={1.75} />
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-0.5 font-mono text-xs text-[var(--color-text-muted)]">

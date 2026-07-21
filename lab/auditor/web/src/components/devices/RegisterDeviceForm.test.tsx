@@ -29,7 +29,21 @@ describe("RegisterDeviceForm", () => {
     const payload = createDevice.mock.calls[0][0];
     expect(payload.device_id).toBe("test-camera");
     expect(payload.services.length).toBeGreaterThan(0);
+    // No security-tier control is offered any more - every device
+    // registers as "unknown", matching the backend's own default.
+    expect(payload.tier).toBe("unknown");
     await waitFor(() => expect(onRegistered).toHaveBeenCalled());
+  });
+
+  it("does not offer a security-tier control", () => {
+    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    expect(screen.queryByLabelText(/security tier/i)).not.toBeInTheDocument();
+  });
+
+  it("does not offer service quick-pick buttons", () => {
+    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    expect(screen.queryByText(/smart camera \(http\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/mqtt broker/i)).not.toBeInTheDocument();
   });
 
   it("shows the API error against the field that caused it", async () => {
