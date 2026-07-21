@@ -36,6 +36,8 @@ names exactly, or verdict recomputation silently stops matching them.
 
 import re
 
+from policies.catalog.vuln_reference import lookup_component
+
 HTTP_SERVICE_TYPES = ("http", "https")
 MQTT_SERVICE_TYPES = ("mqtt", "mqtts")
 TLS_SERVICE_TYPES = ("https", "mqtts")
@@ -82,7 +84,39 @@ def _nmap_command(target: dict) -> list[str]:
 
 def _parse_nmap_observations(target: dict, output: str) -> dict:
     ports = sorted({int(m) for m in re.findall(r"^(\d+)/tcp\s+open", output, re.MULTILINE)})
-    return {"open_ports": ports, "telnet_open": 23 in ports}
+    telnet_open = 23 in ports
+    # nmap -sV's SERVICE/VERSION columns, when present - service is the
+    # protocol nmap identified (e.g. "http"), version is free-form product
+    # text (e.g. "Werkzeug httpd 2.0.1") that doesn't line up with this
+    # catalog's small (name, version) vuln reference keys reliably enough to
+    # auto-lookup, so it's surfaced for the auditor to check by hand instead
+    # of guessing at a match.
+    services = []
+    for match in re.finditer(r"^(\d+)/tcp[ \t]+open[ \t]+(\S+)(?:[ \t]+(.+?))?[ \t]*$", output, re.MULTILINE):
+        services.append({
+            "port": int(match.group(1)),
+            "service": match.group(2),
+            "version": match.group(3).strip() if match.group(3) else None,
+        })
+    notes = []
+    if telnet_open:
+        notes.append(
+            "Telnet (port 23) is open - it transmits credentials and traffic "
+            "in cleartext with no encryption option; remove it unless "
+            "explicitly required.",
+        )
+    if any(s["version"] for s in services):
+        notes.append(
+            "One or more services disclosed version information - cross-check "
+            "each against a live CVE database (this catalog's local reference "
+            "only covers firmware packages, not arbitrary nmap version strings).",
+        )
+    return {
+        "open_ports": ports,
+        "telnet_open": telnet_open,
+        "services": services,
+        "notes": notes,
+    }
 
 
 def _login_command(target: dict) -> list[str]:
@@ -96,7 +130,17 @@ def _login_command(target: dict) -> list[str]:
 
 
 def _parse_login_observations(target: dict, output: str) -> dict:
-    return {"default_creds": "Login successful" in output}
+    default_creds = "Login successful" in output
+    notes = (
+        [
+            "Default admin/admin credentials were accepted - this gives any "
+            "network-adjacent party full administrative control. Force a "
+            "unique password on first boot, not just at manual setup time.",
+        ]
+        if default_creds
+        else ["Default admin/admin credentials were rejected."]
+    )
+    return {"default_creds": default_creds, "notes": notes}
 
 
 def _headers_command(target: dict) -> list[str]:
@@ -106,10 +150,25 @@ def _headers_command(target: dict) -> list[str]:
     return ["curl", *flags, f"{scheme}://{authority}/"]
 
 
+HEADER_RISK_NOTES = {
+    "X-Frame-Options": (
+        "Missing X-Frame-Options - the page can be embedded in a hidden "
+        "iframe on an attacker's site, enabling clickjacking against any "
+        "admin UI served here."
+    ),
+    "Content-Security-Policy": (
+        "Missing Content-Security-Policy - there is no browser-enforced "
+        "restriction on which scripts/origins can run, widening the impact "
+        "of any XSS found elsewhere on this service."
+    ),
+}
+
+
 def _parse_headers_observations(target: dict, output: str) -> dict:
     lowered = output.lower()
     missing = [h for h in ("X-Frame-Options", "Content-Security-Policy") if h.lower() not in lowered]
-    return {"missing_security_headers": missing}
+    notes = [HEADER_RISK_NOTES[h] for h in missing] or ["Both checked security headers are present."]
+    return {"missing_security_headers": missing, "notes": notes}
 
 
 def _anon_access_command(target: dict) -> list[str]:
@@ -120,9 +179,26 @@ def _anon_access_command(target: dict) -> list[str]:
 
 
 def _parse_anon_access_observations(target: dict, output: str) -> dict:
+    anonymous_access_allowed = '"cred_mode"' in output
+    api_key_exposed = '"api_key"' in output
+    notes = []
+    if anonymous_access_allowed:
+        notes.append(
+            "The config endpoint returned data with no credentials supplied "
+            "- device configuration is readable by any network-adjacent party.",
+        )
+    if api_key_exposed:
+        notes.append(
+            "A live API key was present in the unauthenticated response - "
+            "rotate it immediately if this device is anything other than a "
+            "sandboxed lab fixture, since it is now effectively public.",
+        )
+    if not notes:
+        notes.append("No anonymous access or API key exposure detected on this endpoint.")
     return {
-        "anonymous_access_allowed": '"cred_mode"' in output,
-        "api_key_exposed": '"api_key"' in output,
+        "anonymous_access_allowed": anonymous_access_allowed,
+        "api_key_exposed": api_key_exposed,
+        "notes": notes,
     }
 
 
@@ -145,11 +221,27 @@ def _parse_session_observations(target: dict, output: str) -> dict:
     chunks = [c for c in re.split(r"(?=HTTP/\d(?:\.\d)? \d{3})", output) if c.strip()]
     login_chunk = chunks[0] if chunks else ""
     dashboard_chunk = chunks[1] if len(chunks) > 1 else ""
+    session_cookie_issued = "set-cookie" in login_chunk.lower()
+    dashboard_accessible_without_session = bool(re.match(r"HTTP/\d(?:\.\d)? 200", dashboard_chunk))
+    notes = []
+    if not session_cookie_issued:
+        notes.append(
+            "No session cookie was issued on login - if the dashboard is "
+            "reachable without one (see below), there is effectively no "
+            "session boundary protecting it at all.",
+        )
+    if dashboard_accessible_without_session:
+        notes.append(
+            "The dashboard was reachable using a fresh client with no "
+            "session state carried over from login - authentication is not "
+            "actually being enforced on this page.",
+        )
+    if not notes:
+        notes.append("A session cookie was issued and the dashboard was not reachable without it.")
     return {
-        "session_cookie_issued": "set-cookie" in login_chunk.lower(),
-        "dashboard_accessible_without_session": bool(
-            re.match(r"HTTP/\d(?:\.\d)? 200", dashboard_chunk)
-        ),
+        "session_cookie_issued": session_cookie_issued,
+        "dashboard_accessible_without_session": dashboard_accessible_without_session,
+        "notes": notes,
     }
 
 
@@ -163,7 +255,17 @@ def _admin_unauth_command(target: dict) -> list[str]:
 def _parse_admin_unauth_observations(target: dict, output: str) -> dict:
     match = re.search(r"^HTTP/\d(\.\d)?\s+(\d{3})", output, re.MULTILINE)
     status = int(match.group(2)) if match else None
-    return {"admin_unauthenticated": status == 200}
+    admin_unauthenticated = status == 200
+    notes = (
+        [
+            "The administrative reset endpoint executed with no "
+            "Authorization header - any network-adjacent party can trigger "
+            "an administrative action with zero authentication.",
+        ]
+        if admin_unauthenticated
+        else ["The administrative endpoint rejected the unauthenticated request."]
+    )
+    return {"admin_unauthenticated": admin_unauthenticated, "notes": notes}
 
 
 def _http_inspect_command(target: dict) -> list[str]:
@@ -180,10 +282,29 @@ def _parse_http_inspect_observations(target: dict, output: str) -> dict:
     server = re.search(r"^Server:\s*(.+)$", output, re.MULTILINE | re.IGNORECASE)
     version = re.search(r"HTTP_VERSION:(\S+)", output)
     banner = server.group(1).strip() if server else None
+    banner_discloses_framework = bool(banner and "uvicorn" in banner.lower())
+    # Best-effort "name/version" or "name version" split (e.g. "nginx/1.18.0")
+    # so a recognized component gets a real vuln_reference lookup instead of
+    # only being flagged as "discloses a framework" with no follow-up data.
+    component_advisory = None
+    name_version = re.match(r"^([A-Za-z][\w.+-]*)[\s/]+([\d][\w.-]*)", banner or "")
+    if name_version:
+        component_advisory = lookup_component(name_version.group(1), name_version.group(2))
+    notes = []
+    if banner_discloses_framework:
+        notes.append(
+            "The Server header discloses the underlying framework - "
+            "consider suppressing or genericizing it to reduce the "
+            "information available to an attacker doing reconnaissance.",
+        )
+    if not notes:
+        notes.append("Server header did not disclose recognizable framework information.")
     return {
         "server_banner": banner,
         "http_version": version.group(1) if version else None,
-        "banner_discloses_framework": bool(banner and "uvicorn" in banner.lower()),
+        "banner_discloses_framework": banner_discloses_framework,
+        "component_advisory": component_advisory,
+        "notes": notes,
     }
 
 
@@ -198,9 +319,25 @@ def _parse_mqtt_observations(target: dict, output: str) -> dict:
     lowered = output.lower()
     error_markers = ("error", "not authorised", "not authorized", "connection refused")
     connected = "devices/" in output and not any(m in lowered for m in error_markers)
+    mqtt_tls = target["service_type"] == "mqtts"
+    notes = []
+    if connected:
+        notes.append(
+            "The broker accepted a subscription with no credentials - any "
+            "client on the network can read (and, unless ACLs are set, "
+            "publish to) every topic.",
+        )
+    if not mqtt_tls:
+        notes.append(
+            "MQTT traffic is unencrypted - payloads and any credentials "
+            "used are visible to anyone who can observe the network path.",
+        )
+    if not notes:
+        notes.append("Anonymous access was rejected and the connection is TLS-protected.")
     return {
-        "mqtt_tls": target["service_type"] == "mqtts",
+        "mqtt_tls": mqtt_tls,
         "mqtt_anonymous": connected,
+        "notes": notes,
     }
 
 
@@ -211,15 +348,35 @@ def _tls_command(target: dict) -> list[str]:
     return ["openssl", "s_client", "-connect", f"{target['host']}:{target['port']}", "-brief"]
 
 
+DEPRECATED_TLS_VERSIONS = {"SSLv2", "SSLv3", "TLSv1", "TLSv1.1"}
+
+
 def _parse_tls_observations(target: dict, output: str) -> dict:
     version = re.search(r"Protocol version:\s*(\S+)", output)
+    tls_version = version.group(1) if version else None
+    # OpenSSL's default security level (2) rejects RSA keys under 2048
+    # bits with this exact verify error - the same signal that already
+    # distinguishes the lab's weak 1024-bit cert from the strong one in
+    # committed raw output (EV-2026-07-08-0019 vs -0020).
+    weak_cipher = "certificate key too weak" in output.lower()
+    notes = []
+    if weak_cipher:
+        notes.append(
+            "The certificate's key is below the 2048-bit minimum OpenSSL's "
+            "default security level accepts - replace it with a 2048-bit-or-"
+            "larger key.",
+        )
+    if tls_version in DEPRECATED_TLS_VERSIONS:
+        notes.append(
+            f"{tls_version} is deprecated and should be disabled in favor of "
+            "TLS 1.2 or 1.3.",
+        )
+    if not notes:
+        notes.append("No weak key or deprecated protocol version detected.")
     return {
-        "tls_version": version.group(1) if version else None,
-        # OpenSSL's default security level (2) rejects RSA keys under 2048
-        # bits with this exact verify error - the same signal that already
-        # distinguishes the lab's weak 1024-bit cert from the strong one in
-        # committed raw output (EV-2026-07-08-0019 vs -0020).
-        "weak_cipher": "certificate key too weak" in output.lower(),
+        "tls_version": tls_version,
+        "weak_cipher": weak_cipher,
+        "notes": notes,
     }
 
 
@@ -234,12 +391,23 @@ def _packet_capture_command(target: dict) -> list[str]:
 def _parse_packet_capture_observations(target: dict, output: str) -> dict:
     count = re.search(r"packets_captured=(\d+)", output)
     plaintext = re.search(r"plaintext_get_visible=(True|False)", output)
+    # True is the bad/expected outcome for a plain-HTTP target; False is
+    # the good/expected outcome for HTTPS - don't "fix" this to always
+    # read as a failure signal.
+    plaintext_get_visible = plaintext.group(1) == "True" if plaintext else None
+    notes = (
+        [
+            "The request/response was visible in cleartext on the wire - "
+            "any party with network visibility (a shared switch, a "
+            "compromised router, a rogue AP) can read it in full.",
+        ]
+        if plaintext_get_visible
+        else ["No plaintext application data was visible in the capture."]
+    )
     return {
         "packets_captured": int(count.group(1)) if count else 0,
-        # True is the bad/expected outcome for a plain-HTTP target; False is
-        # the good/expected outcome for HTTPS - don't "fix" this to always
-        # read as a failure signal.
-        "plaintext_get_visible": plaintext.group(1) == "True" if plaintext else None,
+        "plaintext_get_visible": plaintext_get_visible,
+        "notes": notes,
     }
 
 
@@ -252,9 +420,22 @@ def _firmware_command(check_name: str):
 def _parse_fw_version_observations(target: dict, output: str) -> dict:
     present = "version_file_present=True" in output
     version = re.search(r"^firmware_version=(.*)$", output, re.MULTILINE)
+    firmware_version = version.group(1) if version and present else None
+    notes = (
+        ["No VERSION file was found in the archive - firmware version cannot be tracked or correlated to a vendor advisory."]
+        if not present
+        else [
+            "This local reference does not track CVEs against whole-device "
+            "firmware version strings (see TEST-FW-MANIFEST for the "
+            "individual package versions that make up this firmware, which "
+            "are checked) - correlate this version against the vendor's own "
+            "advisories.",
+        ]
+    )
     return {
         "version_file_present": present,
-        "firmware_version": version.group(1) if version and present else None,
+        "firmware_version": firmware_version,
+        "notes": notes,
     }
 
 
@@ -262,19 +443,60 @@ def _parse_fw_config_observations(target: dict, output: str) -> dict:
     present = "config_files_present=True" in output
     files = re.search(r"^config_files=(.*)$", output, re.MULTILINE)
     members = [m for m in (files.group(1) if files else "").split(",") if m]
-    return {"config_files_present": present, "config_files": members}
+    notes = (
+        [
+            "Configuration file(s) shipped inside the firmware archive - "
+            "review them for hard-coded hostnames, credentials, or other "
+            "environment-specific values that shouldn't be baked into a "
+            "shipped image.",
+        ]
+        if present
+        else ["No configuration files were found in the archive."]
+    )
+    return {"config_files_present": present, "config_files": members, "notes": notes}
 
 
 def _parse_fw_secrets_observations(target: dict, output: str) -> dict:
-    return {"hardcoded_secret_found": "hardcoded_secret_found=True" in output}
+    found = "hardcoded_secret_found=True" in output
+    notes = (
+        [
+            "A hard-coded password pattern was found in the archive - "
+            "rotating the affected credential is not enough on its own, "
+            "since every unit shipped with this firmware shares it.",
+        ]
+        if found
+        else ["No hard-coded password pattern matched in the archive."]
+    )
+    return {"hardcoded_secret_found": found, "notes": notes}
 
 
 def _parse_fw_apikey_observations(target: dict, output: str) -> dict:
-    return {"api_key_found": "api_key_found=True" in output}
+    found = "api_key_found=True" in output
+    notes = (
+        [
+            "An embedded API key pattern was found in the archive - treat "
+            "it as compromised for every device running this firmware "
+            "image, not just this one unit.",
+        ]
+        if found
+        else ["No embedded API key pattern matched in the archive."]
+    )
+    return {"api_key_found": found, "notes": notes}
 
 
 def _parse_fw_certkey_observations(target: dict, output: str) -> dict:
-    return {"cert_or_key_present": "cert_or_key_present=True" in output}
+    present = "cert_or_key_present=True" in output
+    notes = (
+        [
+            "A private key or certificate file was found inside the "
+            "firmware archive - a key shared across every unit of this "
+            "device model cannot uniquely authenticate a single device, "
+            "and its compromise affects the whole fleet.",
+        ]
+        if present
+        else ["No certificate or private key file was found in the archive."]
+    )
+    return {"cert_or_key_present": present, "notes": notes}
 
 
 def _parse_fw_manifest_observations(target: dict, output: str) -> dict:
@@ -284,16 +506,40 @@ def _parse_fw_manifest_observations(target: dict, output: str) -> dict:
     if present and packages_line and packages_line.group(1):
         for entry in packages_line.group(1).split(","):
             name, _, version = entry.partition(":")
-            packages.append({"name": name, "version": version})
-    return {"manifest_present": present, "packages": packages}
+            packages.append(lookup_component(name, version))
+    outdated_count = sum(1 for p in packages if p["outdated"])
+    cve_count = sum(len(p["cves"]) for p in packages)
+    notes = []
+    if not present:
+        notes.append("No manifest.json was found in the archive - component versions cannot be checked.")
+    elif not packages:
+        notes.append("manifest.json was present but listed no packages.")
+    else:
+        notes.append(
+            f"{outdated_count} of {len(packages)} listed package(s) are outdated, "
+            f"with {cve_count} known CVE(s) recorded in this local reference.",
+        )
+    return {"manifest_present": present, "packages": packages, "notes": notes}
 
 
 def _parse_fw_updatescript_observations(target: dict, output: str) -> dict:
     present = "update_script_present=True" in output
     first_line = re.search(r"^first_line=(.*)$", output, re.MULTILINE)
+    first_line_value = first_line.group(1) if first_line and present else None
+    notes = []
+    if not present:
+        notes.append("No update script was found in the archive.")
+    else:
+        notes.append(
+            "An update script was found - confirm elsewhere (TEST-FW-CERTKEY, "
+            "or a signature-verification step in the script itself) that the "
+            "downloaded firmware image is signature-checked before being "
+            "applied, not just fetched and installed.",
+        )
     return {
         "update_script_present": present,
-        "update_script_first_line": first_line.group(1) if first_line and present else None,
+        "update_script_first_line": first_line_value,
+        "notes": notes,
     }
 
 

@@ -31,7 +31,9 @@ def test_process_job_runs_whitelisted_command_and_marks_awaiting_finding(mock_ru
 
     final_call = mock_patch.call_args_list[-1]
     assert final_call.kwargs["json"]["status"] == "awaiting_finding"
-    assert final_call.kwargs["json"]["observations"] == {"open_ports": [80], "telnet_open": False}
+    observations = final_call.kwargs["json"]["observations"]
+    assert observations["open_ports"] == [80]
+    assert observations["telnet_open"] is False
     assert final_call.kwargs["json"]["tool"] == "nmap"
 
 
@@ -175,4 +177,4 @@ def test_process_job_runs_a_firmware_test_without_a_live_target(mock_run, mock_p
 
     final_call = mock_patch.call_args_list[-1]
     assert final_call.kwargs["json"]["status"] == "awaiting_finding"
-    assert final_call.kwargs["json"]["observations"] == {"hardcoded_secret_found": True}
+    assert final_call.kwargs["json"]["observations"]["hardcoded_secret_found"] is True

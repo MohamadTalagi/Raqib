@@ -149,13 +149,17 @@ def test_anon_access_command_hits_config_endpoint_with_no_credentials():
 def test_parse_anon_access_observations_flags_exposed_api_key():
     output = '{"cred_mode":"default","mqtt_host":"mqtt-broker-insecure","api_key":"abc123"}'
     obs = SCAN_CATALOG["TEST-AUTH-ANON-ACCESS"]["parse_observations"](HTTP_TARGET, output)
-    assert obs == {"anonymous_access_allowed": True, "api_key_exposed": True}
+    assert obs["anonymous_access_allowed"] is True
+    assert obs["api_key_exposed"] is True
+    assert len(obs["notes"]) == 2
 
 
 def test_parse_anon_access_observations_no_api_key():
     output = '{"cred_mode":"changed","mqtt_host":"mqtt-broker-secure"}'
     obs = SCAN_CATALOG["TEST-AUTH-ANON-ACCESS"]["parse_observations"](HTTPS_TARGET, output)
-    assert obs == {"anonymous_access_allowed": True, "api_key_exposed": False}
+    assert obs["anonymous_access_allowed"] is True
+    assert obs["api_key_exposed"] is False
+    assert len(obs["notes"]) == 1
 
 
 # --- TEST-AUTH-SESSION ---
@@ -175,7 +179,9 @@ def test_parse_session_observations_detects_no_cookie_and_open_dashboard():
         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html>dashboard</html>"
     )
     obs = SCAN_CATALOG["TEST-AUTH-SESSION"]["parse_observations"](HTTP_TARGET, output)
-    assert obs == {"session_cookie_issued": False, "dashboard_accessible_without_session": True}
+    assert obs["session_cookie_issued"] is False
+    assert obs["dashboard_accessible_without_session"] is True
+    assert len(obs["notes"]) == 2
 
 
 def test_parse_session_observations_detects_cookie_issued():
@@ -184,7 +190,9 @@ def test_parse_session_observations_detects_cookie_issued():
         "HTTP/1.1 401 Unauthorized\r\n\r\n"
     )
     obs = SCAN_CATALOG["TEST-AUTH-SESSION"]["parse_observations"](HTTP_TARGET, output)
-    assert obs == {"session_cookie_issued": True, "dashboard_accessible_without_session": False}
+    assert obs["session_cookie_issued"] is True
+    assert obs["dashboard_accessible_without_session"] is False
+    assert len(obs["notes"]) == 1
 
 
 # --- TEST-ADMIN-UNAUTH ---
@@ -198,14 +206,16 @@ def test_parse_admin_unauth_observations_detects_unauthenticated_success():
     obs = SCAN_CATALOG["TEST-ADMIN-UNAUTH"]["parse_observations"](
         HTTP_TARGET, 'HTTP/1.1 200 OK\r\n\r\n{"status":"reset-triggered"}'
     )
-    assert obs == {"admin_unauthenticated": True}
+    assert obs["admin_unauthenticated"] is True
+    assert obs["notes"]
 
 
 def test_parse_admin_unauth_observations_detects_protected_endpoint():
     obs = SCAN_CATALOG["TEST-ADMIN-UNAUTH"]["parse_observations"](
         HTTPS_TARGET, 'HTTP/1.1 401 Unauthorized\r\n\r\n{"detail":"Unauthorized"}'
     )
-    assert obs == {"admin_unauthenticated": False}
+    assert obs["admin_unauthenticated"] is False
+    assert obs["notes"]
 
 
 # --- TEST-NET-HTTP-INSPECT ---
@@ -220,17 +230,28 @@ def test_http_inspect_command_requests_root_with_version_writeout():
 def test_parse_http_inspect_observations_extracts_banner_and_version():
     output = "HTTP/1.1 200 OK\r\nServer: uvicorn\r\n\r\n<html></html>\nHTTP_VERSION:1.1\n"
     obs = SCAN_CATALOG["TEST-NET-HTTP-INSPECT"]["parse_observations"](HTTP_TARGET, output)
-    assert obs == {
-        "server_banner": "uvicorn",
-        "http_version": "1.1",
-        "banner_discloses_framework": True,
-    }
+    assert obs["server_banner"] == "uvicorn"
+    assert obs["http_version"] == "1.1"
+    assert obs["banner_discloses_framework"] is True
+    # "uvicorn" alone has no version component to look up
+    assert obs["component_advisory"] is None
+    assert obs["notes"]
 
 
 def test_parse_http_inspect_observations_handles_missing_server_header():
     output = "HTTP/1.1 200 OK\r\n\r\n<html></html>\nHTTP_VERSION:1.1\n"
     obs = SCAN_CATALOG["TEST-NET-HTTP-INSPECT"]["parse_observations"](HTTP_TARGET, output)
-    assert obs == {"server_banner": None, "http_version": "1.1", "banner_discloses_framework": False}
+    assert obs["server_banner"] is None
+    assert obs["http_version"] == "1.1"
+    assert obs["banner_discloses_framework"] is False
+    assert obs["component_advisory"] is None
+
+
+def test_parse_http_inspect_observations_looks_up_a_versioned_banner():
+    output = "HTTP/1.1 200 OK\r\nServer: openssl/1.0.1e\r\n\r\n<html></html>\nHTTP_VERSION:1.1\n"
+    obs = SCAN_CATALOG["TEST-NET-HTTP-INSPECT"]["parse_observations"](HTTP_TARGET, output)
+    assert obs["component_advisory"]["outdated"] is True
+    assert {c["id"] for c in obs["component_advisory"]["cves"]} == {"CVE-2014-0160", "CVE-2014-0224"}
 
 
 # --- TEST-MQTT-OPEN ---
@@ -245,7 +266,9 @@ def test_mqtt_command_subscribes_with_a_bounded_wait():
 def test_parse_mqtt_observations_detects_anonymous_connection():
     output = "devices/device-insecure/telemetry {\"device_id\": \"device-insecure\"}\n"
     obs = SCAN_CATALOG["TEST-MQTT-OPEN"]["parse_observations"](MQTT_TARGET, output)
-    assert obs == {"mqtt_tls": False, "mqtt_anonymous": True}
+    assert obs["mqtt_tls"] is False
+    assert obs["mqtt_anonymous"] is True
+    assert len(obs["notes"]) == 2
 
 
 def test_parse_mqtt_observations_detects_rejected_connection():
@@ -255,7 +278,9 @@ def test_parse_mqtt_observations_detects_rejected_connection():
     }
     output = "Connection error: Connection Refused: not authorised.\n"
     obs = SCAN_CATALOG["TEST-MQTT-OPEN"]["parse_observations"](secure_target, output)
-    assert obs == {"mqtt_tls": True, "mqtt_anonymous": False}
+    assert obs["mqtt_tls"] is True
+    assert obs["mqtt_anonymous"] is False
+    assert obs["notes"] == ["Anonymous access was rejected and the connection is TLS-protected."]
 
 
 # --- TEST-TLS-CONFIG ---
@@ -277,7 +302,9 @@ def test_parse_tls_observations_detects_weak_cert():
         "DONE\n"
     )
     obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
-    assert obs == {"tls_version": "TLSv1.3", "weak_cipher": True}
+    assert obs["tls_version"] == "TLSv1.3"
+    assert obs["weak_cipher"] is True
+    assert obs["notes"]
 
 
 def test_parse_tls_observations_detects_strong_cert():
@@ -292,7 +319,21 @@ def test_parse_tls_observations_detects_strong_cert():
         "DONE\n"
     )
     obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
-    assert obs == {"tls_version": "TLSv1.3", "weak_cipher": False}
+    assert obs["tls_version"] == "TLSv1.3"
+    assert obs["weak_cipher"] is False
+    assert obs["notes"] == ["No weak key or deprecated protocol version detected."]
+
+
+def test_parse_tls_observations_flags_deprecated_protocol_version():
+    output = (
+        "Connecting to 172.30.0.2\n"
+        "CONNECTION ESTABLISHED\n"
+        "Protocol version: TLSv1.1\n"
+        "DONE\n"
+    )
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs["tls_version"] == "TLSv1.1"
+    assert any("deprecated" in n for n in obs["notes"])
 
 
 # --- TEST-NET-PKTCAPTURE ---
@@ -308,13 +349,17 @@ def test_pktcapture_command_invokes_helper_script():
 def test_parse_pktcapture_observations_detects_plaintext_request():
     output = "packets_captured=6\nplaintext_get_visible=True\n--- packet summary ---\n...\n"
     obs = SCAN_CATALOG["TEST-NET-PKTCAPTURE"]["parse_observations"](HTTP_TARGET, output)
-    assert obs == {"packets_captured": 6, "plaintext_get_visible": True}
+    assert obs["packets_captured"] == 6
+    assert obs["plaintext_get_visible"] is True
+    assert obs["notes"]
 
 
 def test_parse_pktcapture_observations_detects_no_plaintext_on_https():
     output = "packets_captured=10\nplaintext_get_visible=False\n--- packet summary ---\n...\n"
     obs = SCAN_CATALOG["TEST-NET-PKTCAPTURE"]["parse_observations"](HTTPS_TARGET, output)
-    assert obs == {"packets_captured": 10, "plaintext_get_visible": False}
+    assert obs["packets_captured"] == 10
+    assert obs["plaintext_get_visible"] is False
+    assert obs["notes"] == ["No plaintext application data was visible in the capture."]
 
 
 def test_portscan_scans_the_full_port_range():
@@ -327,40 +372,61 @@ def test_portscan_scans_the_full_port_range():
 def test_parse_nmap_observations_detects_telnet_open():
     output = "23/tcp   open  telnet\n80/tcp   open  http\n"
     obs = SCAN_CATALOG["TEST-NET-PORTSCAN"]["parse_observations"](MQTT_TARGET, output)
-    assert obs == {"open_ports": [23, 80], "telnet_open": True}
+    assert obs["open_ports"] == [23, 80]
+    assert obs["telnet_open"] is True
+    assert obs["services"] == [
+        {"port": 23, "service": "telnet", "version": None},
+        {"port": 80, "service": "http", "version": None},
+    ]
+    assert any("Telnet" in n for n in obs["notes"])
 
 
 def test_parse_nmap_observations_no_telnet():
     output = "80/tcp   open  http\n"
     obs = SCAN_CATALOG["TEST-NET-PORTSCAN"]["parse_observations"](MQTT_TARGET, output)
-    assert obs == {"open_ports": [80], "telnet_open": False}
+    assert obs["open_ports"] == [80]
+    assert obs["telnet_open"] is False
+    assert obs["notes"] == []
+
+
+def test_parse_nmap_observations_captures_version_when_disclosed():
+    output = "80/tcp   open  http    Werkzeug httpd 2.0.1 (Python 3.9.1)\n"
+    obs = SCAN_CATALOG["TEST-NET-PORTSCAN"]["parse_observations"](MQTT_TARGET, output)
+    assert obs["services"] == [
+        {"port": 80, "service": "http", "version": "Werkzeug httpd 2.0.1 (Python 3.9.1)"},
+    ]
+    assert any("disclosed version information" in n for n in obs["notes"])
 
 
 def test_parse_login_observations_detects_success():
     obs = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["parse_observations"](
         HTTP_TARGET, '{"status":"ok","message":"Login successful"}'
     )
-    assert obs == {"default_creds": True}
+    assert obs["default_creds"] is True
+    assert obs["notes"]
 
 
 def test_parse_login_observations_detects_failure():
     obs = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["parse_observations"](
         HTTPS_TARGET, '{"detail":"Invalid credentials"}'
     )
-    assert obs == {"default_creds": False}
+    assert obs["default_creds"] is False
+    assert obs["notes"] == ["Default admin/admin credentials were rejected."]
 
 
 def test_parse_headers_observations_flags_missing_headers():
     obs = SCAN_CATALOG["TEST-HTTP-HEADERS"]["parse_observations"](
         HTTP_TARGET, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
     )
-    assert obs == {"missing_security_headers": ["X-Frame-Options", "Content-Security-Policy"]}
+    assert obs["missing_security_headers"] == ["X-Frame-Options", "Content-Security-Policy"]
+    assert len(obs["notes"]) == 2
 
 
 def test_parse_headers_observations_empty_when_present():
     output = "HTTP/1.1 200 OK\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'self'\r\n"
     obs = SCAN_CATALOG["TEST-HTTP-HEADERS"]["parse_observations"](HTTPS_TARGET, output)
-    assert obs == {"missing_security_headers": []}
+    assert obs["missing_security_headers"] == []
+    assert obs["notes"] == ["Both checked security headers are present."]
 
 
 # --- firmware tests: category, is_firmware_test, and command/parse shapes ---
@@ -416,51 +482,67 @@ def test_parse_fw_version_observations():
     obs = SCAN_CATALOG["TEST-FW-VERSION"]["parse_observations"](
         FIRMWARE_TARGET, "version_file_present=True\nfirmware_version=1.0.0-old\n"
     )
-    assert obs == {"version_file_present": True, "firmware_version": "1.0.0-old"}
+    assert obs["version_file_present"] is True
+    assert obs["firmware_version"] == "1.0.0-old"
+    assert obs["notes"]
 
 
 def test_parse_fw_version_observations_when_absent():
     obs = SCAN_CATALOG["TEST-FW-VERSION"]["parse_observations"](FIRMWARE_TARGET, "version_file_present=False\n")
-    assert obs == {"version_file_present": False, "firmware_version": None}
+    assert obs["version_file_present"] is False
+    assert obs["firmware_version"] is None
+    assert obs["notes"]
 
 
 def test_parse_fw_config_observations():
     obs = SCAN_CATALOG["TEST-FW-CONFIG"]["parse_observations"](
         FIRMWARE_TARGET, "config_files_present=True\nconfig_files=etc/config.ini\n"
     )
-    assert obs == {"config_files_present": True, "config_files": ["etc/config.ini"]}
+    assert obs["config_files_present"] is True
+    assert obs["config_files"] == ["etc/config.ini"]
+    assert obs["notes"]
 
 
 def test_parse_fw_secrets_observations():
     obs = SCAN_CATALOG["TEST-FW-SECRETS"]["parse_observations"](FIRMWARE_TARGET, "hardcoded_secret_found=True\n")
-    assert obs == {"hardcoded_secret_found": True}
+    assert obs["hardcoded_secret_found"] is True
+    assert obs["notes"]
 
 
 def test_parse_fw_apikey_observations():
     obs = SCAN_CATALOG["TEST-FW-APIKEY"]["parse_observations"](FIRMWARE_TARGET, "api_key_found=False\n")
-    assert obs == {"api_key_found": False}
+    assert obs["api_key_found"] is False
+    assert obs["notes"] == ["No embedded API key pattern matched in the archive."]
 
 
 def test_parse_fw_certkey_observations():
     obs = SCAN_CATALOG["TEST-FW-CERTKEY"]["parse_observations"](FIRMWARE_TARGET, "cert_or_key_present=True\n")
-    assert obs == {"cert_or_key_present": True}
+    assert obs["cert_or_key_present"] is True
+    assert obs["notes"]
 
 
 def test_parse_fw_manifest_observations():
     output = "manifest_present=True\npackages=openssl:1.0.1e,busybox:1.19.4\n"
     obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, output)
-    assert obs == {
-        "manifest_present": True,
-        "packages": [{"name": "openssl", "version": "1.0.1e"}, {"name": "busybox", "version": "1.19.4"}],
-    }
+    assert obs["manifest_present"] is True
+    assert [p["name"] for p in obs["packages"]] == ["openssl", "busybox"]
+    assert [p["version"] for p in obs["packages"]] == ["1.0.1e", "1.19.4"]
+    openssl_pkg = obs["packages"][0]
+    assert openssl_pkg["outdated"] is True
+    assert {c["id"] for c in openssl_pkg["cves"]} == {"CVE-2014-0160", "CVE-2014-0224"}
+    assert "2 of 2" in obs["notes"][0]
 
 
 def test_parse_fw_manifest_observations_when_absent():
     obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, "manifest_present=False\npackages=\n")
-    assert obs == {"manifest_present": False, "packages": []}
+    assert obs["manifest_present"] is False
+    assert obs["packages"] == []
+    assert obs["notes"]
 
 
 def test_parse_fw_updatescript_observations():
     output = "update_script_present=True\nfirst_line=#!/bin/sh\n"
     obs = SCAN_CATALOG["TEST-FW-UPDATESCRIPT"]["parse_observations"](FIRMWARE_TARGET, output)
-    assert obs == {"update_script_present": True, "update_script_first_line": "#!/bin/sh"}
+    assert obs["update_script_present"] is True
+    assert obs["update_script_first_line"] == "#!/bin/sh"
+    assert obs["notes"]
