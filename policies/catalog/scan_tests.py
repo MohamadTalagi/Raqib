@@ -48,6 +48,13 @@ DEFAULT_SCHEME_PORTS = {"http": 80, "https": 443}
 CATEGORY_WEB_AUTH = "web-and-auth"
 CATEGORY_NETWORK_PROTOCOL = "network-and-protocol"
 CATEGORY_FIRMWARE = "firmware"
+CATEGORY_NETWORK_DISCOVERY = "network-discovery"
+
+# Mirrors device_validation.ALLOWED_NETWORK (audit-network) - duplicated as a
+# plain string here rather than imported, since scan_tests.py is shared code
+# loaded by both auditor-api and auditor-worker and must not take on a
+# dependency on device_validation.py's container-specific import path.
+AUDIT_NETWORK_CIDR = "172.30.0.0/24"
 
 FIRMWARE_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/firmware_check.py"
 
@@ -154,6 +161,131 @@ def _parse_nmap_observations(target: dict, output: str) -> dict:
     return {
         "open_ports": ports,
         "services": services,
+        "notes": notes,
+    }
+
+
+# Signature ports used to classify a discovered host without a live target
+# (this test scans the whole audit-network subnet, not one registered
+# device - see _network_discovery_command). Split into two tiers rather than
+# one flat "IoT" list because the two tiers carry very different confidence:
+# a management UI or an IoT messaging protocol is a strong, purpose-built
+# signature in this lab's threat model, while Telnet/SSH alone are generic
+# remote-administration protocols that plenty of non-IoT network gear (a
+# switch, a legacy print server, a jump host) also expose - conflating the
+# two would overclaim confidence the port alone doesn't support.
+IOT_SIGNATURE_PORTS = frozenset({80, 443, 1883, 8883})
+AMBIGUOUS_PORTS = frozenset({22, 23})
+NETWORK_DISCOVERY_PORTS = sorted(IOT_SIGNATURE_PORTS | AMBIGUOUS_PORTS)
+
+
+def _network_discovery_command(target: dict) -> list[str]:
+    # target is unused: this test sweeps the whole subnet rather than one
+    # device's host/port, exactly like the firmware tests ignore host/port
+    # and key on device_id alone. Restricted to a fixed, small port list
+    # (rather than -p- across a /24) so the scan finishes reliably inside
+    # job_runner's 30s timeout and every open port found is one this
+    # catalog's classifier actually knows how to interpret.
+    ports = ",".join(str(p) for p in NETWORK_DISCOVERY_PORTS)
+    return ["nmap", "-sV", "-p", ports, "--open", "-T4", "--max-retries", "1", AUDIT_NETWORK_CIDR]
+
+
+def _classify_host(open_ports: set[int]) -> tuple[str, str, str]:
+    """Returns (classification, confidence, rationale). Never asserts a
+    confident classification the port signature alone doesn't support -
+    "uncertain"/"unknown" are real, intended outcomes, not a fallback bug."""
+    iot_hits = sorted(open_ports & IOT_SIGNATURE_PORTS)
+    if iot_hits:
+        return (
+            "iot_device",
+            "high",
+            "Exposed port(s) " + ", ".join(str(p) for p in iot_hits) + " - a management UI or IoT "
+            "messaging-protocol port, treated as a strong IoT-appliance signature.",
+        )
+    ambiguous_hits = sorted(open_ports & AMBIGUOUS_PORTS)
+    if ambiguous_hits:
+        return (
+            "uncertain",
+            "low",
+            "Only generic remote-administration port(s) " + ", ".join(str(p) for p in ambiguous_hits)
+            + " were open - Telnet/SSH alone are common to many non-IoT network appliances (a switch, "
+            "a legacy server) too, so this host cannot be confidently classified as an IoT device from "
+            "this signature alone.",
+        )
+    return (
+        "unknown",
+        "low",
+        "None of the scanned signature ports were open on this host - it is live, but its role could "
+        "not be inferred from this scan.",
+    )
+
+
+def _parse_network_discovery_observations(target: dict, output: str) -> dict:
+    # nmap's own per-host report header is the natural split point; the
+    # first chunk (nmap's startup banner) is discarded since it precedes any
+    # host block.
+    blocks = re.split(r"\nNmap scan report for ", output)[1:]
+    hosts = []
+    for block in blocks:
+        header_line, _, rest = block.partition("\n")
+        header_match = re.match(r"^(.*?)\s+\(([\d.]+)\)\s*$", header_line.strip())
+        if header_match:
+            hostname, ip = header_match.group(1), header_match.group(2)
+        else:
+            hostname, ip = None, header_line.strip()
+
+        open_ports: set[int] = set()
+        services = []
+        for port_match in re.finditer(r"^(\d+)/tcp\s+open\s+(\S+)(?:\s+(.+?))?\s*$", rest, re.MULTILINE):
+            port = int(port_match.group(1))
+            open_ports.add(port)
+            services.append({
+                "port": port,
+                "service": port_match.group(2),
+                "version": port_match.group(3).strip() if port_match.group(3) else None,
+            })
+
+        classification, confidence, rationale = _classify_host(open_ports)
+        hosts.append({
+            "ip": ip,
+            "hostname": hostname,
+            "open_ports": sorted(open_ports),
+            "services": services,
+            "classification": classification,
+            "confidence": confidence,
+            "rationale": rationale,
+        })
+
+    iot_count = sum(1 for h in hosts if h["classification"] == "iot_device")
+    uncertain_count = sum(1 for h in hosts if h["classification"] == "uncertain")
+    unknown_count = sum(1 for h in hosts if h["classification"] == "unknown")
+
+    notes = [
+        f"{len(hosts)} live host(s) found on {AUDIT_NETWORK_CIDR}: {iot_count} classified as IoT "
+        f"appliance(s), {uncertain_count} uncertain, {unknown_count} unclassifiable from the scanned "
+        "signature ports alone.",
+        "Classification uses only the open-port/service signature (a management UI or MQTT port = "
+        "IoT; Telnet/SSH alone = uncertain, since those protocols are common to non-IoT network "
+        "appliances too). MAC-vendor (OUI) lookup and OS/TTL fingerprinting are deliberately not used "
+        "as corroborating signals here: this scan runs from inside a Docker bridge network, where "
+        "every container shares the host kernel and uses a virtual, locally-administered MAC address, "
+        "so neither technique reliably distinguishes device types in this environment. On a real "
+        "physical VLAN, add both as additional evidence before treating any single classification as "
+        "certain.",
+    ]
+    if uncertain_count:
+        notes.append(
+            "Do not treat an 'uncertain' host as confirmed non-IoT - it means the signature set was "
+            "inconclusive, not that the host was ruled out. Confirm manually (banner-grab the open "
+            "port, check the vendor's documentation) before excluding it from the device inventory.",
+        )
+
+    return {
+        "subnet": AUDIT_NETWORK_CIDR,
+        "hosts": hosts,
+        "iot_device_count": iot_count,
+        "uncertain_count": uncertain_count,
+        "unknown_count": unknown_count,
         "notes": notes,
     }
 
@@ -645,6 +777,15 @@ SCAN_CATALOG = {
         "build_command": _reachability_command,
         "parse_observations": _parse_reachability_observations,
     },
+    "TEST-NET-DISCOVERY": {
+        "label": "Network discovery (VLAN sweep)",
+        "tool": "nmap",
+        "tool_version_command": ["nmap", "--version"],
+        "category": CATEGORY_NETWORK_DISCOVERY,
+        "applicable_service_types": (),
+        "build_command": _network_discovery_command,
+        "parse_observations": _parse_network_discovery_observations,
+    },
     "TEST-NET-PORTSCAN": {
         "label": "Nmap service/port scan",
         "tool": "nmap",
@@ -811,3 +952,13 @@ def is_applicable(target: dict, test_id: str) -> bool:
 def is_firmware_test(test_id: str) -> bool:
     spec = SCAN_CATALOG.get(test_id)
     return spec is not None and spec["category"] == CATEGORY_FIRMWARE
+
+
+def is_network_discovery_test(test_id: str) -> bool:
+    """True for tests that sweep the whole audit-network subnet rather than
+    a registered device's host/port - like firmware tests, these carry
+    applicable_service_types=() and skip live-target validation entirely
+    (see resolve_target() in job_runner.py and _create_scan_job() in
+    main.py)."""
+    spec = SCAN_CATALOG.get(test_id)
+    return spec is not None and spec["category"] == CATEGORY_NETWORK_DISCOVERY

@@ -1,4 +1,10 @@
-from policies.catalog.scan_tests import ALL_SERVICE_TYPES, SCAN_CATALOG, is_applicable, is_firmware_test
+from policies.catalog.scan_tests import (
+    ALL_SERVICE_TYPES,
+    SCAN_CATALOG,
+    is_applicable,
+    is_firmware_test,
+    is_network_discovery_test,
+)
 
 HTTP_TARGET = {
     "device_id": "device-insecure", "host": "device-insecure",
@@ -635,3 +641,136 @@ def test_parse_fw_updatescript_observations():
     assert obs["update_script_present"] is True
     assert obs["update_script_first_line"] == "#!/bin/sh"
     assert obs["notes"]
+
+
+# -- TEST-NET-DISCOVERY (VLAN sweep) ----------------------------------------
+
+DISCOVERY_TARGET = {"device_id": "device-insecure", "host": None, "service_type": None, "port": None}
+
+
+def test_network_discovery_test_is_categorized_and_flagged():
+    assert SCAN_CATALOG["TEST-NET-DISCOVERY"]["category"] == "network-discovery"
+    assert is_network_discovery_test("TEST-NET-DISCOVERY")
+
+
+def test_non_network_discovery_tests_are_not_flagged():
+    assert not is_network_discovery_test("TEST-NET-PORTSCAN")
+    assert not is_network_discovery_test("TEST-DOES-NOT-EXIST")
+
+
+def test_network_discovery_test_never_matches_a_real_service_type():
+    # applicable_service_types=() - same shape as firmware tests - so
+    # is_applicable() must always return False regardless of service_type.
+    assert not is_applicable(HTTP_TARGET, "TEST-NET-DISCOVERY")
+    assert not is_applicable(HTTPS_TARGET, "TEST-NET-DISCOVERY")
+    assert not is_applicable(MQTT_TARGET, "TEST-NET-DISCOVERY")
+
+
+def test_network_discovery_command_sweeps_the_audit_network_subnet():
+    command = SCAN_CATALOG["TEST-NET-DISCOVERY"]["build_command"](DISCOVERY_TARGET)
+    assert command[0] == "nmap"
+    assert command[-1] == "172.30.0.0/24"
+    # Restricted to the small, known signature-port set - not -p- across a
+    # /24, so the scan reliably finishes inside job_runner's 30s timeout.
+    assert "-p" in command
+    ports_arg = command[command.index("-p") + 1]
+    assert set(ports_arg.split(",")) == {"22", "23", "80", "443", "1883", "8883"}
+
+
+def _discovery_output(*blocks: str) -> str:
+    preamble = "Starting Nmap 7.95 ( https://nmap.org ) at 2026-07-23 00:00 UTC\n"
+    return preamble + "".join(blocks)
+
+
+def test_parse_network_discovery_classifies_an_iot_signature_host_as_iot():
+    output = _discovery_output(
+        "Nmap scan report for device-insecure (172.30.0.5)\n"
+        "Host is up (0.00012s latency).\n\n"
+        "PORT     STATE SERVICE VERSION\n"
+        "80/tcp   open  http    Werkzeug httpd 2.0.1 (Python 3.9.7)\n"
+        "23/tcp   open  telnet?\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert obs["subnet"] == "172.30.0.0/24"
+    assert len(obs["hosts"]) == 1
+    host = obs["hosts"][0]
+    assert host["ip"] == "172.30.0.5"
+    assert host["hostname"] == "device-insecure"
+    assert host["open_ports"] == [23, 80]
+    assert host["classification"] == "iot_device"
+    assert host["confidence"] == "high"
+    assert obs["iot_device_count"] == 1
+
+
+def test_parse_network_discovery_classifies_mqtt_only_host_as_iot():
+    output = _discovery_output(
+        "Nmap scan report for mqtt-broker-insecure (172.30.0.6)\n"
+        "Host is up (0.00010s latency).\n\n"
+        "PORT     STATE SERVICE VERSION\n"
+        "1883/tcp open  mqtt\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert obs["hosts"][0]["classification"] == "iot_device"
+
+
+def test_parse_network_discovery_classifies_telnet_only_host_as_uncertain_not_iot():
+    # Telnet alone is a generic remote-administration signature shared by
+    # plenty of non-IoT network appliances - this must not be asserted as a
+    # confident IoT classification.
+    output = _discovery_output(
+        "Nmap scan report for telnet-sim (172.30.0.9)\n"
+        "Host is up (0.00010s latency).\n\n"
+        "PORT     STATE SERVICE VERSION\n"
+        "23/tcp   open  telnet\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    host = obs["hosts"][0]
+    assert host["classification"] == "uncertain"
+    assert host["confidence"] == "low"
+    assert obs["uncertain_count"] == 1
+    assert obs["iot_device_count"] == 0
+    assert any("uncertain" in note.lower() for note in obs["notes"])
+
+
+def test_parse_network_discovery_classifies_host_with_no_signature_ports_as_unknown():
+    output = _discovery_output(
+        "Nmap scan report for 172.30.0.42\nHost is up (0.00010s latency).\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    host = obs["hosts"][0]
+    assert host["ip"] == "172.30.0.42"
+    assert host["hostname"] is None
+    assert host["open_ports"] == []
+    assert host["classification"] == "unknown"
+    assert obs["unknown_count"] == 1
+
+
+def test_parse_network_discovery_handles_multiple_hosts_in_one_run():
+    output = _discovery_output(
+        "Nmap scan report for device-insecure (172.30.0.5)\n"
+        "Host is up.\n\nPORT     STATE SERVICE VERSION\n80/tcp   open  http\n\n",
+        "Nmap scan report for mqtt-broker-insecure (172.30.0.6)\n"
+        "Host is up.\n\nPORT     STATE SERVICE VERSION\n1883/tcp open  mqtt\n\n",
+        "Nmap scan report for telnet-sim (172.30.0.9)\n"
+        "Host is up.\n\nPORT     STATE SERVICE VERSION\n23/tcp   open  telnet\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert len(obs["hosts"]) == 3
+    assert obs["iot_device_count"] == 2
+    assert obs["uncertain_count"] == 1
+    classifications = {h["ip"]: h["classification"] for h in obs["hosts"]}
+    assert classifications["172.30.0.5"] == "iot_device"
+    assert classifications["172.30.0.6"] == "iot_device"
+    assert classifications["172.30.0.9"] == "uncertain"
+
+
+def test_parse_network_discovery_notes_explain_docker_environment_limitation():
+    # The "keep the classification honest" requirement: MAC-vendor/OS
+    # fingerprinting aren't used, and the notes must say why, not just omit
+    # them silently.
+    output = _discovery_output(
+        "Nmap scan report for device-insecure (172.30.0.5)\n"
+        "Host is up.\n\nPORT     STATE SERVICE VERSION\n80/tcp   open  http\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert any("mac" in note.lower() or "docker" in note.lower() for note in obs["notes"])

@@ -84,7 +84,11 @@ export interface Summary {
   device_compliance: DeviceComplianceReport[];
 }
 
-export type ScanTestCategory = "web-and-auth" | "network-and-protocol" | "firmware";
+export type ScanTestCategory =
+  | "web-and-auth"
+  | "network-and-protocol"
+  | "firmware"
+  | "network-discovery";
 
 export interface ScanTestSpec {
   test_id: string;

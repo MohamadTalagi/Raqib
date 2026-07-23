@@ -23,7 +23,12 @@ from device_validation import (
     validate_service_type,
 )
 from nca_routes import router as nca_router
-from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable, is_firmware_test
+from policies.catalog.scan_tests import (
+    SCAN_CATALOG,
+    is_applicable,
+    is_firmware_test,
+    is_network_discovery_test,
+)
 from report import build_report_model, render_report_html, render_report_pdf
 from upload_utils import read_capped
 
@@ -223,6 +228,20 @@ def _create_scan_job(conn, device_id: str, test_id: str, assessment_id: str | No
             raise HTTPException(status_code=400, detail="device is not registered")
         if row[0] is None:
             raise HTTPException(status_code=400, detail="device has no firmware uploaded")
+        insert_row = conn.execute(
+            f"INSERT INTO scan_jobs (device_id, test_id, assessment_id) VALUES (%s, %s, %s) RETURNING {SCAN_JOB_COLUMNS}",
+            (device_id, test_id, assessment_id),
+        ).fetchone()
+        return _row_to_scan_job(insert_row)
+
+    # Network-discovery tests sweep the whole audit-network subnet rather
+    # than one device's registered service, so they need only confirm the
+    # device itself is registered (for the job's own audit trail) - no
+    # enabled-service check, exactly like the firmware branch above.
+    if is_network_discovery_test(test_id):
+        row = conn.execute("SELECT 1 FROM devices WHERE device_id = %s", (device_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=400, detail="device is not registered")
         insert_row = conn.execute(
             f"INSERT INTO scan_jobs (device_id, test_id, assessment_id) VALUES (%s, %s, %s) RETURNING {SCAN_JOB_COLUMNS}",
             (device_id, test_id, assessment_id),

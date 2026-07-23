@@ -117,6 +117,12 @@ const SCAN_TESTS: ScanTestSpec[] = [
     category: "web-and-auth",
     applicable_service_types: ["http", "https"],
   },
+  {
+    test_id: "TEST-NET-DISCOVERY",
+    label: "Network discovery (VLAN sweep)",
+    category: "network-discovery",
+    applicable_service_types: [],
+  },
 ];
 
 function makeJob(overrides: Partial<ScanJob> & { id: number; test_id: string }): ScanJob {
@@ -235,6 +241,28 @@ describe("RunScanPage", () => {
     }
     expect(versionFileCheckbox).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Update script" })).toBeChecked();
+  });
+
+  it("shows the Network Discovery section as immediately enabled, unlike firmware, for any selected device", async () => {
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    // device-insecure has no firmware uploaded (see DEVICES fixture), so its
+    // firmware section stays disabled - Network Discovery must not depend on
+    // that at all, since it sweeps the whole subnet, not this one device.
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+
+    expect(await screen.findByText("4. Network Discovery")).toBeInTheDocument();
+    const discoveryCheckbox = screen.getByRole("checkbox", { name: "Network discovery (VLAN sweep)" });
+    expect(discoveryCheckbox).toBeEnabled();
+    await user.click(discoveryCheckbox);
+    expect(discoveryCheckbox).toBeChecked();
   });
 
   it("runs the full flow: select tests, run selected, read output, record evidence, recompute verdicts", async () => {
@@ -371,12 +399,13 @@ describe("RunScanPage", () => {
     }
     expect(screen.getByRole("checkbox", { name: "Nmap service/port scan" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Default credentials (admin/admin)" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Network discovery (VLAN sweep)" })).toBeChecked();
 
-    await user.click(screen.getByRole("button", { name: /run selected \(2\)/i }));
+    await user.click(screen.getByRole("button", { name: /run selected \(3\)/i }));
     await waitFor(() =>
       expect(api.createAssessment).toHaveBeenCalledWith(
         "device-insecure",
-        expect.arrayContaining(["TEST-NET-PORTSCAN", "TEST-AUTH-DEFAULT-CREDS"]),
+        expect.arrayContaining(["TEST-NET-PORTSCAN", "TEST-AUTH-DEFAULT-CREDS", "TEST-NET-DISCOVERY"]),
       ),
     );
   });

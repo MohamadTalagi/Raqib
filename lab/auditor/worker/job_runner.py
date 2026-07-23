@@ -23,7 +23,12 @@ from device_validation import (
     validate_port,
     validate_service_type,
 )
-from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable, is_firmware_test
+from policies.catalog.scan_tests import (
+    SCAN_CATALOG,
+    is_applicable,
+    is_firmware_test,
+    is_network_discovery_test,
+)
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
 POLL_INTERVAL_SECONDS = float(os.environ.get("JOB_POLL_INTERVAL_SECONDS", "2"))
@@ -40,8 +45,10 @@ def resolve_target(job: dict) -> dict:
     Firmware tests have no host/service_type/port at all - they inspect an
     uploaded archive keyed only by device_id - so they skip the live-target
     validators entirely rather than failing them on empty/None input.
+    Network-discovery tests are the same shape: they sweep the whole
+    audit-network subnet rather than one device's host/port.
     """
-    if is_firmware_test(job["test_id"]):
+    if is_firmware_test(job["test_id"]) or is_network_discovery_test(job["test_id"]):
         return {"device_id": job["device_id"], "host": None, "service_type": None, "port": None}
     return {
         "device_id": job["device_id"],
@@ -89,9 +96,14 @@ def process_job(job: dict) -> None:
         _patch(job_id, {"status": "failed", "error": f"invalid target: {exc.message}"})
         return
 
-    # is_applicable() gates on service_type, which firmware tests don't have
-    # (applicable_service_types=() would always return False for them).
-    if not is_firmware_test(test_id) and not is_applicable(target, test_id):
+    # is_applicable() gates on service_type, which firmware and
+    # network-discovery tests don't have (applicable_service_types=() would
+    # always return False for them).
+    if (
+        not is_firmware_test(test_id)
+        and not is_network_discovery_test(test_id)
+        and not is_applicable(target, test_id)
+    ):
         _patch(job_id, {"status": "failed", "error": "test does not apply to this service"})
         return
 

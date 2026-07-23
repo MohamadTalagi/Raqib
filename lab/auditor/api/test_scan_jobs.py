@@ -105,6 +105,39 @@ def test_post_scan_job_rejects_unregistered_device(client):
     assert response.status_code == 400
 
 
+def test_post_scan_job_for_network_discovery_test_needs_no_enabled_service(client):
+    # TEST-NET-DISCOVERY sweeps the whole audit-network subnet rather than
+    # one device's registered service - it must succeed even for a device
+    # with zero enabled services, exactly like a firmware test does.
+    response = client.post(
+        "/devices",
+        json={
+            "device_id": "discovery-only-device",
+            "display_name": "discovery-only-device",
+            "tier": "unknown",
+            "host": "discovery-only-device",
+            "services": [{"service_type": "http", "port": 80, "enabled": False}],
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    response = client.post(
+        "/scan-jobs",
+        json={"device_id": "discovery-only-device", "test_id": "TEST-NET-DISCOVERY"},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == "pending"
+
+
+def test_post_scan_job_for_network_discovery_test_rejects_unregistered_device(client):
+    response = client.post(
+        "/scan-jobs",
+        json={"device_id": "no-such-device", "test_id": "TEST-NET-DISCOVERY"},
+    )
+    assert response.status_code == 400
+    assert "registered" in response.json()["detail"]
+
+
 def test_get_scan_jobs_lists_created_jobs(client):
     _register_device(client, "device-insecure")
     client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"})

@@ -323,8 +323,12 @@ export function RunScanPage() {
   const hasFirmware = Boolean(selectedDevice?.firmware_sha256);
 
   function testsInSection(category: ScanTestSpec["category"]): ScanTestSpec[] {
-    if (category === "firmware") {
-      return (scanTests.data ?? []).filter((t) => t.category === "firmware");
+    if (category === "firmware" || category === "network-discovery") {
+      // Neither is gated by the selected device's service types - firmware
+      // tests key on whether firmware was uploaded, network-discovery tests
+      // sweep the whole audit-network subnet regardless of which device is
+      // selected - so neither can come from testsForDevice's intersection.
+      return (scanTests.data ?? []).filter((t) => t.category === category);
     }
     return testsForDevice.filter((t) => t.category === category);
   }
@@ -525,8 +529,48 @@ export function RunScanPage() {
             })()}
 
           {deviceId &&
+            testsInSection("network-discovery").length > 0 &&
+            (() => {
+              const tests = testsInSection("network-discovery");
+              const allChecked = tests.every((t) => selectedTestIds.has(t.test_id));
+              return (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>4. Network Discovery</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-1 pt-2">
+                    <p className="mb-2 text-xs text-[var(--color-text-muted)]">
+                      Sweeps the whole audit-network subnet (not just this device) and classifies
+                      each live host as an IoT appliance, uncertain, or unknown from its open-port
+                      signature — a shared VLAN can carry other, non-IoT network gear alongside the
+                      registered devices.
+                    </p>
+                    <label className="mb-1 flex cursor-pointer items-center gap-2 text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                      <input
+                        type="checkbox"
+                        checked={allChecked}
+                        onChange={(e) => toggleSection("network-discovery", e.target.checked)}
+                        className="h-4 w-4 accent-[var(--color-brand)]"
+                      />
+                      Select all
+                    </label>
+                    {tests.map((t) => (
+                      <TestCheckbox
+                        key={t.test_id}
+                        test={t}
+                        checked={selectedTestIds.has(t.test_id)}
+                        onChange={(checked) => toggleTest(t.test_id, checked)}
+                      />
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            })()}
+
+          {deviceId &&
             (testsInSection("web-and-auth").length > 0 ||
               testsInSection("network-and-protocol").length > 0 ||
+              testsInSection("network-discovery").length > 0 ||
               (hasFirmware && testsInSection("firmware").length > 0)) && (
             <div className="flex flex-col gap-2">
               <button

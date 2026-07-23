@@ -183,3 +183,37 @@ def test_process_job_runs_a_firmware_test_without_a_live_target(mock_run, mock_p
     final_call = mock_patch.call_args_list[-1]
     assert final_call.kwargs["json"]["status"] == "awaiting_finding"
     assert final_call.kwargs["json"]["observations"]["hardcoded_secret_found"] is True
+
+
+def test_network_discovery_job_bypasses_live_target_validators_entirely():
+    # Same shape as the firmware case: a subnet-wide test's row has no
+    # host/service_type/port at all, and None here must not raise.
+    job = {
+        "id": 8, "device_id": "device-insecure", "test_id": "TEST-NET-DISCOVERY",
+        "host": None, "service_type": None, "port": None,
+    }
+    assert resolve_target(job) == {
+        "device_id": "device-insecure", "host": None, "service_type": None, "port": None,
+    }
+
+
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_job_runs_a_network_discovery_test_without_a_live_target(mock_run, mock_patch):
+    mock_run.side_effect = [
+        _mock_completed(stdout="Nmap scan report for device-insecure (172.30.0.5)\nHost is up.\n"),
+        _mock_completed(stdout="nmap version 7.95\n"),
+    ]
+
+    process_job({
+        "id": 9, "device_id": "device-insecure", "test_id": "TEST-NET-DISCOVERY",
+        "host": None, "service_type": None, "port": None,
+    })
+
+    scan_call_args = mock_run.call_args_list[0].args[0]
+    assert scan_call_args[0] == "nmap"
+    assert "172.30.0.0/24" in scan_call_args
+
+    final_call = mock_patch.call_args_list[-1]
+    assert final_call.kwargs["json"]["status"] == "awaiting_finding"
+    assert final_call.kwargs["json"]["observations"]["subnet"] == "172.30.0.0/24"
