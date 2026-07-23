@@ -1,0 +1,88 @@
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-07-23 10:15 UTC
+Nmap scan report for kaust-iot-lab-device-partial-1.kaust-iot-lab_audit-network (172.30.0.2)
+Host is up (0.000032s latency).
+Not shown: 5 closed tcp ports (reset)
+PORT    STATE SERVICE   VERSION
+443/tcp open  ssl/https
+MAC Address: E6:4D:1A:E6:45:D7 (Unknown)
+
+Nmap scan report for kaust-iot-lab-telnet-sim-1.kaust-iot-lab_audit-network (172.30.0.3)
+Host is up (0.000019s latency).
+Not shown: 5 closed tcp ports (reset)
+PORT   STATE SERVICE VERSION
+23/tcp open  telnet?
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port23-TCP:V=7.95%I=7%D=7/23%Time=6A61E9D2%P=x86_64-pc-linux-gnu%r(NULL
+SF:,2A,"AcmeCam\x20Telnet\x20Management\x20Console\r\nlogin:\x20")%r(Gener
+SF:icLines,2A,"AcmeCam\x20Telnet\x20Management\x20Console\r\nlogin:\x20")%
+SF:r(RPCCheck,2A,"AcmeCam\x20Telnet\x20Management\x20Console\r\nlogin:\x20
+SF:")%r(DNSVersionBindReqTCP,2A,"AcmeCam\x20Telnet\x20Management\x20Consol
+SF:e\r\nlogin:\x20")%r(DNSStatusRequestTCP,2A,"AcmeCam\x20Telnet\x20Manage
+SF:ment\x20Console\r\nlogin:\x20")%r(Kerberos,2A,"AcmeCam\x20Telnet\x20Man
+SF:agement\x20Console\r\nlogin:\x20")%r(LANDesk-RC,2A,"AcmeCam\x20Telnet\x
+SF:20Management\x20Console\r\nlogin:\x20")%r(TerminalServer,2A,"AcmeCam\x2
+SF:0Telnet\x20Management\x20Console\r\nlogin:\x20")%r(NCP,2A,"AcmeCam\x20T
+SF:elnet\x20Management\x20Console\r\nlogin:\x20")%r(NotesRPC,2A,"AcmeCam\x
+SF:20Telnet\x20Management\x20Console\r\nlogin:\x20");
+MAC Address: 66:86:B3:6E:25:39 (Unknown)
+
+Nmap scan report for kaust-iot-lab-device-hardened-1.kaust-iot-lab_audit-network (172.30.0.4)
+Host is up (0.000023s latency).
+Not shown: 5 closed tcp ports (reset)
+PORT    STATE SERVICE   VERSION
+443/tcp open  ssl/https
+MAC Address: 86:3F:C8:76:B2:5A (Unknown)
+
+Nmap scan report for kaust-iot-lab-device-insecure-1.kaust-iot-lab_audit-network (172.30.0.6)
+Host is up (0.000019s latency).
+Not shown: 4 closed tcp ports (reset)
+PORT   STATE SERVICE VERSION
+23/tcp open  telnet?
+80/tcp open  http    Uvicorn
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port23-TCP:V=7.95%I=7%D=7/23%Time=6A61E9D2%P=x86_64-pc-linux-gnu%r(NULL
+SF:,31,"AcmeCam\x20AC-100\x20Telnet\x20Management\x20Console\r\nlogin:\x20
+SF:")%r(tn3270,31,"AcmeCam\x20AC-100\x20Telnet\x20Management\x20Console\r\
+SF:nlogin:\x20")%r(HTTPOptions,31,"AcmeCam\x20AC-100\x20Telnet\x20Manageme
+SF:nt\x20Console\r\nlogin:\x20")%r(RPCCheck,31,"AcmeCam\x20AC-100\x20Telne
+SF:t\x20Management\x20Console\r\nlogin:\x20")%r(DNSVersionBindReqTCP,31,"A
+SF:cmeCam\x20AC-100\x20Telnet\x20Management\x20Console\r\nlogin:\x20")%r(D
+SF:NSStatusRequestTCP,31,"AcmeCam\x20AC-100\x20Telnet\x20Management\x20Con
+SF:sole\r\nlogin:\x20")%r(Help,31,"AcmeCam\x20AC-100\x20Telnet\x20Manageme
+SF:nt\x20Console\r\nlogin:\x20")%r(SSLSessionReq,31,"AcmeCam\x20AC-100\x20
+SF:Telnet\x20Management\x20Console\r\nlogin:\x20")%r(TLSSessionReq,31,"Acm
+SF:eCam\x20AC-100\x20Telnet\x20Management\x20Console\r\nlogin:\x20")%r(Ker
+SF:beros,31,"AcmeCam\x20AC-100\x20Telnet\x20Management\x20Console\r\nlogin
+SF::\x20")%r(SMBProgNeg,31,"AcmeCam\x20AC-100\x20Telnet\x20Management\x20C
+SF:onsole\r\nlogin:\x20")%r(X11Probe,31,"AcmeCam\x20AC-100\x20Telnet\x20Ma
+SF:nagement\x20Console\r\nlogin:\x20")%r(LPDString,31,"AcmeCam\x20AC-100\x
+SF:20Telnet\x20Management\x20Console\r\nlogin:\x20")%r(LDAPBindReq,31,"Acm
+SF:eCam\x20AC-100\x20Telnet\x20Management\x20Console\r\nlogin:\x20")%r(SIP
+SF:Options,31,"AcmeCam\x20AC-100\x20Telnet\x20Management\x20Console\r\nlog
+SF:in:\x20")%r(LANDesk-RC,31,"AcmeCam\x20AC-100\x20Telnet\x20Management\x2
+SF:0Console\r\nlogin:\x20")%r(NCP,31,"AcmeCam\x20AC-100\x20Telnet\x20Manag
+SF:ement\x20Console\r\nlogin:\x20")%r(NotesRPC,31,"AcmeCam\x20AC-100\x20Te
+SF:lnet\x20Management\x20Console\r\nlogin:\x20")%r(JavaRMI,31,"AcmeCam\x20
+SF:AC-100\x20Telnet\x20Management\x20Console\r\nlogin:\x20")%r(WMSRequest,
+SF:31,"AcmeCam\x20AC-100\x20Telnet\x20Management\x20Console\r\nlogin:\x20"
+SF:)%r(oracle-tns,31,"AcmeCam\x20AC-100\x20Telnet\x20Management\x20Console
+SF:\r\nlogin:\x20")%r(ms-sql-s,31,"AcmeCam\x20AC-100\x20Telnet\x20Manageme
+SF:nt\x20Console\r\nlogin:\x20");
+MAC Address: 62:9D:88:AF:39:04 (Unknown)
+
+Nmap scan report for kaust-iot-lab-mqtt-broker-secure-1.kaust-iot-lab_audit-network (172.30.0.7)
+Host is up (0.000018s latency).
+Not shown: 5 closed tcp ports (reset)
+PORT     STATE SERVICE  VERSION
+8883/tcp open  ssl/mqtt
+MAC Address: 2E:26:F1:9F:52:7D (Unknown)
+
+Nmap scan report for kaust-iot-lab-mqtt-broker-insecure-1.kaust-iot-lab_audit-network (172.30.0.8)
+Host is up (0.000062s latency).
+Not shown: 5 closed tcp ports (reset)
+PORT     STATE SERVICE                 VERSION
+1883/tcp open  mosquitto version 2.1.2
+MAC Address: 0A:6C:2E:CE:0B:3C (Unknown)
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 256 IP addresses (9 hosts up) scanned in 25.57 seconds

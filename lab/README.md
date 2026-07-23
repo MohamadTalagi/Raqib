@@ -71,7 +71,11 @@ Beyond the Day-1/2/3 core, the lab now includes:
   **Assessment** (`POST /assessments`) grouping the batch under one id with an aggregate status
   (`queued` → `running` → `completed`/`partially_completed`/`failed`, or `cancelled`), visible as a
   status bar with a Cancel button. Each individual test still goes through its own job card to read
-  the collector's raw output/observations and record a human-typed finding as evidence.
+  the collector's raw output/observations and record a human-typed finding as evidence. A 4th
+  section, **Network Discovery** (`TEST-NET-DISCOVERY`), sweeps the whole audit-network subnet
+  rather than the selected device and classifies every live host as an IoT appliance, uncertain, or
+  unknown from its open-port signature — see `docs/known-limitations.md` for exactly what that
+  classification can and can't tell you.
 - **Evidence** / **Verdicts** / **Controls** — browse recorded evidence, computed verdicts (including
   `NOT_APPLICABLE` for controls that genuinely can't apply to a device's registered services, and
   conflict-flagged verdicts when two evidence records disagree), and the 5 `SA-IOT-*` control

@@ -745,6 +745,34 @@ def test_parse_network_discovery_classifies_host_with_no_signature_ports_as_unkn
     assert obs["unknown_count"] == 1
 
 
+def test_parse_network_discovery_does_not_swallow_the_next_port_when_one_has_no_version():
+    # Regression (docs/errors/026): a port line with no version text (nmap
+    # prints just "23/tcp open  telnet?" with nothing after it) must not let
+    # the next port's whole line get absorbed as this port's "version" -
+    # caught live against the real device-insecure container, which exposes
+    # exactly this shape (telnet with no version immediately followed by an
+    # HTTP service that does have one).
+    output = _discovery_output(
+        "Nmap scan report for device-insecure (172.30.0.6)\n"
+        "Host is up (0.000034s latency).\n\n"
+        "PORT   STATE SERVICE VERSION\n"
+        "23/tcp open  telnet?\n"
+        "80/tcp open  http    Uvicorn\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    host = obs["hosts"][0]
+    assert host["open_ports"] == [23, 80]
+    assert len(host["services"]) == 2
+    telnet_entry = next(s for s in host["services"] if s["port"] == 23)
+    http_entry = next(s for s in host["services"] if s["port"] == 80)
+    assert telnet_entry["version"] is None
+    assert http_entry["service"] == "http"
+    assert http_entry["version"] == "Uvicorn"
+    # 80 is an IoT signature port, so this host must still classify as IoT
+    # even though its FIRST port line carried no version text.
+    assert host["classification"] == "iot_device"
+
+
 def test_parse_network_discovery_handles_multiple_hosts_in_one_run():
     output = _discovery_output(
         "Nmap scan report for device-insecure (172.30.0.5)\n"

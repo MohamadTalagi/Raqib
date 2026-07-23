@@ -24,6 +24,26 @@ but it means a cancelled assessment can still show one more job transition to
 rather than preserving them as two distinguishable streams. The content is
 fully preserved; only which stream a given line came from is lost.
 
+## Network discovery classification (`TEST-NET-DISCOVERY`)
+
+Classifies each live host on the audit-network subnet as `iot_device`,
+`uncertain`, or `unknown` using only its open-port/service signature
+(management UI or MQTT port = IoT; Telnet/SSH alone = uncertain, since those
+protocols are common to non-IoT network appliances too). Deliberately does
+**not** use MAC-vendor (OUI) lookup or OS/TTL fingerprinting as corroborating
+signals: this scan runs from inside a Docker bridge network, where every
+container shares the host kernel and uses a virtual, locally-administered
+MAC address, so neither technique reliably distinguishes device types in
+this lab. On a real physical VLAN, both should be added as additional
+evidence before treating any single classification as certain. An
+`uncertain` result means the signature set was inconclusive, not that the
+host was ruled out as non-IoT — it always needs manual confirmation.
+Restricted to a small, fixed set of signature ports (22, 23, 80, 443, 1883,
+8883) rather than a full port sweep across the whole /24, so the scan
+finishes reliably inside `job_runner.py`'s 30-second timeout; a host running
+an IoT service on a port outside this set will show as `unknown` rather than
+`iot_device`.
+
 ## Per-control coverage gaps
 
 Each of the 5 `SA-IOT-*` controls' YAML now carries a `limitations` field

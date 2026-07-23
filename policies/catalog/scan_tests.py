@@ -236,7 +236,13 @@ def _parse_network_discovery_observations(target: dict, output: str) -> dict:
 
         open_ports: set[int] = set()
         services = []
-        for port_match in re.finditer(r"^(\d+)/tcp\s+open\s+(\S+)(?:\s+(.+?))?\s*$", rest, re.MULTILINE):
+        # [ \t]+, not \s+: \s also matches the newline itself, so a port line
+        # with no version text (e.g. "23/tcp open  telnet?" alone) would
+        # otherwise let the optional version group's leading \s+ absorb the
+        # line break and swallow the NEXT port's entire line as this port's
+        # "version" - the exact bug _parse_nmap_observations already avoids
+        # the same way, confirmed live against a real multi-port nmap run.
+        for port_match in re.finditer(r"^(\d+)/tcp[ \t]+open[ \t]+(\S+)(?:[ \t]+(.+?))?[ \t]*$", rest, re.MULTILINE):
             port = int(port_match.group(1))
             open_ports.add(port)
             services.append({

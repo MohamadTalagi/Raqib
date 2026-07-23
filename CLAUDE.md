@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-22
+> **Last updated:** 2026-07-23
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,86 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Dashboard UX/UI improvement pass — COMPLETE** (2026-07-22). The
+**Phase:** **NCA domain-summary cleanup + a new Network Discovery scan —
+COMPLETE** (2026-07-23). Two owner requests handled together: (1) the
+per-device NCA domain breakdown (NCA Compliance page + the device detail
+page's Compliance tab) no longer shows Governance or the Third-Party/
+Cloud domain group, since neither has a single device-scope guideline
+mapped to it at all (confirmed live: both were a real `0/0/0/0` across
+every status, not just untested) — a device-scope view showing them was
+misleading, not merely incomplete. This isn't a hardcoded name-based
+removal: a new shared helper, `lib/nca.ts::applicableDomains()`, excludes
+any domain whose pass+partial+fail+not_tested total is exactly zero,
+so Cybersecurity Resilience (which does have real assessed/not_tested
+controls today) correctly stays visible, and would only disappear on its
+own if it ever became genuinely empty too — exactly the "if Resilience
+isn't applicable either, drop it" instruction, expressed as a standing
+rule rather than a one-off edit. The **organizational** compliance page is
+deliberately untouched, since Governance and the mobile/supplier/cloud
+group are precisely the domains that *do* apply there (device scans can't
+demonstrate policy approval, training, or contract compliance — those stay
+manual, organization-scope assessments).
+
+(2) A new **Network Discovery** scan (`TEST-NET-DISCOVERY`, a 4th Run Scan
+section) sweeps the whole `audit-network` subnet (172.30.0.0/24) with one
+`nmap -sV -p 22,23,80,443,1883,8883 --open -T4` invocation — restricted to
+a small, fixed signature-port set rather than a full `/24` port sweep, so it
+finishes reliably inside `job_runner.py`'s 30s timeout — and classifies
+every live host as `iot_device` (a management-UI or MQTT-protocol port is
+open — high confidence), `uncertain` (only Telnet/SSH is open — a real
+signal for "some other network appliance may be sharing this VLAN," since
+those protocols are common to switches/legacy servers too, not just IoT),
+or `unknown` (none of the signature ports responded). Deliberately does
+**not** use MAC-vendor/OUI lookup or OS/TTL fingerprinting, and says so in
+its own output notes: this scan runs inside a Docker bridge network where
+every container shares the host kernel and uses a virtual MAC, so neither
+technique would actually distinguish device types here — overclaiming
+either would have violated the "keep the classification honest" ask.
+Wired through the same `applicable_service_types=()` / "no live host:port
+needed" path firmware tests already established (`is_network_discovery_test()`
+mirrors `is_firmware_test()` in `scan_tests.py`, `job_runner.py`, and
+`main.py`'s `_create_scan_job`), so it needs only a registered device to
+exist (any device — the scan itself ignores which one), not an enabled
+service. **Verified for real against the live lab**, not just unit-tested:
+found all 6 real containers, correctly classified the 3 smart cameras and
+both MQTT brokers as `iot_device` via their management-UI/MQTT ports, and
+correctly classified `telnet-sim` as only `uncertain` rather than
+confidently IoT — the concrete "the VLAN may contain another network
+appliance, distinguish it" scenario the owner asked for, reproduced with
+real containers rather than a synthetic example. Recorded as real evidence,
+`EV-2026-07-23-0001` (exported to `document-store/evidence/` per the usual
+convention).
+
+**One real bug caught by that live run, not by unit tests alone**
+(`docs/errors/026`): the port-table parser used `\s+` instead of `[ \t]+`,
+so a port with no version text (`23/tcp open  telnet?` alone) let the
+optional version group's leading `\s+` absorb the newline and swallow the
+*next* port's entire line as its own "version" — `device-insecure` (which
+genuinely exposes Telnet with no version immediately followed by HTTP with
+one) came back `uncertain` with `open_ports: [23]` instead of `iot_device`
+with `[23, 80]`. `_parse_nmap_observations` (`TEST-NET-PORTSCAN`) already
+avoided this exact trap; the new function just didn't match it. Fixed and
+added a regression test using exactly that no-version-then-versioned shape.
+**A second, unrelated but also real incident** (`docs/errors/027`): an ad
+hoc `docker run` file-bind-mount (to run `test_job_runner.py` outside the
+full Compose stack) left a 0-byte file on the host at
+`lab/auditor/worker/device_validation.py` — a path that must never be a
+real file, since the real module is baked into the worker image from
+`lab/auditor/api/device_validation.py` and reached via `PYTHONPATH=/work`,
+never bind-mounted at that path. That empty file silently shadowed the real
+one the moment the directory got bind-mounted into the live
+`auditor-worker` container, crash-looping it. Deleted the stray file,
+confirmed the real container recovers, and added the path to `.gitignore`
+so this fails loudly (an import error, easy to spot) rather than quietly
+persisting into a commit again.
+
+Backend: 82 `policies/catalog` scan-test tests (was 79) + 24
+`lab/auditor/api` scan-job tests (was 22) + 14 `job_runner` tests (was 13)
+passing. Frontend: 114 tests passing (was 108), `tsc` clean. Verified live
+against the real rebuilt `auditor-web`/`auditor-worker`/`auditor-api`
+images.
+
+Before that: **Dashboard UX/UI improvement pass — COMPLETE** (2026-07-22). The
 owner asked for three things in one go: "further improve the UX/UI," "add a
 dashboard in NCA Compliance section or something better and usable," and
 "make overall improvement and modification to the overall web interface and
@@ -601,7 +680,8 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
-| 2026-07-22 | **Dashboard UX/UI improvement pass** — see §0 for the full breakdown. NCA Compliance page rebuilt as a real dashboard (new stacked `NCADomainBarChart`, a `ComplianceGauge` in place of a plain stat tile, a worst-first "Devices needing attention" panel, and a "Reports" card finally linking the 4 CSV/PDF export endpoints that existed in `api.ts` but were never wired into any page); `VerdictsPage.tsx` gained the missing `NOT_APPLICABLE` filter plus conflict/policy-version display for fields that existed in the schema but were invisible in the UI; production-readiness baseline added (`NotFoundPage` + catch-all route, a class `ErrorBoundary` wrapping `<Routes>`, a responsive collapsible sidebar with a hamburger toggle and grouped nav sections); and a consistent toast notification system (`components/ui/toast.tsx` + `lib/useToast.tsx`) replacing several different ad hoc inline success/error paragraphs across `RegisterDeviceForm`, Run Scan, and the device detail page. Verified live via a headless Playwright script against the rebuilt `auditor-web` image and the real dev stack (screenshots of the new dashboard, the mobile sidebar collapse/expand, the 404 page, and a real toast appearing and auto-dismissing after a live device registration) since the Claude-in-Chrome extension was unavailable again this session. 108 frontend tests passing (was 96), `tsc` clean. Not committed to git yet. |
+| 2026-07-23 | **NCA per-device domain-summary cleanup + a new Network Discovery scan** — see §0 for the full breakdown. Governance and the Third-Party/Cloud domain group no longer show in the per-device NCA domain breakdown (a real, general `applicableDomains()` zero-total filter, not a hardcoded name removal, so Resilience stays visible today and would only disappear on its own if it too became genuinely empty). New `TEST-NET-DISCOVERY` sweeps the whole audit-network subnet and classifies each live host as `iot_device`/`uncertain`/`unknown` from its open-port signature, honestly declining to use MAC-vendor/OS fingerprinting inside this Docker bridge network. Verified live against the real lab: correctly classified all 5 real IoT devices/brokers as `iot_device` and `telnet-sim` as only `uncertain` - the "distinguish another appliance on the VLAN" scenario, with real containers. One real regex bug caught by that live run (`docs/errors/026`, a `\s+`-swallows-the-next-port-line bug) and one unrelated Docker-tooling incident (`docs/errors/027`, a stray empty `device_validation.py` that crash-looped the live worker) - both fixed, both logged. 82 `policies/catalog` + 24 `lab/auditor/api` scan-job + 14 `job_runner` backend tests passing; 114 frontend tests passing (was 108), `tsc` clean. |
+| 2026-07-22 | **Dashboard UX/UI improvement pass** — see §0 for the full breakdown. NCA Compliance page rebuilt as a real dashboard (new stacked `NCADomainBarChart`, a `ComplianceGauge` in place of a plain stat tile, a worst-first "Devices needing attention" panel, and a "Reports" card finally linking the 4 CSV/PDF export endpoints that existed in `api.ts` but were never wired into any page); `VerdictsPage.tsx` gained the missing `NOT_APPLICABLE` filter plus conflict/policy-version display for fields that existed in the schema but were invisible in the UI; production-readiness baseline added (`NotFoundPage` + catch-all route, a class `ErrorBoundary` wrapping `<Routes>`, a responsive collapsible sidebar with a hamburger toggle and grouped nav sections); and a consistent toast notification system (`components/ui/toast.tsx` + `lib/useToast.tsx`) replacing several different ad hoc inline success/error paragraphs across `RegisterDeviceForm`, Run Scan, and the device detail page. Verified live via a headless Playwright script against the rebuilt `auditor-web` image and the real dev stack (screenshots of the new dashboard, the mobile sidebar collapse/expand, the 404 page, and a real toast appearing and auto-dismissing after a live device registration) since the Claude-in-Chrome extension was unavailable again this session. 108 frontend tests passing (was 96), `tsc` clean. |
 | 2026-07-22 | **Closed every gap `docs/week1-gap-analysis.md` found in the mentor's Week 1 brief** — see §0 for the full breakdown. A real `assessments` entity (groups a `scan_jobs` batch under one id + aggregate status, cancellable); a failed collector now produces `INCONCLUSIVE` (never silence or FAIL) via a new `record-failure` endpoint; `NOT_APPLICABLE` is a real, reachable verdict status derived from existing service-applicability logic; the previously-dead `"when"` YAML mechanism is real code now; evidence conflict detection (`policies/engine/conflict.py`) implements the brief's own documentation-vs-packet-capture example, preferring automated evidence; new `TEST-NET-REACHABILITY` collector and real TLS certificate expiry checking; `source_type`/`policy_version`/`conflict_detected`/`assessment_id` added to evidence/verdicts (all optional, zero breakage to existing callers); HTML/JSON report formats alongside the existing PDF, all three sharing one extended `build_report_model()`; a new path-traversal-safe `/document-store/{path}` route so raw artefacts are actually openable from the UI. Two real bugs caught live against the actual dev database (not by unit tests alone, both logged as `docs/errors/024`/`025` and now regression-tested): conflict detection crashed on a real list-valued observation field, and every device was wrongly marked NOT_APPLICABLE for SA-IOT-001 because its required test has no automated collector at all. Added a systematic 20-case pass/fail/inconclusive/contradictory-evidence matrix across all 5 real controls, a database-persistence test, and `scripts/smoke_test.sh` (verified live against the real stack). New `docs/known-limitations.md`; `lab/README.md` brought current (was still describing the dashboard as Flutter Web). 149 backend `lab/auditor/api` + 148 `policies/*` + 96 frontend tests passing (only the 2 pre-existing WeasyPrint-native-library gaps on this Windows host still fail, unrelated). |
 | 2026-07-22 | **Built the full NCA CGIoT-1:2024 compliance module** — see §0 for the complete breakdown (catalog generation, 6-table data model, centralized evaluator, configurable finding-mapping layer, ~25-endpoint API router, 3 new dashboard pages + a Compliance tab on the device detail page, demo seed script). Additive alongside the existing `SA-IOT-*` policy pilot, which is untouched. Two real bugs caught during integration (not by unit tests alone): the evaluator initially misclassified a never-assessed device as PARTIAL instead of "Not Assessed" (caught by hitting the live API against a freshly seeded device with zero assessments), and the finding-mapping layer initially let a `not_equals` rule spuriously match evidence that never carried the relevant observation key at all (`None != []`). Both fixed with regression tests. 133 backend tests + 92 frontend tests passing; `docs/nca-compliance.md` has the full writeup including known limitations (reviewer-identity ≠ real auth, page-range source citations, IoTGuard's own scope/severity classification kept distinct from NCA's text, single fixed organizational scope). |
 | 2026-07-07 | Project initialized. Copied reference docs (IoTGuard vision, CGIoT-1:2024) into `docs/reference/`. Read and summarized mentor's preliminary 3-day sprint tasks. Created CLAUDE.md charter, error-log convention, and folder scaffolding. |

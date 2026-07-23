@@ -1,0 +1,138 @@
+{
+    "evidence_id": "EV-2026-07-23-0001",
+    "device_id": "device-insecure",
+    "test_id": "TEST-NET-DISCOVERY",
+    "tool": "nmap",
+    "tool_version": "Nmap version 7.95 ( https://nmap.org )",
+    "command": "nmap -sV -p 22,23,80,443,1883,8883 --open -T4 --max-retries 1 172.30.0.0/24",
+    "timestamp": "2026-07-23T10:16:33+00:00",
+    "finding": "Network discovery swept 172.30.0.0/24 and found 6 live hosts: 5 classified as IoT appliances (device-partial, device-hardened, device-insecure, both MQTT brokers) via their management-UI/MQTT port signatures, and 1 (telnet-sim) correctly classified only as 'uncertain' rather than confidently IoT, since Telnet alone is not a reliable IoT-specific signature - demonstrating the scan can distinguish a genuine IoT appliance from another network appliance sharing the same VLAN.",
+    "observations": {
+        "hosts": [
+            {
+                "ip": "172.30.0.2",
+                "hostname": "kaust-iot-lab-device-partial-1.kaust-iot-lab_audit-network",
+                "services": [
+                    {
+                        "port": 443,
+                        "service": "ssl/https",
+                        "version": null
+                    }
+                ],
+                "rationale": "Exposed port(s) 443 - a management UI or IoT messaging-protocol port, treated as a strong IoT-appliance signature.",
+                "confidence": "high",
+                "open_ports": [
+                    443
+                ],
+                "classification": "iot_device"
+            },
+            {
+                "ip": "172.30.0.3",
+                "hostname": "kaust-iot-lab-telnet-sim-1.kaust-iot-lab_audit-network",
+                "services": [
+                    {
+                        "port": 23,
+                        "service": "telnet?",
+                        "version": null
+                    }
+                ],
+                "rationale": "Only generic remote-administration port(s) 23 were open - Telnet/SSH alone are common to many non-IoT network appliances (a switch, a legacy server) too, so this host cannot be confidently classified as an IoT device from this signature alone.",
+                "confidence": "low",
+                "open_ports": [
+                    23
+                ],
+                "classification": "uncertain"
+            },
+            {
+                "ip": "172.30.0.4",
+                "hostname": "kaust-iot-lab-device-hardened-1.kaust-iot-lab_audit-network",
+                "services": [
+                    {
+                        "port": 443,
+                        "service": "ssl/https",
+                        "version": null
+                    }
+                ],
+                "rationale": "Exposed port(s) 443 - a management UI or IoT messaging-protocol port, treated as a strong IoT-appliance signature.",
+                "confidence": "high",
+                "open_ports": [
+                    443
+                ],
+                "classification": "iot_device"
+            },
+            {
+                "ip": "172.30.0.6",
+                "hostname": "kaust-iot-lab-device-insecure-1.kaust-iot-lab_audit-network",
+                "services": [
+                    {
+                        "port": 23,
+                        "service": "telnet?",
+                        "version": null
+                    },
+                    {
+                        "port": 80,
+                        "service": "http",
+                        "version": "Uvicorn"
+                    }
+                ],
+                "rationale": "Exposed port(s) 80 - a management UI or IoT messaging-protocol port, treated as a strong IoT-appliance signature.",
+                "confidence": "high",
+                "open_ports": [
+                    23,
+                    80
+                ],
+                "classification": "iot_device"
+            },
+            {
+                "ip": "172.30.0.7",
+                "hostname": "kaust-iot-lab-mqtt-broker-secure-1.kaust-iot-lab_audit-network",
+                "services": [
+                    {
+                        "port": 8883,
+                        "service": "ssl/mqtt",
+                        "version": null
+                    }
+                ],
+                "rationale": "Exposed port(s) 8883 - a management UI or IoT messaging-protocol port, treated as a strong IoT-appliance signature.",
+                "confidence": "high",
+                "open_ports": [
+                    8883
+                ],
+                "classification": "iot_device"
+            },
+            {
+                "ip": "172.30.0.8",
+                "hostname": "kaust-iot-lab-mqtt-broker-insecure-1.kaust-iot-lab_audit-network",
+                "services": [
+                    {
+                        "port": 1883,
+                        "service": "mosquitto",
+                        "version": "version 2.1.2"
+                    }
+                ],
+                "rationale": "Exposed port(s) 1883 - a management UI or IoT messaging-protocol port, treated as a strong IoT-appliance signature.",
+                "confidence": "high",
+                "open_ports": [
+                    1883
+                ],
+                "classification": "iot_device"
+            }
+        ],
+        "notes": [
+            "6 live host(s) found on 172.30.0.0/24: 5 classified as IoT appliance(s), 1 uncertain, 0 unclassifiable from the scanned signature ports alone.",
+            "Classification uses only the open-port/service signature (a management UI or MQTT port = IoT; Telnet/SSH alone = uncertain, since those protocols are common to non-IoT network appliances too). MAC-vendor (OUI) lookup and OS/TTL fingerprinting are deliberately not used as corroborating signals here: this scan runs from inside a Docker bridge network, where every container shares the host kernel and uses a virtual, locally-administered MAC address, so neither technique reliably distinguishes device types in this environment. On a real physical VLAN, add both as additional evidence before treating any single classification as certain.",
+            "Do not treat an 'uncertain' host as confirmed non-IoT - it means the signature set was inconclusive, not that the host was ruled out. Confirm manually (banner-grab the open port, check the vendor's documentation) before excluding it from the device inventory."
+        ],
+        "subnet": "172.30.0.0/24",
+        "unknown_count": 0,
+        "uncertain_count": 1,
+        "iot_device_count": 5
+    },
+    "raw_output_path": "document-store/raw/EV-2026-07-23-0001.txt",
+    "confidence": "high",
+    "sha256": "061aac40d20aa007b99f7dd079d0a65e6b3e65f990b088c8311495d8c4820414",
+    "assessment_id": null,
+    "source_type": "automated",
+    "confidence_reason": null,
+    "error_state": null
+}

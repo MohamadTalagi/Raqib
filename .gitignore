@@ -32,3 +32,11 @@ lab/certs/*.csr
 lab/certs/*.srl
 lab/mqtt/secure/passwd
 lab/auditor/worker/firmware/output/
+
+# Must never be a real file: device_validation.py is baked into the
+# auditor-worker image from lab/auditor/api/device_validation.py (single
+# source of truth) and reached via PYTHONPATH=/work, never bind-mounted at
+# this path - if one shows up here (e.g. as a side effect of an ad hoc
+# Docker file-bind-mount test run), it silently shadows the real module and
+# breaks the worker (docs/errors/027).
+lab/auditor/worker/device_validation.py
