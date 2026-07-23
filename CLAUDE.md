@@ -12,7 +12,73 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Network discovery fully separated from Run Scan — COMPLETE**
+**Phase:** **NCA Compliance module made real, not a prototype — COMPLETE**
+(2026-07-23). The owner's own words: "make it real, not just prototype...
+if you automate it, go for it." A full audit of the existing module (built
+earlier this project, 6 tables, 81 real guidelines, a centralized evaluator,
+~25 API endpoints, all already unit- and API-tested) found the actual gap
+was **entirely on the frontend**: every write endpoint that lets a human
+record a real compliance judgment existed and worked, but nothing in
+`lab/auditor/web/` ever called them. `grep`-confirmed zero UI usages of
+`createNcaAssessment`, `retestNcaAssessment`, `createNcaException`,
+`approveNcaException`, `rejectNcaException`, `recomputeNcaAssessments`, or
+even `ncaControls` (the full-catalog list). In practice this meant: the
+only way `compliance_assessments` ever got a row was a one-off seed script
+(`seed_demo_assessments.py`), and the 60+ organization-scope guidelines
+(governance, mobile, supplier, cloud domains) had **no path to ever being
+assessed at all** through the actual product — a compliance tool that can't
+record a compliance judgment isn't real, it's a read-only viewer for
+script-seeded data. Closed with pure frontend work (zero backend/schema
+changes needed — every endpoint, type, and validation rule was already
+correct):
+
+- **`components/nca/RecordAssessmentDialog.tsx`** — the one write path for
+  both a new assessment and a retest, adapting to the control's own
+  `scope_type` (device picker vs. the fixed "default" organizational scope,
+  never letting the user pick wrong). Wired into `NCAControlDetailPage`
+  ("Record assessment" + a "Retest" button per current assessment),
+  reachable with the device pre-selected via a new `?device_id=` query
+  param from `DeviceDetailPage`'s Compliance tab and
+  `OrganizationalCompliancePage`'s controls list (both gained an
+  "Assess"/"Retest" link per control row).
+- **`components/nca/RequestExceptionDialog.tsx`** + a new **Exceptions**
+  card on `NCAControlDetailPage` — request an exception, and approve/reject
+  any pending one inline (gated behind typing a reviewer name first, same
+  "reviewer identity, not real auth" convention this whole module already
+  established).
+- **`pages/NCAControlsPage.tsx`** (`/nca-compliance/controls`, new nav
+  entry) — the full 81-guideline catalog, browsable and filterable by
+  domain/scope, previously only reachable one control at a time through a
+  device's or the org page's own (scope-limited) controls list.
+- **A "Recompute from evidence" button on `NCACompliancePage`** —
+  `POST /assessments/recompute` (matches real scan evidence against
+  `compliance_finding_mappings`, creates `not_tested` placeholders, human
+  still records the real finding — never an auto-decided verdict) existed
+  since this module was built but had no UI trigger anywhere.
+
+**Verified live against the real dev stack**, not just unit-tested (27 new
+frontend tests cover the logic, but the live pass is what actually proves
+"real"): recorded a genuine `pass` assessment on a real governance control
+(`1-1-1`, "Cybersecurity Strategy" — previously unassessable through the
+product at all, screenshotted), retested it and confirmed the prior
+assessment flipped to `superseded` with a real `assessment_retested` audit
+event, requested and approved a real exception end to end, and clicked
+"Recompute from evidence" and watched it surface 4 real not-tested
+placeholders from real scan evidence already sitting in the database
+(screenshotted: "4 new not-tested assessment(s) surfaced from automated
+evidence"). The smoke-test rows created during that live pass were deleted
+afterward via direct SQL (the module has no delete endpoint by design — an
+append-only audit trail — so this was the only way to keep the dev DB's
+demo data meaningful); the 4 real recompute-surfaced placeholders were kept,
+since those reflect genuine product state, not test pollution.
+
+152 frontend tests passing (was 125; +27: `RecordAssessmentDialog` (8),
+`RequestExceptionDialog` (5), `NCAControlsPage` (5), `NCAControlDetailPage`
+(+6), `NCACompliancePage` (+3)), `tsc` clean. No backend changes at all —
+every endpoint this UI calls already existed, was already validated, and
+was already covered by `test_nca_routes.py`.
+
+Before that: **Network discovery fully separated from Run Scan — COMPLETE**
 (2026-07-23). Closed the last piece of overlap between the two network-
 discovery entry points built earlier the same day: Run Scan's "4. Network
 Discovery" section still required selecting a device from the dropdown
@@ -799,6 +865,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-23 | **Made the NCA Compliance module real** — see §0 for the full breakdown. Every write endpoint (record/retest an assessment, request/approve/reject an exception, recompute from evidence) already existed and was already tested at the API layer, but had zero UI wired to it - the module was a read-only viewer for script-seeded data, and 60+ organization-scope guidelines had no path to ever being assessed through the product at all. Added `RecordAssessmentDialog`/`RequestExceptionDialog` (scope-adaptive: device picker vs. fixed organizational scope), an Exceptions card + Record/Retest actions on `NCAControlDetailPage` and per-control-row links from the device Compliance tab and organizational page, a new full-catalog `NCAControlsPage` (all 81, filterable), and a "Recompute from evidence" button. Zero backend changes - purely frontend. Verified live: recorded a real assessment on a previously-unassessable governance control, retested it, approved a real exception, and confirmed recompute surfaced real not-tested placeholders from real evidence. 152 frontend tests passing (was 125), `tsc` clean. |
 | 2026-07-23 | **Removed Run Scan's "Network Discovery" section** — see §0 for the full breakdown. It required selecting a device before it would even appear, despite the scan itself never using that device's host/port (it always swept the whole subnet) - a leftover overlap with the standalone "Discover devices" panel on the Devices page, which is now the only real entry point (no device selection needed). Added a pointer link from Run Scan to it. Backend catalog/dispatch untouched. 125 frontend tests passing (was 124), `tsc` clean. |
 | 2026-07-23 | **Discovery panel persistence + a gentler, more accurate scan** — see §0 for the full breakdown. Registering a discovered host no longer hides the discovery panel or discards its scan results, so multiple hosts from one scan can be registered without rescanning; each one flips to "Already registered" inline as soon as the device list refreshes. The scan command itself is now deliberately gentle for an IoT environment (`-T3` instead of `-T4`, `--max-rate 50`, `--version-intensity 2`) with a per-test 90s timeout override (`SCAN_CATALOG`'s new `timeout_seconds` key, read by `job_runner.py`) since the gentler settings trade a little more time for going easier on constrained devices - verified live this costs no real time in this lab. One real, unrelated accuracy bug caught during that same live-tuning pass (`docs/errors/029`): `--open` was silently omitting every live host with no signature port open (the subnet gateway, infra containers), making the `"unknown"` classification unreachable from real output despite being unit-tested - fixed by dropping `--open`, re-verified live that those hosts now correctly appear and classify as `"unknown"`. 4 new backend tests, 1 new frontend test (124 total), `tsc` clean. |
 | 2026-07-23 | **Discovery-first device onboarding** — see §0 for the full breakdown. A new `network_scans` table (no `device_id` at all - deliberately decoupled from the existing per-device `scan_jobs` machinery) + `POST /network-scans` + a second `job_runner.py` poll loop reusing `TEST-NET-DISCOVERY`'s own command/parser. The Devices page gained a "Discover devices" panel: scan the subnet, see every live host classified, click Register to open the existing form pre-filled (device id/name guessed from this lab's container-naming convention, host = the discovered IP, services derived from open ports) instead of typing every field by hand. One real bug caught live (`docs/errors/028`): "Already registered" matched only by IP, missing every real lab device (which registers with a container name as `host`, not an IP) - fixed to match on either. 8 new `lab/auditor/api` + 3 new `job_runner` backend tests (162 total API tests); 123 frontend tests passing (was 114), `tsc` clean. |

@@ -8,6 +8,8 @@ import {
   FileText,
   Gauge,
   HardDrive,
+  Loader2,
+  RefreshCw,
   ShieldAlert,
 } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
@@ -20,8 +22,9 @@ import { Tabs } from "@/components/ui/tabs";
 import { ComplianceGauge } from "@/components/charts/ComplianceGauge";
 import { NCADomainBarChart } from "@/components/charts/NCADomainBarChart";
 import { useFetch } from "@/lib/useFetch";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { applicableDomains } from "@/lib/nca";
+import { useToast } from "@/lib/useToast";
 import type { NCADeviceComplianceRow, NCAStatus } from "@/lib/types";
 
 const ATTENTION_ORDER: Record<NCAStatus, number> = { fail: 0, partial: 1, not_tested: 2, pass: 3 };
@@ -41,13 +44,34 @@ function matchesStatus(row: NCADeviceComplianceRow, status: StatusFilter): boole
 }
 
 export function NCACompliancePage() {
-  const summary = useFetch(api.ncaSummary, []);
-  const domains = useFetch(api.ncaDomains, []);
-  const devices = useFetch(api.ncaDevices, []);
+  const { showToast } = useToast();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const summary = useFetch(api.ncaSummary, [refreshKey]);
+  const domains = useFetch(api.ncaDomains, [refreshKey]);
+  const devices = useFetch(api.ncaDevices, [refreshKey]);
+  const [recomputing, setRecomputing] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [tierFilter, setTierFilter] = useState<string>("all");
   const [vendorFilter, setVendorFilter] = useState<string>("all");
+
+  async function handleRecompute() {
+    setRecomputing(true);
+    try {
+      const result = await api.recomputeNcaAssessments();
+      showToast(
+        result.created === 0
+          ? "No new automated findings to surface — every mapped (control, device) pair already has an assessment."
+          : `${result.created} new not-tested assessment(s) surfaced from automated evidence — review and record a real finding for each.`,
+        "success",
+      );
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Could not recompute NCA mappings.", "error");
+    } finally {
+      setRecomputing(false);
+    }
+  }
 
   const vendors = useMemo(() => {
     const set = new Set((devices.data ?? []).map((d) => d.vendor).filter((v): v is string => Boolean(v)));
@@ -113,14 +137,34 @@ export function NCACompliancePage() {
                 <>
                   <p className="font-medium text-[var(--color-text)]">{summary.data.product_label}</p>
                   <p className="mt-1">{summary.data.disclaimer}</p>
-                  <p className="mt-2">
+                  <div className="mt-3 flex flex-wrap items-center gap-4">
                     <Link
                       to="/nca-compliance/organization"
                       className="inline-flex items-center gap-1 text-[var(--color-brand)] hover:underline"
                     >
                       View organizational compliance <ArrowUpRight className="h-3.5 w-3.5" />
                     </Link>
-                  </p>
+                    <Link
+                      to="/nca-compliance/controls"
+                      className="inline-flex items-center gap-1 text-[var(--color-brand)] hover:underline"
+                    >
+                      Browse all {summary.data.total_controls} controls <ArrowUpRight className="h-3.5 w-3.5" />
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleRecompute}
+                      disabled={recomputing}
+                      title="Scans relevant evidence for controls with no assessment yet and surfaces them as not-tested — a human still records the actual finding."
+                      className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {recomputing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                      Recompute from evidence
+                    </button>
+                  </div>
                 </>
               )}
             </CardContent>

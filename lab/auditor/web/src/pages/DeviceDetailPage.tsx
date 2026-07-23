@@ -468,7 +468,7 @@ export function DeviceDetailPage() {
                           {ncaDetail.data.controls.map(({ control, assessment }) => (
                             <li key={control.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
                               <Link
-                                to={`/nca-compliance/controls/${encodeURIComponent(control.id)}`}
+                                to={`/nca-compliance/controls/${encodeURIComponent(control.id)}?device_id=${encodeURIComponent(device.device_id)}`}
                                 className="font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-brand)] hover:underline"
                               >
                                 {control.guideline_id}
@@ -482,6 +482,12 @@ export function DeviceDetailPage() {
                                 </span>
                               )}
                               <NCAStatusBadge status={assessment?.status ?? "not_tested"} />
+                              <Link
+                                to={`/nca-compliance/controls/${encodeURIComponent(control.id)}?device_id=${encodeURIComponent(device.device_id)}`}
+                                className="inline-flex shrink-0 items-center rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+                              >
+                                {assessment ? "Retest" : "Assess"}
+                              </Link>
                             </li>
                           ))}
                         </ul>

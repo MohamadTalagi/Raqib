@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NCACompliancePage } from "./NCACompliancePage";
 import { api } from "@/lib/api";
+import { ToastProvider } from "@/lib/useToast";
 import type { NCADeviceComplianceRow, NCADomainSummary, NCASummary } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
@@ -59,7 +60,9 @@ function setup() {
 function renderPage() {
   return render(
     <MemoryRouter>
-      <NCACompliancePage />
+      <ToastProvider>
+        <NCACompliancePage />
+      </ToastProvider>
     </MemoryRouter>,
   );
 }
@@ -193,5 +196,40 @@ describe("NCACompliancePage", () => {
     expect(panel).toBeTruthy();
     expect(within(panel).getByText("Smart Camera — Insecure")).toBeInTheDocument();
     expect(within(panel).queryByText("Smart Camera — Hardened")).not.toBeInTheDocument();
+  });
+
+  it("links to the full NCA controls catalog", async () => {
+    setup();
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: /browse all 81 controls/i });
+    expect(link).toHaveAttribute("href", "/nca-compliance/controls");
+  });
+
+  it("recomputes NCA mappings from evidence and shows the result", async () => {
+    setup();
+    const recomputeSpy = vi
+      .spyOn(api, "recomputeNcaAssessments")
+      .mockResolvedValue({ created: 3, assessment_ids: ["ASM-1", "ASM-2", "ASM-3"] });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("NCA CGIoT-1:2024 Alignment");
+    await user.click(screen.getByRole("button", { name: /recompute from evidence/i }));
+
+    expect(recomputeSpy).toHaveBeenCalled();
+    expect(await screen.findByText(/3 new not-tested assessment/i)).toBeInTheDocument();
+  });
+
+  it("shows a neutral message when recompute finds nothing new", async () => {
+    setup();
+    vi.spyOn(api, "recomputeNcaAssessments").mockResolvedValue({ created: 0, assessment_ids: [] });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("NCA CGIoT-1:2024 Alignment");
+    await user.click(screen.getByRole("button", { name: /recompute from evidence/i }));
+
+    expect(await screen.findByText(/no new automated findings/i)).toBeInTheDocument();
   });
 });

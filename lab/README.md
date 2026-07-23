@@ -93,7 +93,12 @@ Beyond the Day-1/2/3 core, the lab now includes:
   definitions. "Recompute verdicts" is idempotent — safe to click repeatedly.
 - **NCA Compliance** — a separate, additive module (`policies/nca/`) covering all 81 real
   CGIoT-1:2024 guidelines with its own device/organizational assessments, evidence, and exceptions.
-  See `docs/nca-compliance.md`.
+  A full **NCA Controls** catalog page (`/nca-compliance/controls`) browses and filters all 81;
+  every control's detail page can **Record assessment** / **Retest** (adapts to the control's
+  device- or organization-scope automatically) and **Request/Approve/Reject exceptions**, and
+  the main NCA Compliance page has a **Recompute from evidence** button that surfaces automated
+  scan findings relevant to a control as a not-tested placeholder for a human to review — this is
+  a real, usable workflow now, not just seeded demo data viewed read-only. See `docs/nca-compliance.md`.
 - **Device reports** — `GET /devices/{id}/report.pdf` (WeasyPrint), `.html`, and `.json` — same
   underlying `build_report_model()`, covering device profile, scope, methodology, control results
   (with policy version and conflict flags), controls not yet assessed, evidence provenance, and a

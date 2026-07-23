@@ -157,6 +157,54 @@ limitation (see below), not something silently glossed over. It satisfies the br
 "require reason+approver for manual overrides" and "require expiry for exceptions"
 rules without inventing a login system this project has never had.
 
+## Dashboard UI (record/retest assessments, exceptions, the full catalog)
+
+Every write endpoint below has a real dashboard UI wired to it — this was **not** true
+originally: `POST /nca/assessments`, `/retest`, `/exceptions`, `/exceptions/{id}/approve`,
+`/exceptions/{id}/reject`, and `/assessments/recompute` all existed and were fully tested
+at the API layer, but nothing in `lab/auditor/web/` ever called them. The only way to
+populate `compliance_assessments` was `policies/nca/seed_demo_assessments.py` (a one-off
+script), and the 60+ organization-scope guidelines (governance, mobile, supplier, cloud)
+had **no path to ever being assessed at all** through the product. Closed as follows:
+
+- **`components/nca/RecordAssessmentDialog.tsx`** — the single write path for both a
+  brand-new assessment and a retest (retest pre-fills every field from the prior
+  assessment and posts to `/retest` instead of a plain create). Adapts to the control's
+  own `scope_type`: a device picker for device-scope controls, a fixed "default"
+  organizational scope with no picker for governance/mobile/supplier/cloud ones — the
+  user is never given a choice that would be wrong for the control they're looking at.
+  Wired into `NCAControlDetailPage` (a "Record assessment" button, and a "Retest" button
+  on the current, non-superseded assessment), and reachable with the device
+  pre-selected via `?device_id=` from `DeviceDetailPage`'s Compliance tab and from
+  `OrganizationalCompliancePage`'s controls list (both gained an "Assess"/"Retest" link
+  per control row).
+- **`components/nca/RequestExceptionDialog.tsx`** — same scope-adaptive pattern, for
+  `POST /nca/exceptions`. `NCAControlDetailPage` also gained a full **Exceptions** card:
+  the list for that control, and — for any `pending` one — inline Approve/Reject buttons
+  gated behind typing a reviewer name first (the same "reviewer identity, not real auth"
+  convention as everywhere else in this module).
+- **`pages/NCAControlsPage.tsx`** (`/nca-compliance/controls`) — the full 81-guideline
+  catalog, browsable and filterable by domain/scope, was previously **only** reachable
+  one control at a time via a device's or the organizational page's own controls list
+  (which only shows controls already relevant to that scope) — there was no way to see
+  the whole catalog, or to find an organization-scope control to assess it for the first
+  time, without already knowing its ID.
+- **A "Recompute from evidence" button on `NCACompliancePage`** — `POST
+  /assessments/recompute` (matches scan evidence against `compliance_finding_mappings`
+  and creates `not_tested` placeholder assessments pointing at the relevant evidence,
+  same idempotent insert-if-missing pattern as `/verdicts/recompute`) existed since this
+  module was built but had no UI trigger anywhere; a human still has to open each
+  placeholder and record the real finding — this button only ever surfaces what needs
+  review, never decides a status.
+
+**Verified live against the real dev stack**, not just unit-tested: recorded a real
+`pass` assessment on a real governance control (`1-1-1`, "Cybersecurity Strategy" —
+previously unassessable through the product at all), retested it (confirmed the prior
+assessment flips to `superseded` and the audit trail shows the `assessment_retested`
+event), requested and approved a real exception, and clicked "Recompute from evidence"
+and confirmed it surfaced real not-tested placeholders from real scan evidence already
+in the database.
+
 ## Reports
 
 `GET /nca/reports/devices.csv`, `/controls.csv`, `/controls.json`, `/evidence.csv`,

@@ -86,6 +86,12 @@ export function OrganizationalCompliancePage() {
                         {control.implementation_summary}
                       </span>
                       <NCAStatusBadge status={assessment?.status ?? "not_tested"} />
+                      <Link
+                        to={`/nca-compliance/controls/${encodeURIComponent(control.id)}`}
+                        className="inline-flex shrink-0 items-center rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+                      >
+                        {assessment ? "Retest" : "Assess"}
+                      </Link>
                     </li>
                   ))}
                 </ul>
