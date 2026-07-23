@@ -51,9 +51,10 @@ def test_process_job_rejects_disallowed_device_test_combo(mock_patch):
     assert "error" in call.kwargs["json"]
 
 
+@patch("job_runner.requests.post")
 @patch("job_runner.requests.patch")
 @patch("job_runner.subprocess.run")
-def test_process_job_marks_failed_on_timeout(mock_run, mock_patch):
+def test_process_job_marks_failed_on_timeout(mock_run, mock_patch, mock_post):
     mock_run.side_effect = subprocess.TimeoutExpired(cmd=["nmap"], timeout=30)
 
     process_job({
@@ -61,9 +62,14 @@ def test_process_job_marks_failed_on_timeout(mock_run, mock_patch):
         "host": "device-insecure", "service_type": "http", "port": 80,
     })
 
-    final_call = mock_patch.call_args_list[-1]
-    assert final_call.kwargs["json"]["status"] == "failed"
-    assert "timed out" in final_call.kwargs["json"]["error"]
+    # A genuine collector failure (as opposed to a pre-execution rejection)
+    # calls record-failure, which the API turns into INCONCLUSIVE evidence -
+    # never left silent, never a plain PATCH to "failed" with no evidence.
+    # requests.patch is still called once, for the earlier "running" transition.
+    assert mock_patch.call_args_list[-1].kwargs["json"]["status"] == "running"
+    final_call = mock_post.call_args_list[-1]
+    assert "record-failure" in final_call.args[0]
+    assert "timed out" in final_call.kwargs["json"]["error_detail"]
 
 
 @patch("job_runner.requests.get")

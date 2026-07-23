@@ -11,7 +11,7 @@ import jsonschema
 import yaml
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from db import get_connection
 from device_validation import (
@@ -22,8 +22,10 @@ from device_validation import (
     validate_port,
     validate_service_type,
 )
+from nca_routes import router as nca_router
 from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable, is_firmware_test
-from report import build_report_model, render_report_pdf
+from report import build_report_model, render_report_html, render_report_pdf
+from upload_utils import read_capped
 
 
 def _document_store_dir() -> Path:
@@ -41,6 +43,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(nca_router)
+
 
 @app.exception_handler(ValidationError)
 async def validation_error_handler(request, exc: ValidationError):
@@ -56,6 +60,23 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/document-store/{subpath:path}")
+def get_document_store_file(subpath: str):
+    """Serves raw evidence artefacts for the dashboard's "view raw artefact"
+    link (evidence.raw_output_path values look like
+    "document-store/raw/EV-....txt"). Path-traversal-safe: refuses any
+    resolved path that escapes the document-store root."""
+    base = _document_store_dir().resolve()
+    target = (base / subpath).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    return FileResponse(target, media_type="text/plain")
+
+
 def _load_evidence_schema() -> dict:
     return json.loads(SCHEMA_PATH.read_text())
 
@@ -65,8 +86,9 @@ def _insert_evidence(conn, evidence: dict) -> None:
         """
         INSERT INTO evidence (
             evidence_id, device_id, test_id, tool, tool_version, command,
-            timestamp, finding, observations, raw_output_path, confidence, sha256
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            timestamp, finding, observations, raw_output_path, confidence, sha256,
+            assessment_id, source_type, confidence_reason, error_state
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             evidence["evidence_id"], evidence["device_id"], evidence["test_id"],
@@ -74,6 +96,8 @@ def _insert_evidence(conn, evidence: dict) -> None:
             evidence["timestamp"], evidence["finding"],
             json.dumps(evidence["observations"]), evidence["raw_output_path"],
             evidence["confidence"], evidence["sha256"],
+            evidence.get("assessment_id"), evidence.get("source_type", "automated"),
+            evidence.get("confidence_reason"), evidence.get("error_state"),
         ),
     )
 
@@ -95,15 +119,25 @@ def post_evidence(evidence: dict):
     return evidence
 
 
+EVIDENCE_COLUMNS = (
+    "evidence_id, device_id, test_id, tool, tool_version, command, timestamp, "
+    "finding, observations, raw_output_path, confidence, sha256, "
+    "assessment_id, source_type, confidence_reason, error_state"
+)
+
+
 def _row_to_evidence(row: tuple) -> dict:
     (evidence_id, device_id, test_id, tool, tool_version, command,
-     timestamp, finding, observations, raw_output_path, confidence, sha256) = row
+     timestamp, finding, observations, raw_output_path, confidence, sha256,
+     assessment_id, source_type, confidence_reason, error_state) = row
     return {
         "evidence_id": evidence_id, "device_id": device_id, "test_id": test_id,
         "tool": tool, "tool_version": tool_version, "command": command,
         "timestamp": timestamp.isoformat(), "finding": finding,
         "observations": observations, "raw_output_path": raw_output_path,
         "confidence": confidence, "sha256": sha256,
+        "assessment_id": assessment_id, "source_type": source_type,
+        "confidence_reason": confidence_reason, "error_state": error_state,
     }
 
 
@@ -111,7 +145,7 @@ def _row_to_evidence(row: tuple) -> dict:
 def get_evidence(device_id: str | None = None, test_id: str | None = None):
     conn = get_connection()
     try:
-        query = "SELECT evidence_id, device_id, test_id, tool, tool_version, command, timestamp, finding, observations, raw_output_path, confidence, sha256 FROM evidence WHERE 1=1"
+        query = f"SELECT {EVIDENCE_COLUMNS} FROM evidence WHERE 1=1"
         params: list = []
         if device_id is not None:
             query += " AND device_id = %s"
@@ -131,7 +165,7 @@ def get_evidence_by_id(evidence_id: str):
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT evidence_id, device_id, test_id, tool, tool_version, command, timestamp, finding, observations, raw_output_path, confidence, sha256 FROM evidence WHERE evidence_id = %s",
+            f"SELECT {EVIDENCE_COLUMNS} FROM evidence WHERE evidence_id = %s",
             (evidence_id,),
         ).fetchone()
     finally:
@@ -143,18 +177,18 @@ def get_evidence_by_id(evidence_id: str):
 
 SCAN_JOB_COLUMNS = (
     "id, device_id, test_id, status, tool, tool_version, command, "
-    "raw_output, observations, error, evidence_id, created_at, updated_at"
+    "raw_output, observations, error, evidence_id, assessment_id, created_at, updated_at"
 )
 
 
 def _row_to_scan_job(row: tuple) -> dict:
     (job_id, device_id, test_id, status, tool, tool_version, command,
-     raw_output, observations, error, evidence_id, created_at, updated_at) = row
+     raw_output, observations, error, evidence_id, assessment_id, created_at, updated_at) = row
     return {
         "id": job_id, "device_id": device_id, "test_id": test_id, "status": status,
         "tool": tool, "tool_version": tool_version, "command": command,
         "raw_output": raw_output, "observations": observations, "error": error,
-        "evidence_id": evidence_id,
+        "evidence_id": evidence_id, "assessment_id": assessment_id,
         "created_at": created_at.isoformat(), "updated_at": updated_at.isoformat(),
     }
 
@@ -172,50 +206,39 @@ def get_scan_tests():
     ]
 
 
-@app.post("/scan-jobs", status_code=201)
-def post_scan_job(payload: dict):
-    device_id = payload.get("device_id")
-    test_id = payload.get("test_id")
-    if not device_id or not test_id:
-        raise HTTPException(status_code=422, detail="device_id and test_id are required")
-
+def _create_scan_job(conn, device_id: str, test_id: str, assessment_id: str | None = None) -> dict:
+    """Validates device/test applicability and inserts one scan_jobs row.
+    Shared by the standalone POST /scan-jobs endpoint (assessment_id=None,
+    an ad-hoc single-test run) and POST /assessments (assessment_id set,
+    tagging every job in the batch under one assessment)."""
     # Firmware tests inspect an uploaded archive keyed only by device_id, not
     # a live host:port - a device can have zero enabled services and still
     # have firmware uploaded, so this must short-circuit before the
     # device_services query below (which 400s on "no enabled service").
     if is_firmware_test(test_id):
-        conn = get_connection()
-        try:
-            row = conn.execute(
-                "SELECT firmware_sha256 FROM devices WHERE device_id = %s", (device_id,)
-            ).fetchone()
-            if row is None:
-                raise HTTPException(status_code=400, detail="device is not registered")
-            if row[0] is None:
-                raise HTTPException(status_code=400, detail="device has no firmware uploaded")
-            insert_row = conn.execute(
-                f"INSERT INTO scan_jobs (device_id, test_id) VALUES (%s, %s) RETURNING {SCAN_JOB_COLUMNS}",
-                (device_id, test_id),
-            ).fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+        row = conn.execute(
+            "SELECT firmware_sha256 FROM devices WHERE device_id = %s", (device_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=400, detail="device is not registered")
+        if row[0] is None:
+            raise HTTPException(status_code=400, detail="device has no firmware uploaded")
+        insert_row = conn.execute(
+            f"INSERT INTO scan_jobs (device_id, test_id, assessment_id) VALUES (%s, %s, %s) RETURNING {SCAN_JOB_COLUMNS}",
+            (device_id, test_id, assessment_id),
+        ).fetchone()
         return _row_to_scan_job(insert_row)
 
-    conn = get_connection()
-    try:
-        services = conn.execute(
-            """
-            SELECT d.host, s.service_type, s.port
-            FROM devices d
-            JOIN device_services s ON s.device_id = d.device_id
-            WHERE d.device_id = %s AND s.enabled = true
-            ORDER BY s.id
-            """,
-            (device_id,),
-        ).fetchall()
-    finally:
-        conn.close()
+    services = conn.execute(
+        """
+        SELECT d.host, s.service_type, s.port
+        FROM devices d
+        JOIN device_services s ON s.device_id = d.device_id
+        WHERE d.device_id = %s AND s.enabled = true
+        ORDER BY s.id
+        """,
+        (device_id,),
+    ).fetchall()
 
     if not services:
         raise HTTPException(
@@ -240,16 +263,163 @@ def post_scan_job(payload: dict):
             status_code=400, detail="test does not apply to this device's services"
         )
 
+    row = conn.execute(
+        f"INSERT INTO scan_jobs (device_id, test_id, assessment_id) VALUES (%s, %s, %s) RETURNING {SCAN_JOB_COLUMNS}",
+        (device_id, test_id, assessment_id),
+    ).fetchone()
+    return _row_to_scan_job(row)
+
+
+@app.post("/scan-jobs", status_code=201)
+def post_scan_job(payload: dict):
+    device_id = payload.get("device_id")
+    test_id = payload.get("test_id")
+    if not device_id or not test_id:
+        raise HTTPException(status_code=422, detail="device_id and test_id are required")
+
     conn = get_connection()
     try:
-        row = conn.execute(
-            f"INSERT INTO scan_jobs (device_id, test_id) VALUES (%s, %s) RETURNING {SCAN_JOB_COLUMNS}",
-            (device_id, test_id),
+        job = _create_scan_job(conn, device_id, test_id)
+        conn.commit()
+    finally:
+        conn.close()
+    return job
+
+
+ASSESSMENT_COLUMNS = "id, device_id, status, policy_version, started_at, completed_at, error, created_at"
+
+
+def _row_to_assessment(row: tuple) -> dict:
+    id_, device_id, status, policy_version, started_at, completed_at, error, created_at = row
+    return {
+        "id": id_, "device_id": device_id, "status": status, "policy_version": policy_version,
+        "started_at": started_at.isoformat() if started_at else None,
+        "completed_at": completed_at.isoformat() if completed_at else None,
+        "error": error, "created_at": created_at.isoformat(),
+    }
+
+
+def _next_assessment_id(conn) -> str:
+    now = datetime.now(timezone.utc)
+    prefix = f"ASMT-{now:%Y-%m-%d}-"
+    existing = conn.execute("SELECT id FROM assessments WHERE id LIKE %s", (f"{prefix}%",)).fetchall()
+    return f"{prefix}{len(existing) + 1:04d}"
+
+
+@app.post("/assessments", status_code=201)
+def create_assessment(payload: dict):
+    """Groups a batch of scan_jobs (e.g. Run Scan's "Run selected") under one
+    Assessment id with an aggregate status, per the brief's "Select device ->
+    create assessment -> run collectors -> ..." workflow. Individual
+    ad-hoc single-test runs still go through POST /scan-jobs directly and
+    stay ungrouped (assessment_id NULL) - this endpoint is additive."""
+    device_id = payload.get("device_id")
+    test_ids = payload.get("test_ids")
+    if not device_id or not isinstance(test_ids, list) or not test_ids:
+        raise HTTPException(status_code=422, detail="device_id and a non-empty test_ids list are required")
+
+    conn = get_connection()
+    try:
+        controls = _load_all_controls()
+        relevant_versions = {
+            control.get("version") for control in controls
+            if any(req["test_id"] in test_ids for req in control["required_evidence"])
+        }
+        policy_version = sorted(v for v in relevant_versions if v)[-1] if relevant_versions else None
+
+        assessment_id = _next_assessment_id(conn)
+        conn.execute(
+            "INSERT INTO assessments (id, device_id, policy_version) VALUES (%s, %s, %s)",
+            (assessment_id, device_id, policy_version),
+        )
+
+        jobs = []
+        errors = {}
+        for test_id in test_ids:
+            try:
+                jobs.append(_create_scan_job(conn, device_id, test_id, assessment_id))
+            except HTTPException as exc:
+                errors[test_id] = exc.detail
+
+        assessment_row = conn.execute(
+            f"SELECT {ASSESSMENT_COLUMNS} FROM assessments WHERE id = %s", (assessment_id,)
         ).fetchone()
         conn.commit()
     finally:
         conn.close()
-    return _row_to_scan_job(row)
+
+    assessment = _row_to_assessment(assessment_row)
+    assessment["jobs"] = jobs
+    assessment["errors"] = errors
+    return assessment
+
+
+@app.get("/assessments")
+def list_assessments(device_id: str | None = None):
+    conn = get_connection()
+    try:
+        query = f"SELECT {ASSESSMENT_COLUMNS} FROM assessments WHERE 1=1"
+        params: list = []
+        if device_id is not None:
+            query += " AND device_id = %s"
+            params.append(device_id)
+        query += " ORDER BY created_at DESC"
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+    return [_row_to_assessment(row) for row in rows]
+
+
+@app.get("/assessments/{assessment_id}")
+def get_assessment(assessment_id: str):
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"SELECT {ASSESSMENT_COLUMNS} FROM assessments WHERE id = %s", (assessment_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="assessment not found")
+        job_rows = conn.execute(
+            f"SELECT {SCAN_JOB_COLUMNS} FROM scan_jobs WHERE assessment_id = %s ORDER BY id", (assessment_id,)
+        ).fetchall()
+    finally:
+        conn.close()
+    assessment = _row_to_assessment(row)
+    assessment["jobs"] = [_row_to_scan_job(r) for r in job_rows]
+    return assessment
+
+
+@app.post("/assessments/{assessment_id}/cancel")
+def cancel_assessment(assessment_id: str):
+    """Only jobs still pending (not yet dispatched to the worker) are
+    actually cancelled; a job already running is left to finish rather than
+    killed mid-execution, since this worker has no process-group tracking to
+    do that safely - see docs/known-limitations.md. Cancelled is terminal:
+    _refresh_assessment_status() never recomputes it back to anything else."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"SELECT {ASSESSMENT_COLUMNS} FROM assessments WHERE id = %s", (assessment_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="assessment not found")
+
+        conn.execute(
+            "UPDATE scan_jobs SET status = 'failed', error = 'cancelled before it started', updated_at = now() "
+            "WHERE assessment_id = %s AND status = 'pending'",
+            (assessment_id,),
+        )
+        conn.execute(
+            "UPDATE assessments SET status = 'cancelled', completed_at = now() WHERE id = %s",
+            (assessment_id,),
+        )
+        conn.commit()
+        updated_row = conn.execute(
+            f"SELECT {ASSESSMENT_COLUMNS} FROM assessments WHERE id = %s", (assessment_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return _row_to_assessment(updated_row)
 
 
 @app.get("/scan-jobs")
@@ -273,7 +443,7 @@ def get_scan_jobs(status: str | None = None):
         query = """
             SELECT j.id, j.device_id, j.test_id, j.status, j.tool, j.tool_version,
                    j.command, j.raw_output, j.observations, j.error, j.evidence_id,
-                   j.created_at, j.updated_at,
+                   j.assessment_id, j.created_at, j.updated_at,
                    d.host
             FROM scan_jobs j
             LEFT JOIN devices d ON d.device_id = j.device_id
@@ -304,8 +474,8 @@ def get_scan_jobs(status: str | None = None):
 
     jobs = []
     for row in job_rows:
-        job = _row_to_scan_job(row[:13])
-        host = row[13]
+        job = _row_to_scan_job(row[:14])
+        host = row[14]
         device_id, test_id = job["device_id"], job["test_id"]
 
         target = None
@@ -345,6 +515,35 @@ SCAN_JOB_PATCHABLE_FIELDS = {
 }
 
 
+def _refresh_assessment_status(conn, assessment_id: str | None) -> None:
+    """Recomputes and persists one assessment's aggregate status from its
+    current child scan_jobs, via the single pure function that owns this
+    logic. Called every time a scan_job's status changes. A cancelled
+    assessment is terminal and never recomputed back to anything else."""
+    if assessment_id is None:
+        return
+    from policies.engine.assessment_status import compute_assessment_status
+
+    current = conn.execute("SELECT status FROM assessments WHERE id = %s", (assessment_id,)).fetchone()
+    if current is None or current[0] == "cancelled":
+        return
+
+    job_statuses = [
+        row[0] for row in conn.execute(
+            "SELECT status FROM scan_jobs WHERE assessment_id = %s", (assessment_id,)
+        ).fetchall()
+    ]
+    new_status = compute_assessment_status(job_statuses)
+    now = datetime.now(timezone.utc)
+    completed_at = now if new_status in ("completed", "failed", "partially_completed") else None
+    started_at = now if new_status != "queued" else None
+    conn.execute(
+        "UPDATE assessments SET status = %s, "
+        "started_at = COALESCE(started_at, %s), completed_at = %s WHERE id = %s",
+        (new_status, started_at, completed_at, assessment_id),
+    )
+
+
 @app.patch("/scan-jobs/{job_id}")
 def patch_scan_job(job_id: int, payload: dict):
     fields = {k: v for k, v in payload.items() if k in SCAN_JOB_PATCHABLE_FIELDS}
@@ -365,12 +564,33 @@ def patch_scan_job(job_id: int, payload: dict):
             f"WHERE id = %s RETURNING {SCAN_JOB_COLUMNS}",
             values,
         ).fetchone()
+        if row is not None:
+            _refresh_assessment_status(conn, row[11])  # scan_jobs.assessment_id
         conn.commit()
     finally:
         conn.close()
     if row is None:
         raise HTTPException(status_code=404, detail="scan job not found")
     return _row_to_scan_job(row)
+
+
+def _next_evidence_id(conn, now: datetime) -> str:
+    date_str = now.strftime("%Y-%m-%d")
+    prefix = f"EV-{date_str}-"
+    existing = conn.execute(
+        "SELECT evidence_id FROM evidence WHERE evidence_id LIKE %s", (f"{prefix}%",)
+    ).fetchall()
+    return f"{prefix}{len(existing) + 1:04d}"
+
+
+def _write_raw_output(evidence_id: str, raw_output: str) -> tuple[str, str]:
+    """Returns (raw_output_path, sha256)."""
+    raw_dir = _document_store_dir() / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    raw_path = raw_dir / f"{evidence_id}.txt"
+    raw_path.write_text(raw_output or "")
+    sha256 = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+    return f"document-store/raw/{evidence_id}.txt", sha256
 
 
 @app.post("/scan-jobs/{job_id}/record", status_code=201)
@@ -395,18 +615,8 @@ def record_scan_job_evidence(job_id: int, payload: dict):
             )
 
         now = datetime.now(timezone.utc)
-        date_str = now.strftime("%Y-%m-%d")
-        prefix = f"EV-{date_str}-"
-        existing = conn.execute(
-            "SELECT evidence_id FROM evidence WHERE evidence_id LIKE %s", (f"{prefix}%",)
-        ).fetchall()
-        evidence_id = f"{prefix}{len(existing) + 1:04d}"
-
-        raw_dir = _document_store_dir() / "raw"
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        raw_path = raw_dir / f"{evidence_id}.txt"
-        raw_path.write_text(job["raw_output"] or "")
-        sha256 = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+        evidence_id = _next_evidence_id(conn, now)
+        raw_output_path, sha256 = _write_raw_output(evidence_id, job["raw_output"])
 
         evidence = {
             "evidence_id": evidence_id,
@@ -418,9 +628,11 @@ def record_scan_job_evidence(job_id: int, payload: dict):
             "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "finding": finding,
             "observations": job["observations"] or {},
-            "raw_output_path": f"document-store/raw/{evidence_id}.txt",
+            "raw_output_path": raw_output_path,
             "confidence": confidence,
             "sha256": sha256,
+            "assessment_id": job["assessment_id"],
+            "source_type": "automated",
         }
         schema = _load_evidence_schema()
         jsonschema.validate(evidence, schema)
@@ -430,6 +642,64 @@ def record_scan_job_evidence(job_id: int, payload: dict):
             "UPDATE scan_jobs SET status = 'recorded', evidence_id = %s, updated_at = now() WHERE id = %s",
             (evidence_id, job_id),
         )
+        _refresh_assessment_status(conn, job["assessment_id"])
+        conn.commit()
+    finally:
+        conn.close()
+    return evidence
+
+
+@app.post("/scan-jobs/{job_id}/record-failure", status_code=201)
+def record_scan_job_failure(job_id: int, payload: dict):
+    """Called by job_runner.py itself (no human input) the instant a
+    collector fails to run at all - timeout, invalid target, or an execution
+    exception. A failed collector must never produce silence: this
+    deterministically records evidence flagged observations.collector_error,
+    which policy_engine.evaluate() checks first and always scores as
+    INCONCLUSIVE, never FAIL and never left unassessed."""
+    error_detail = payload.get("error_detail")
+    if not error_detail:
+        raise HTTPException(status_code=422, detail="error_detail is required")
+
+    conn = get_connection()
+    try:
+        job_row = conn.execute(
+            f"SELECT {SCAN_JOB_COLUMNS} FROM scan_jobs WHERE id = %s", (job_id,)
+        ).fetchone()
+        if job_row is None:
+            raise HTTPException(status_code=404, detail="scan job not found")
+        job = _row_to_scan_job(job_row)
+
+        now = datetime.now(timezone.utc)
+        evidence_id = _next_evidence_id(conn, now)
+        raw_output_path, sha256 = _write_raw_output(evidence_id, job["raw_output"] or error_detail)
+
+        evidence = {
+            "evidence_id": evidence_id,
+            "device_id": job["device_id"],
+            "test_id": job["test_id"],
+            "tool": job["tool"] or "unknown",
+            "tool_version": job["tool_version"] or "unknown",
+            "command": job["command"] or "",
+            "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "finding": f"Collector execution failed: {error_detail}",
+            "observations": {"collector_error": True, "error_detail": error_detail},
+            "raw_output_path": raw_output_path,
+            "confidence": "low",
+            "sha256": sha256,
+            "assessment_id": job["assessment_id"],
+            "source_type": "automated",
+            "error_state": error_detail,
+        }
+        schema = _load_evidence_schema()
+        jsonschema.validate(evidence, schema)
+
+        _insert_evidence(conn, evidence)
+        conn.execute(
+            "UPDATE scan_jobs SET status = 'failed', error = %s, evidence_id = %s, updated_at = now() WHERE id = %s",
+            (error_detail, evidence_id, job_id),
+        )
+        _refresh_assessment_status(conn, job["assessment_id"])
         conn.commit()
     finally:
         conn.close()
@@ -443,6 +713,34 @@ def _load_verdict_schema() -> dict:
     return json.loads(VERDICT_SCHEMA_PATH.read_text())
 
 
+VERDICT_COLUMNS = (
+    "verdict_id, control_id, device_id, status, severity, evidence_ids, matched, "
+    "reason, saudi_source, remediation, timestamp, assessment_id, policy_version, "
+    "conflict_detected, conflict_reason"
+)
+
+
+def _insert_verdict_row(conn, verdict: dict) -> None:
+    conn.execute(
+        """
+        INSERT INTO verdicts (
+            verdict_id, control_id, device_id, status, severity,
+            evidence_ids, matched, reason, saudi_source, remediation, timestamp,
+            assessment_id, policy_version, conflict_detected, conflict_reason
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            verdict["verdict_id"], verdict["control_id"], verdict["device_id"],
+            verdict["status"], verdict["severity"],
+            json.dumps(verdict["evidence_ids"]), json.dumps(verdict.get("matched")),
+            verdict["reason"], json.dumps(verdict["saudi_source"]),
+            verdict["remediation"], verdict["timestamp"],
+            verdict.get("assessment_id"), verdict.get("policy_version"),
+            verdict.get("conflict_detected", False), verdict.get("conflict_reason"),
+        ),
+    )
+
+
 @app.post("/verdicts", status_code=201)
 def post_verdict(verdict: dict):
     schema = _load_verdict_schema()
@@ -453,21 +751,7 @@ def post_verdict(verdict: dict):
 
     conn = get_connection()
     try:
-        conn.execute(
-            """
-            INSERT INTO verdicts (
-                verdict_id, control_id, device_id, status, severity,
-                evidence_ids, matched, reason, saudi_source, remediation, timestamp
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                verdict["verdict_id"], verdict["control_id"], verdict["device_id"],
-                verdict["status"], verdict["severity"],
-                json.dumps(verdict["evidence_ids"]), json.dumps(verdict.get("matched")),
-                verdict["reason"], json.dumps(verdict["saudi_source"]),
-                verdict["remediation"], verdict["timestamp"],
-            ),
-        )
+        _insert_verdict_row(conn, verdict)
         conn.commit()
     finally:
         conn.close()
@@ -475,13 +759,16 @@ def post_verdict(verdict: dict):
 
 
 def _row_to_verdict(row: tuple) -> dict:
-    (verdict_id, control_id, device_id, status, severity,
-     evidence_ids, matched, reason, saudi_source, remediation, timestamp) = row
+    (verdict_id, control_id, device_id, status, severity, evidence_ids, matched,
+     reason, saudi_source, remediation, timestamp, assessment_id, policy_version,
+     conflict_detected, conflict_reason) = row
     return {
         "verdict_id": verdict_id, "control_id": control_id, "device_id": device_id,
         "status": status, "severity": severity, "evidence_ids": evidence_ids,
         "matched": matched, "reason": reason, "saudi_source": saudi_source,
         "remediation": remediation, "timestamp": timestamp.isoformat(),
+        "assessment_id": assessment_id, "policy_version": policy_version,
+        "conflict_detected": conflict_detected, "conflict_reason": conflict_reason,
     }
 
 
@@ -489,7 +776,7 @@ def _row_to_verdict(row: tuple) -> dict:
 def get_verdicts(control_id: str | None = None, device_id: str | None = None):
     conn = get_connection()
     try:
-        query = "SELECT verdict_id, control_id, device_id, status, severity, evidence_ids, matched, reason, saudi_source, remediation, timestamp FROM verdicts WHERE 1=1"
+        query = f"SELECT {VERDICT_COLUMNS} FROM verdicts WHERE 1=1"
         params: list = []
         if control_id is not None:
             query += " AND control_id = %s"
@@ -506,21 +793,41 @@ def get_verdicts(control_id: str | None = None, device_id: str | None = None):
 
 @app.post("/verdicts/recompute")
 def recompute_verdicts():
-    """Re-evaluate every control against every evidence record and insert any
-    verdicts that don't already exist yet. Idempotent by design (checked via
-    the evidence_id already present in an existing verdict's evidence_ids) so
-    clicking this repeatedly is always safe, never a duplicate-key failure."""
-    from policies.engine.policy_engine import evaluate
+    """Re-evaluate every control against every device's evidence and insert
+    any verdicts that don't already exist yet. Idempotent by design (skips a
+    (control, device) pair once its latest verdict already covers every
+    currently-known evidence id for it) so clicking this repeatedly is always
+    safe, never a duplicate-key failure - but produces a new verdict the
+    moment genuinely new evidence arrives for a pair that already has one.
+
+    Evidence for the same (device, control) pair is evaluated together, not
+    independently per record, so conflicting evidence (e.g. documentation
+    says TLS, a packet capture says plaintext) is detected and resolved by
+    policies/engine/conflict.py rather than producing two contradictory
+    verdicts. A device with registered services but none applicable to a
+    control, and no evidence for it yet, gets a NOT_APPLICABLE verdict
+    instead of staying silently unassessed."""
+    from policies.engine.conflict import detect_conflict
+    from policies.engine.policy_engine import build_not_applicable_verdict, evaluate, is_control_applicable
 
     conn = get_connection()
     try:
         evidence_rows = conn.execute(
-            "SELECT evidence_id, device_id, test_id, tool, tool_version, command, "
-            "timestamp, finding, observations, raw_output_path, confidence, sha256 "
-            "FROM evidence ORDER BY evidence_id"
+            f"SELECT {EVIDENCE_COLUMNS} FROM evidence ORDER BY evidence_id"
         ).fetchall()
         evidence_records = [_row_to_evidence(row) for row in evidence_rows]
         controls = _load_all_controls()
+
+        by_device: dict[str, list[dict]] = {}
+        for evidence in evidence_records:
+            by_device.setdefault(evidence["device_id"], []).append(evidence)
+
+        service_rows = conn.execute(
+            "SELECT device_id, service_type FROM device_services WHERE enabled = true"
+        ).fetchall()
+        services_by_device: dict[str, list[dict]] = {}
+        for device_id, service_type in service_rows:
+            services_by_device.setdefault(device_id, []).append({"service_type": service_type})
 
         now = datetime.now(timezone.utc)
         date_str = now.strftime("%Y-%m-%d")
@@ -530,36 +837,56 @@ def recompute_verdicts():
         seq = existing_count
 
         created = []
-        for evidence in evidence_records:
-            for control in controls:
-                required_test_ids = {req["test_id"] for req in control["required_evidence"]}
-                if evidence["test_id"] not in required_test_ids:
+        for control in controls:
+            control_id = control["control_id"]
+            required_test_ids = {req["test_id"] for req in control["required_evidence"]}
+            policy_version = control.get("version")
+
+            for device_id, device_evidence in by_device.items():
+                relevant = [e for e in device_evidence if e["test_id"] in required_test_ids]
+                if not relevant:
                     continue
-                already_exists = conn.execute(
-                    "SELECT 1 FROM verdicts WHERE control_id = %s AND evidence_ids ? %s",
-                    (control["control_id"], evidence["evidence_id"]),
+                relevant_ids = sorted(e["evidence_id"] for e in relevant)
+
+                latest = conn.execute(
+                    "SELECT evidence_ids FROM verdicts WHERE control_id = %s AND device_id = %s "
+                    "ORDER BY verdict_id DESC LIMIT 1",
+                    (control_id, device_id),
                 ).fetchone()
-                if already_exists:
+                if latest and set(latest[0]) >= set(relevant_ids):
+                    continue  # nothing new since the last verdict for this pair
+
+                chosen, conflict_detected, conflict_reason = detect_conflict(control, relevant)
+                seq += 1
+                verdict = evaluate(
+                    control, chosen, verdict_id=f"VD-{date_str}-{seq:04d}",
+                    conflict_detected=conflict_detected, conflict_reason=conflict_reason,
+                    all_evidence_ids=relevant_ids,
+                )
+                verdict["policy_version"] = policy_version
+                _insert_verdict_row(conn, verdict)
+                created.append(verdict)
+
+            # NOT_APPLICABLE: a registered device whose services never match
+            # any of this control's required tests, and that has no evidence
+            # or verdict for it yet at all.
+            for device_id, services in services_by_device.items():
+                if any(e["test_id"] in required_test_ids for e in by_device.get(device_id, [])):
+                    continue  # has real evidence - handled above
+                already_has_verdict = conn.execute(
+                    "SELECT 1 FROM verdicts WHERE control_id = %s AND device_id = %s", (control_id, device_id)
+                ).fetchone()
+                if already_has_verdict or is_control_applicable(control, services):
                     continue
                 seq += 1
-                verdict_id = f"VD-{date_str}-{seq:04d}"
-                verdict = evaluate(control, evidence, verdict_id=verdict_id)
-                conn.execute(
-                    """
-                    INSERT INTO verdicts (
-                        verdict_id, control_id, device_id, status, severity,
-                        evidence_ids, matched, reason, saudi_source, remediation, timestamp
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        verdict["verdict_id"], verdict["control_id"], verdict["device_id"],
-                        verdict["status"], verdict["severity"],
-                        json.dumps(verdict["evidence_ids"]), json.dumps(verdict.get("matched")),
-                        verdict["reason"], json.dumps(verdict["saudi_source"]),
-                        verdict["remediation"], verdict["timestamp"],
-                    ),
+                verdict = build_not_applicable_verdict(
+                    control, device_id, now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    verdict_id=f"VD-{date_str}-{seq:04d}",
                 )
+                verdict["policy_version"] = policy_version
+                _insert_verdict_row(conn, verdict)
                 created.append(verdict)
+
         conn.commit()
     finally:
         conn.close()
@@ -571,7 +898,7 @@ def get_verdict_by_id(verdict_id: str):
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT verdict_id, control_id, device_id, status, severity, evidence_ids, matched, reason, saudi_source, remediation, timestamp FROM verdicts WHERE verdict_id = %s",
+            f"SELECT {VERDICT_COLUMNS} FROM verdicts WHERE verdict_id = %s",
             (verdict_id,),
         ).fetchone()
     finally:
@@ -583,7 +910,7 @@ def get_verdict_by_id(verdict_id: str):
 
 CONTROLS_DIR = Path(os.environ.get("CONTROLS_DIR", "/work/policies/controls"))
 
-VERDICT_STATUSES = ("PASS", "FAIL", "PARTIAL", "INCONCLUSIVE")
+VERDICT_STATUSES = ("PASS", "FAIL", "PARTIAL", "INCONCLUSIVE", "NOT_APPLICABLE")
 
 
 def _load_all_controls() -> list[dict]:
@@ -607,9 +934,14 @@ def _compliance_from_verdict_rows(rows: list[tuple]) -> dict:
     Denominator is controls that have actually been assessed (have at least
     one verdict), not the full mapped-control catalog - an unassessed
     control is reported as missing coverage, never assumed to fail or pass.
+    NOT_APPLICABLE verdicts are excluded entirely from both passing and
+    tested - a control that can never apply to this device shouldn't drag
+    its compliance percentage down, any more than an unassessed one would.
     """
     latest: dict[str, tuple[str, object]] = {}
     for control_id, status, timestamp in rows:
+        if status == "NOT_APPLICABLE":
+            continue
         if control_id not in latest or timestamp > latest[control_id][1]:
             latest[control_id] = (status, timestamp)
 
@@ -910,6 +1242,32 @@ def get_device_report(device_id: str):
     )
 
 
+@app.get("/devices/{device_id}/report.html")
+def get_device_report_html(device_id: str):
+    validate_device_id(device_id)
+    conn = get_connection()
+    try:
+        model = build_report_model(conn, device_id)
+    finally:
+        conn.close()
+    if model is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    return Response(content=render_report_html(model), media_type="text/html")
+
+
+@app.get("/devices/{device_id}/report.json")
+def get_device_report_json(device_id: str):
+    validate_device_id(device_id)
+    conn = get_connection()
+    try:
+        model = build_report_model(conn, device_id)
+    finally:
+        conn.close()
+    if model is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    return model
+
+
 @app.get("/devices/{device_id}")
 def get_device_detail(device_id: str) -> dict:
     validate_device_id(device_id)
@@ -1080,23 +1438,6 @@ def _firmware_path(device_id: str) -> Path:
     return _document_store_dir() / "firmware" / f"{device_id}.tar.gz"
 
 
-async def _read_capped(upload: UploadFile, max_bytes: int) -> bytes:
-    # Never trust Content-Length alone - it's a client-supplied header and
-    # can lie. Read in chunks and stop the instant the real byte count would
-    # exceed the cap, rather than buffering an arbitrarily large body first.
-    chunks = []
-    total = 0
-    while True:
-        chunk = await upload.read(1024 * 1024)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > max_bytes:
-            raise HTTPException(status_code=413, detail="firmware archive exceeds the 20MB limit")
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
 def _validate_firmware_archive(data: bytes) -> None:
     try:
         with tarfile.open(fileobj=BytesIO(data), mode="r:gz") as tar:
@@ -1125,7 +1466,7 @@ async def upload_device_firmware(device_id: str, firmware: UploadFile) -> dict:
         if _device_row(conn, device_id) is None:
             raise HTTPException(status_code=404, detail="device not found")
 
-        data = await _read_capped(firmware, MAX_FIRMWARE_UPLOAD_BYTES)
+        data = await read_capped(firmware, MAX_FIRMWARE_UPLOAD_BYTES)
         _validate_firmware_archive(data)
 
         path = _firmware_path(device_id)
@@ -1187,7 +1528,7 @@ def get_summary():
         ).fetchall()
     finally:
         conn.close()
-    verdicts_by_status = {"PASS": 0, "FAIL": 0, "PARTIAL": 0, "INCONCLUSIVE": 0}
+    verdicts_by_status = {"PASS": 0, "FAIL": 0, "PARTIAL": 0, "INCONCLUSIVE": 0, "NOT_APPLICABLE": 0}
     for status, count in status_rows:
         verdicts_by_status[status] = count
 

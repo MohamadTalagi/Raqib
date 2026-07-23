@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>{{ product_label }} — Executive Report</title></head>
+<body>
+
+<h1>{{ product_label }}</h1>
+<p class="subtitle mono">{{ framework }} {{ framework_version }} &middot; generated {{ generated_at }}</p>
+<p class="cite">{{ disclaimer }}</p>
+
+<h2>1. Methodology</h2>
+<p class="value">{{ methodology }}</p>
+<div class="grid" style="margin-top:3mm">
+  {% for status, definition in status_definitions.items() %}
+  <div>
+    <div class="label status status-{{ status }}">{{ status }}</div>
+    <div class="value">{{ definition }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<h2>2. Device compliance summary</h2>
+{% if devices %}
+<table>
+  <thead><tr><th>Device</th><th>Tier</th><th>Status</th><th>Score</th></tr></thead>
+  <tbody>
+  {% for d in devices %}
+    <tr>
+      <td class="mono">{{ d.display_name }} <span class="cite">({{ d.device_id }})</span></td>
+      <td>{{ d.tier }}</td>
+      <td class="status status-{{ d.overall_status }}">{{ d.overall_status }}</td>
+      <td>{% if d.score is not none %}{{ d.score }}%{% else %}<span class="empty">not assessed</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No devices registered.</p>{% endif %}
+
+<h2>3. Domain breakdown</h2>
+<table>
+  <thead><tr><th>Domain</th><th>Pass</th><th>Partial</th><th>Fail</th><th>Not tested</th></tr></thead>
+  <tbody>
+  {% for domain_name, counts in domain_summary.items() %}
+    <tr>
+      <td>{{ domain_name }}</td>
+      <td>{{ counts.pass }}</td>
+      <td>{{ counts.partial }}</td>
+      <td>{{ counts.fail }}</td>
+      <td>{{ counts.not_tested }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>4. Failed and partial controls</h2>
+{% if failed_or_partial_controls %}
+<table>
+  <thead><tr><th>Device</th><th>Guideline</th><th>Domain</th><th>Subdomain</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for f in failed_or_partial_controls %}
+    <tr>
+      <td class="mono">{{ f.device_id }}</td>
+      <td class="mono">{{ f.guideline_id }}</td>
+      <td>{{ f.domain_name }}</td>
+      <td>{{ f.subdomain_name }}</td>
+      <td class="status status-{{ f.status }}">{{ f.status }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No failed or partial required controls.</p>{% endif %}
+
+<h2>5. Approved exceptions</h2>
+{% if approved_exceptions %}
+<table>
+  <thead><tr><th>Control</th><th>Scope</th><th>Reason</th><th>Compensating control</th><th>Approved by</th><th>Expires</th></tr></thead>
+  <tbody>
+  {% for e in approved_exceptions %}
+    <tr>
+      <td class="mono">{{ e.control_id }}</td>
+      <td class="mono">{{ e.device_id or e.organizational_scope_id }}</td>
+      <td>{{ e.reason }}</td>
+      <td>{% if e.compensating_control %}{{ e.compensating_control }}{% else %}<span class="empty">none recorded</span>{% endif %}</td>
+      <td>{{ e.approved_by }}</td>
+      <td class="mono">{{ e.expires_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No approved exceptions.</p>{% endif %}
+
+</body>
+</html>

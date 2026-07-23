@@ -1,14 +1,22 @@
 import { FileDown, Trash2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
-import { ComplianceBadge, ConfidenceLabel, SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
+import {
+  ComplianceBadge,
+  ConfidenceLabel,
+  NCAStatusBadge,
+  SeverityBadge,
+  StatusBadge,
+} from "@/components/ui/severity-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
+import { useToast } from "@/lib/useToast";
 import type { Confidence, Severity, VerdictStatus } from "@/lib/types";
 
 const VERDICT_STATUSES: readonly VerdictStatus[] = ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"];
@@ -66,14 +74,15 @@ interface FirmwareState {
 export function DeviceDetailPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId]);
+  const ncaDetail = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
+  const [activeTab, setActiveTab] = useState<"overview" | "compliance">("overview");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deregistering, setDeregistering] = useState(false);
-  const [deregisterError, setDeregisterError] = useState<string | null>(null);
   const [firmwareOverride, setFirmwareOverride] = useState<FirmwareState | null>(null);
   const [pendingFirmwareFile, setPendingFirmwareFile] = useState<File | null>(null);
   const [firmwareBusy, setFirmwareBusy] = useState(false);
-  const [firmwareError, setFirmwareError] = useState<string | null>(null);
 
   // A device switch (navigating from one detail page to another without a
   // full remount) must not carry over the previous device's upload state.
@@ -81,13 +90,11 @@ export function DeviceDetailPage() {
     setFirmwareOverride(null);
     setPendingFirmwareFile(null);
     setFirmwareBusy(false);
-    setFirmwareError(null);
   }, [deviceId]);
 
   async function handleUploadFirmware() {
     if (!deviceId || !pendingFirmwareFile) return;
     setFirmwareBusy(true);
-    setFirmwareError(null);
     try {
       const result = await api.uploadFirmware(deviceId, pendingFirmwareFile);
       setFirmwareOverride({
@@ -96,8 +103,9 @@ export function DeviceDetailPage() {
         firmware_uploaded_at: result.firmware_uploaded_at,
       });
       setPendingFirmwareFile(null);
+      showToast("Firmware uploaded.", "success");
     } catch (caught) {
-      setFirmwareError(firmwareErrorMessage(caught));
+      showToast(firmwareErrorMessage(caught), "error");
     } finally {
       setFirmwareBusy(false);
     }
@@ -106,12 +114,12 @@ export function DeviceDetailPage() {
   async function handleRemoveFirmware() {
     if (!deviceId) return;
     setFirmwareBusy(true);
-    setFirmwareError(null);
     try {
       await api.deleteFirmware(deviceId);
       setFirmwareOverride({ firmware_filename: null, firmware_sha256: null, firmware_uploaded_at: null });
+      showToast("Firmware removed.", "success");
     } catch (caught) {
-      setFirmwareError(firmwareErrorMessage(caught));
+      showToast(firmwareErrorMessage(caught), "error");
     } finally {
       setFirmwareBusy(false);
     }
@@ -120,12 +128,12 @@ export function DeviceDetailPage() {
   async function handleConfirmDeregister() {
     if (!deviceId) return;
     setDeregistering(true);
-    setDeregisterError(null);
     try {
       await api.deleteDevice(deviceId);
+      showToast(`Device "${deviceId}" deregistered.`, "success");
       navigate("/devices");
     } catch (caught) {
-      setDeregisterError(deregisterErrorMessage(caught));
+      showToast(deregisterErrorMessage(caught), "error");
       setDeregistering(false);
       setConfirmOpen(false);
     }
@@ -179,6 +187,22 @@ export function DeviceDetailPage() {
               <FileDown className="h-4 w-4" />
               Download report
             </a>
+            <a
+              href={api.deviceReportHtmlUrl(device.device_id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+            >
+              HTML
+            </a>
+            <a
+              href={api.deviceReportJsonUrl(device.device_id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+            >
+              JSON
+            </a>
             <button
               type="button"
               onClick={() => setConfirmOpen(true)}
@@ -187,9 +211,6 @@ export function DeviceDetailPage() {
               <Trash2 className="h-4 w-4" />
               Deregister
             </button>
-            {deregisterError && (
-              <p className="w-full text-xs text-[var(--color-critical)]">{deregisterError}</p>
-            )}
           </CardContent>
         </Card>
 
@@ -210,172 +231,293 @@ export function DeviceDetailPage() {
           onCancel={() => setConfirmOpen(false)}
         />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Inventory</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4 pt-2 sm:grid-cols-3">
-            <MetaField label="Vendor" value={device.vendor} />
-            <MetaField label="Model" value={device.model} />
-            <MetaField label="Location" value={device.location} />
-            <MetaField label="Owner" value={device.owner} />
-            <MetaField label="Notes" value={device.notes} />
-          </CardContent>
-        </Card>
+        <Tabs
+          items={[
+            { value: "overview", label: "Overview" },
+            { value: "compliance", label: "NCA Compliance" },
+          ]}
+          value={activeTab}
+          onChange={(v) => setActiveTab(v as "overview" | "compliance")}
+        />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Firmware</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-2">
-            {firmware.firmware_filename ? (
-              <>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  <MetaField label="Filename" value={firmware.firmware_filename} />
-                  <MetaField label="Uploaded" value={firmware.firmware_uploaded_at} />
-                </div>
-                <p className="text-xs">
-                  <span className="text-[var(--color-text-muted)]">SHA-256: </span>
-                  <span className="font-mono text-[var(--color-text-secondary)]">
-                    {firmware.firmware_sha256?.slice(0, 16)}…
-                  </span>
-                </p>
-                <button
-                  type="button"
-                  onClick={handleRemoveFirmware}
-                  disabled={firmwareBusy}
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-critical)] hover:text-[var(--color-critical)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Remove firmware
-                </button>
-              </>
-            ) : (
-              <div className="flex flex-wrap items-center gap-3">
-                <input
-                  type="file"
-                  aria-label="Firmware archive"
-                  accept=".tar.gz,.tgz"
-                  onChange={(e) => setPendingFirmwareFile(e.target.files?.[0] ?? null)}
-                  className="text-sm text-[var(--color-text-secondary)]"
-                />
-                <button
-                  type="button"
-                  onClick={handleUploadFirmware}
-                  disabled={!pendingFirmwareFile || firmwareBusy}
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Upload className="h-4 w-4" />
-                  Upload firmware
-                </button>
-              </div>
-            )}
-            {firmwareError && <p className="text-xs text-[var(--color-critical)]">{firmwareError}</p>}
-          </CardContent>
-        </Card>
+        {activeTab === "overview" && (
+          <TabPanel>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Inventory</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-4 pt-2 sm:grid-cols-3">
+                  <MetaField label="Vendor" value={device.vendor} />
+                  <MetaField label="Model" value={device.model} />
+                  <MetaField label="Location" value={device.location} />
+                  <MetaField label="Owner" value={device.owner} />
+                  <MetaField label="Notes" value={device.notes} />
+                </CardContent>
+              </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Evidence</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-2">
-            {evidence.length === 0 ? (
-              <EmptyState message="No evidence recorded for this device." />
-            ) : (
-              <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
-                <div className="grid grid-cols-[1fr_1fr_2fr_0.7fr_1.1fr] gap-4 border-b border-[var(--color-border)] px-4 py-2 text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
-                  <span>Evidence</span>
-                  <span>Test / Tool</span>
-                  <span>Finding</span>
-                  <span>Confidence</span>
-                  <span>Timestamp</span>
-                </div>
-                <div className="divide-y divide-[var(--color-border)]">
-                  {evidence.map((e) => (
-                    <div
-                      key={e.evidence_id}
-                      className="grid grid-cols-[1fr_1fr_2fr_0.7fr_1.1fr] items-center gap-4 px-4 py-2.5 text-sm"
-                    >
-                      <span className="truncate font-mono text-xs text-[var(--color-text-secondary)]">
-                        {e.evidence_id}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate font-mono text-[11px] text-[var(--color-text-muted)]">
-                          {e.test_id}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Firmware</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-2">
+                  {firmware.firmware_filename ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                        <MetaField label="Filename" value={firmware.firmware_filename} />
+                        <MetaField label="Uploaded" value={firmware.firmware_uploaded_at} />
+                      </div>
+                      <p className="text-xs">
+                        <span className="text-[var(--color-text-muted)]">SHA-256: </span>
+                        <span className="font-mono text-[var(--color-text-secondary)]">
+                          {firmware.firmware_sha256?.slice(0, 16)}…
                         </span>
-                        <span className="block truncate text-[var(--color-text-secondary)]">{e.tool}</span>
-                      </span>
-                      <span className="truncate text-[var(--color-text)]">{e.finding}</span>
-                      {isConfidence(e.confidence) ? (
-                        <ConfidenceLabel confidence={e.confidence} />
-                      ) : (
-                        <span className="font-mono text-xs text-[var(--color-text-muted)]">{e.confidence}</span>
-                      )}
-                      <span className="font-mono text-xs text-[var(--color-text-muted)]">{e.timestamp}</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleRemoveFirmware}
+                        disabled={firmwareBusy}
+                        className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-critical)] hover:text-[var(--color-critical)] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Remove firmware
+                      </button>
+                    </>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <input
+                        type="file"
+                        aria-label="Firmware archive"
+                        accept=".tar.gz,.tgz"
+                        onChange={(e) => setPendingFirmwareFile(e.target.files?.[0] ?? null)}
+                        className="text-sm text-[var(--color-text-secondary)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleUploadFirmware}
+                        disabled={!pendingFirmwareFile || firmwareBusy}
+                        className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Upload className="h-4 w-4" />
+                        Upload firmware
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  )}
+                </CardContent>
+              </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Verdicts</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-2">
-            {verdicts.length === 0 ? (
-              <EmptyState message="No verdicts recorded for this device." />
-            ) : (
-              <ul className="divide-y divide-[var(--color-border)]">
-                {verdicts.map((v) => (
-                  <li key={v.verdict_id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
-                    {isVerdictStatus(v.status) ? (
-                      <StatusBadge status={v.status} />
-                    ) : (
-                      <span className="font-mono text-xs text-[var(--color-text-muted)]">{v.status}</span>
-                    )}
-                    {isSeverity(v.severity) ? (
-                      <SeverityBadge severity={v.severity} />
-                    ) : (
-                      <span className="font-mono text-xs text-[var(--color-text-muted)]">{v.severity}</span>
-                    )}
-                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{v.control_id}</span>
-                    <span className="min-w-0 flex-1 truncate text-[var(--color-text-secondary)]">{v.reason}</span>
-                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{v.timestamp}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Evidence</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-2">
+                  {evidence.length === 0 ? (
+                    <EmptyState message="No evidence recorded for this device." />
+                  ) : (
+                    <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+                      <div className="grid grid-cols-[1fr_1fr_2fr_0.7fr_1.1fr] gap-4 border-b border-[var(--color-border)] px-4 py-2 text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                        <span>Evidence</span>
+                        <span>Test / Tool</span>
+                        <span>Finding</span>
+                        <span>Confidence</span>
+                        <span>Timestamp</span>
+                      </div>
+                      <div className="divide-y divide-[var(--color-border)]">
+                        {evidence.map((e) => (
+                          <div
+                            key={e.evidence_id}
+                            className="grid grid-cols-[1fr_1fr_2fr_0.7fr_1.1fr] items-center gap-4 px-4 py-2.5 text-sm"
+                          >
+                            <span className="truncate font-mono text-xs text-[var(--color-text-secondary)]">
+                              {e.evidence_id}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate font-mono text-[11px] text-[var(--color-text-muted)]">
+                                {e.test_id}
+                              </span>
+                              <span className="block truncate text-[var(--color-text-secondary)]">{e.tool}</span>
+                            </span>
+                            <span className="truncate text-[var(--color-text)]">{e.finding}</span>
+                            {isConfidence(e.confidence) ? (
+                              <ConfidenceLabel confidence={e.confidence} />
+                            ) : (
+                              <span className="font-mono text-xs text-[var(--color-text-muted)]">{e.confidence}</span>
+                            )}
+                            <span className="font-mono text-xs text-[var(--color-text-muted)]">{e.timestamp}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Scan history</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-2">
-            {scan_jobs.length === 0 ? (
-              <EmptyState message="No scans have been run against this device yet." />
-            ) : (
-              <ul className="divide-y divide-[var(--color-border)]">
-                {scan_jobs.map((job) => (
-                  <li key={job.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
-                    <span className="font-mono text-xs text-[var(--color-text-muted)]">#{job.id}</span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--color-text-secondary)]">
-                      {job.test_id}
-                    </span>
-                    <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
-                      {job.status}
-                    </span>
-                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{job.created_at}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Verdicts</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-2">
+                  {verdicts.length === 0 ? (
+                    <EmptyState message="No verdicts recorded for this device." />
+                  ) : (
+                    <ul className="divide-y divide-[var(--color-border)]">
+                      {verdicts.map((v) => (
+                        <li key={v.verdict_id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
+                          {isVerdictStatus(v.status) ? (
+                            <StatusBadge status={v.status} />
+                          ) : (
+                            <span className="font-mono text-xs text-[var(--color-text-muted)]">{v.status}</span>
+                          )}
+                          {isSeverity(v.severity) ? (
+                            <SeverityBadge severity={v.severity} />
+                          ) : (
+                            <span className="font-mono text-xs text-[var(--color-text-muted)]">{v.severity}</span>
+                          )}
+                          <span className="font-mono text-xs text-[var(--color-text-muted)]">{v.control_id}</span>
+                          <span className="min-w-0 flex-1 truncate text-[var(--color-text-secondary)]">{v.reason}</span>
+                          <span className="font-mono text-xs text-[var(--color-text-muted)]">{v.timestamp}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Scan history</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-2">
+                  {scan_jobs.length === 0 ? (
+                    <EmptyState message="No scans have been run against this device yet." />
+                  ) : (
+                    <ul className="divide-y divide-[var(--color-border)]">
+                      {scan_jobs.map((job) => (
+                        <li key={job.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
+                          <span className="font-mono text-xs text-[var(--color-text-muted)]">#{job.id}</span>
+                          <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--color-text-secondary)]">
+                            {job.test_id}
+                          </span>
+                          <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                            {job.status}
+                          </span>
+                          <span className="font-mono text-xs text-[var(--color-text-muted)]">{job.created_at}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabPanel>
+        )}
+
+        {activeTab === "compliance" && (
+          <TabPanel>
+            <div className="space-y-6">
+              {ncaDetail.error ? (
+                <ErrorState message={ncaDetail.error} />
+              ) : ncaDetail.loading || !ncaDetail.data ? (
+                <Skeleton className="h-64" />
+              ) : (
+                <>
+                  <Card>
+                    <CardContent className="flex flex-wrap items-center gap-4 pt-5">
+                      <NCAStatusBadge status={ncaDetail.data.overall_status} />
+                      <span className="font-mono-tabular text-sm text-[var(--color-text-secondary)]">
+                        {ncaDetail.data.score === null ? "not assessed" : `${ncaDetail.data.score}% informational score`}
+                      </span>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Domain summary</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        {Object.entries(ncaDetail.data.domain_summary).map(([domainName, counts]) => (
+                          <div key={domainName} className="rounded-md border border-[var(--color-border)] p-4">
+                            <p className="text-xs font-medium text-[var(--color-text-secondary)]">{domainName}</p>
+                            <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                              <span className="text-[var(--color-pass)]">{counts.pass} pass</span>
+                              <span className="text-[var(--color-medium)]">{counts.partial} partial</span>
+                              <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
+                              <span className="text-[var(--color-text-muted)]">{counts.not_tested} not tested</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Controls</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      {ncaDetail.data.controls.length === 0 ? (
+                        <EmptyState message="No device-scope controls loaded." />
+                      ) : (
+                        <ul className="divide-y divide-[var(--color-border)]">
+                          {ncaDetail.data.controls.map(({ control, assessment }) => (
+                            <li key={control.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
+                              <Link
+                                to={`/nca-compliance/controls/${encodeURIComponent(control.id)}`}
+                                className="font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-brand)] hover:underline"
+                              >
+                                {control.guideline_id}
+                              </Link>
+                              <span className="min-w-0 flex-1 truncate text-[var(--color-text-secondary)]">
+                                {control.implementation_summary}
+                              </span>
+                              {assessment?.remediation && (
+                                <span className="max-w-[16rem] truncate text-xs text-[var(--color-text-muted)]">
+                                  {assessment.remediation}
+                                </span>
+                              )}
+                              <NCAStatusBadge status={assessment?.status ?? "not_tested"} />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Exceptions</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      {ncaDetail.data.exceptions.length === 0 ? (
+                        <EmptyState message="No exceptions recorded for this device." />
+                      ) : (
+                        <ul className="divide-y divide-[var(--color-border)]">
+                          {ncaDetail.data.exceptions.map((exception) => (
+                            <li key={exception.id} className="py-2.5 text-sm">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="font-mono text-xs text-[var(--color-text-muted)]">
+                                  {exception.control_id}
+                                </span>
+                                <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                                  {exception.status}
+                                </span>
+                                <span className="font-mono text-xs text-[var(--color-text-muted)]">
+                                  expires {exception.expires_at}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{exception.reason}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </div>
+          </TabPanel>
+        )}
       </div>
     </Shell>
   );

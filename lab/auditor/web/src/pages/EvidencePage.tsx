@@ -116,9 +116,14 @@ export function EvidencePage() {
                           </p>
                           <p>
                             <span className="text-[var(--color-text-muted)]">Raw output: </span>
-                            <span className="font-mono break-all text-[var(--color-text-secondary)]">
+                            <a
+                              href={api.rawArtefactUrl(e.raw_output_path)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-mono break-all text-[var(--color-brand)] hover:underline"
+                            >
                               {e.raw_output_path}
-                            </span>
+                            </a>
                           </p>
                         </div>
                       </div>

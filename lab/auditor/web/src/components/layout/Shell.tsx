@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
@@ -9,12 +10,14 @@ interface ShellProps {
 }
 
 export function Shell({ title, subtitle, children }: ShellProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-[var(--color-bg)]">
-      <Sidebar />
-      <div className="pl-60">
-        <TopBar title={title} subtitle={subtitle} />
-        <main className="mx-auto max-w-[1400px] px-8 py-8">{children}</main>
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="lg:pl-60">
+        <TopBar title={title} subtitle={subtitle} onMenuClick={() => setSidebarOpen(true)} />
+        <main className="mx-auto max-w-[1400px] px-4 py-8 sm:px-8">{children}</main>
       </div>
     </div>
   );

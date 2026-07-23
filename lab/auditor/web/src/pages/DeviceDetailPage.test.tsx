@@ -1,12 +1,78 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeviceDetailPage } from "./DeviceDetailPage";
 import { api, ApiError } from "@/lib/api";
-import type { DeviceDetail } from "@/lib/types";
+import { ToastProvider } from "@/lib/useToast";
+import type { DeviceDetail, NCADeviceDetail } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
+
+const NCA_DETAIL: NCADeviceDetail = {
+  device_id: "device-insecure",
+  display_name: "Smart Camera — Insecure",
+  tier: "insecure",
+  overall_status: "fail",
+  score: 20,
+  domain_summary: {
+    "Cybersecurity Governance": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
+    "Cybersecurity Defense": { pass: 1, partial: 0, fail: 1, not_tested: 0 },
+    "Cybersecurity Resilience": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
+    "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
+  },
+  controls: [
+    {
+      control: {
+        id: "NCA-CGIoT-1_2024-2-2-2",
+        framework: "NCA-CGIoT",
+        framework_version: "1:2024",
+        domain_id: "2",
+        domain_name: "Cybersecurity Defense",
+        subdomain_id: "2-2",
+        subdomain_name: "Access and Permission Restriction",
+        guideline_id: "2-2-2",
+        canonical_requirement: "Do not use default or hard-coded passwords.",
+        implementation_summary: "No default creds.",
+        source_page: "17",
+        scope_type: "device",
+        assessment_type: "automated",
+        required: true,
+        severity: "high",
+        evidence_requirements: [],
+        remediation_guidance: "",
+        enabled: true,
+      },
+      assessment: {
+        id: "ASM-1",
+        control_id: "NCA-CGIoT-1_2024-2-2-2",
+        device_id: "device-insecure",
+        organizational_scope_id: null,
+        applicability: "applicable",
+        applicability_reason: null,
+        status: "fail",
+        severity: "high",
+        finding: "default creds accepted",
+        test_method: "automated",
+        test_identifier: "TEST-AUTH-DEFAULT-CREDS",
+        raw_result_reference: null,
+        evidence_ids: [],
+        scanner_tool: "curl",
+        scanner_tool_version: "8.5.0",
+        firmware_version_assessed: null,
+        assessed_at: "2026-07-20T00:00:00Z",
+        assessed_by: "reviewer-1",
+        remediation: "Force a unique password on first boot.",
+        remediation_due_date: null,
+        retest_status: "not_requested",
+        retested_at: null,
+        superseded_by: null,
+        created_at: "2026-07-20T00:00:00Z",
+      },
+    },
+  ],
+  exceptions: [],
+};
 
 const DETAIL: DeviceDetail = {
   device: {
@@ -53,14 +119,20 @@ const DETAIL: DeviceDetail = {
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/devices/device-insecure"]}>
-      <Routes>
-        <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
+        </Routes>
+      </ToastProvider>
     </MemoryRouter>,
   );
 }
 
 describe("DeviceDetailPage", () => {
+  beforeEach(() => {
+    vi.spyOn(api, "ncaDevice").mockResolvedValue(NCA_DETAIL);
+  });
+
   it("shows the device's NCA compliance percentage", async () => {
     vi.spyOn(api, "device").mockResolvedValue(DETAIL);
     renderPage();
@@ -110,6 +182,16 @@ describe("DeviceDetailPage", () => {
 
     const link = await screen.findByRole("link", { name: /download report/i });
     expect(link).toHaveAttribute("href", expect.stringContaining("/devices/device-insecure/report.pdf"));
+  });
+
+  it("offers HTML and JSON report export links alongside the PDF one", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL as never);
+    renderPage();
+
+    const htmlLink = await screen.findByRole("link", { name: "HTML" });
+    expect(htmlLink).toHaveAttribute("href", expect.stringContaining("/devices/device-insecure/report.html"));
+    const jsonLink = screen.getByRole("link", { name: "JSON" });
+    expect(jsonLink).toHaveAttribute("href", expect.stringContaining("/devices/device-insecure/report.json"));
   });
 
   it("shows a Deregister control on the detail page", async () => {
@@ -238,5 +320,20 @@ describe("DeviceDetailPage", () => {
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("device-insecure"));
     expect(await screen.findByLabelText(/firmware archive/i)).toBeInTheDocument();
+  });
+
+  it("shows the NCA Compliance tab with per-control status, hidden until selected", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    renderPage();
+
+    await screen.findByText("Smart Camera — Insecure");
+    expect(screen.queryByText("No default creds.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /NCA Compliance/i }));
+
+    expect(await screen.findByText("No default creds.")).toBeInTheDocument();
+    expect(screen.getAllByText("Fail").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Force a unique password on first boot.")).toBeInTheDocument();
   });
 });

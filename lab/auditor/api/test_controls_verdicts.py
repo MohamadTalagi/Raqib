@@ -45,7 +45,7 @@ def test_control_with_no_verdicts_returns_zero_counts(client) -> None:
     """Test that a control with no verdicts returns empty list and zero-filled counts."""
     body = client.get("/controls/SA-IOT-005/verdicts").json()
     assert body["verdicts"] == []
-    assert body["counts"] == {"PASS": 0, "FAIL": 0, "PARTIAL": 0, "INCONCLUSIVE": 0}
+    assert body["counts"] == {"PASS": 0, "FAIL": 0, "PARTIAL": 0, "INCONCLUSIVE": 0, "NOT_APPLICABLE": 0}
 
 
 def test_path_traversal_control_id_rejected(client) -> None:

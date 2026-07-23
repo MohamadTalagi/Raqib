@@ -3,8 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RunScanPage } from "./RunScanPage";
+import { ToastProvider } from "@/lib/useToast";
 import { api } from "@/lib/api";
-import type { Device, ScanJob, ScanTestSpec } from "@/lib/types";
+import type { Assessment, CreateAssessmentResult, Device, ScanJob, ScanTestSpec } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -118,6 +119,40 @@ const SCAN_TESTS: ScanTestSpec[] = [
   },
 ];
 
+function makeJob(overrides: Partial<ScanJob> & { id: number; test_id: string }): ScanJob {
+  return {
+    device_id: "device-insecure",
+    status: "pending",
+    tool: null,
+    tool_version: null,
+    command: null,
+    raw_output: null,
+    observations: null,
+    error: null,
+    evidence_id: null,
+    assessment_id: "ASMT-2026-07-22-0001",
+    created_at: "2026-07-12T00:00:00Z",
+    updated_at: "2026-07-12T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeAssessmentResult(jobs: ScanJob[], overrides: Partial<Assessment> = {}): CreateAssessmentResult {
+  return {
+    id: "ASMT-2026-07-22-0001",
+    device_id: "device-insecure",
+    status: "queued",
+    policy_version: "1.0.0",
+    started_at: null,
+    completed_at: null,
+    error: null,
+    created_at: "2026-07-22T00:00:00Z",
+    jobs,
+    errors: {},
+    ...overrides,
+  };
+}
+
 describe("RunScanPage", () => {
   beforeEach(() => {
     vi.spyOn(api, "devices").mockResolvedValue(DEVICES);
@@ -127,7 +162,9 @@ describe("RunScanPage", () => {
   it("offers only registered devices in the device dropdown", async () => {
     render(
       <MemoryRouter>
-        <RunScanPage />
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -139,7 +176,9 @@ describe("RunScanPage", () => {
   it("intersects a test's applicable_service_types with the selected device's exposed services, not by device name", async () => {
     render(
       <MemoryRouter>
-        <RunScanPage />
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
     const user = userEvent.setup();
@@ -156,7 +195,9 @@ describe("RunScanPage", () => {
   it("shows the firmware section as disabled with an upload hint when no firmware is uploaded", async () => {
     render(
       <MemoryRouter>
-        <RunScanPage />
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
     const user = userEvent.setup();
@@ -176,7 +217,9 @@ describe("RunScanPage", () => {
   it("enables the firmware section once the device has firmware uploaded", async () => {
     render(
       <MemoryRouter>
-        <RunScanPage />
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
     const user = userEvent.setup();
@@ -195,9 +238,8 @@ describe("RunScanPage", () => {
   });
 
   it("runs the full flow: select tests, run selected, read output, record evidence, recompute verdicts", async () => {
-    let jobState: ScanJob = {
+    let jobState = makeJob({
       id: 1,
-      device_id: "device-insecure",
       test_id: "TEST-NET-PORTSCAN",
       status: "awaiting_finding",
       tool: "nmap",
@@ -205,13 +247,9 @@ describe("RunScanPage", () => {
       command: "nmap -sV -p- device-insecure",
       raw_output: "80/tcp open http\n",
       observations: { open_ports: [80], telnet_open: false },
-      error: null,
-      evidence_id: null,
-      created_at: "2026-07-12T00:00:00Z",
-      updated_at: "2026-07-12T00:00:00Z",
-    };
+    });
 
-    vi.spyOn(api, "createScanJob").mockImplementation(async () => jobState);
+    vi.spyOn(api, "createAssessment").mockImplementation(async () => makeAssessmentResult([jobState]));
     vi.spyOn(api, "getScanJob").mockImplementation(async () => jobState);
     vi.spyOn(api, "recordScanJob").mockImplementation(async () => {
       jobState = { ...jobState, status: "recorded", evidence_id: "EV-2026-07-12-0001" };
@@ -228,13 +266,24 @@ describe("RunScanPage", () => {
         raw_output_path: "document-store/raw/EV-2026-07-12-0001.txt",
         confidence: "high",
         sha256: "a".repeat(64),
+        assessment_id: jobState.assessment_id,
+        source_type: "automated",
+        confidence_reason: null,
+        error_state: null,
       };
     });
     vi.spyOn(api, "recomputeVerdicts").mockResolvedValue({ created: 1, verdicts: [] });
+    vi.spyOn(api, "getAssessment").mockImplementation(async () => ({
+      id: "ASMT-2026-07-22-0001", device_id: "device-insecure", status: "completed",
+      policy_version: "1.0.0", started_at: "2026-07-12T00:00:00Z", completed_at: "2026-07-12T00:00:02Z",
+      error: null, created_at: "2026-07-12T00:00:00Z", jobs: [jobState],
+    }));
 
     render(
       <MemoryRouter>
-        <RunScanPage />
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -261,27 +310,20 @@ describe("RunScanPage", () => {
   });
 
   it("disables Run selected while the launched scan is still pending/running, re-enabling once it finishes", async () => {
-    let jobState: ScanJob = {
-      id: 9,
-      device_id: "device-insecure",
-      test_id: "TEST-NET-PORTSCAN",
-      status: "pending",
-      tool: null,
-      tool_version: null,
-      command: null,
-      raw_output: null,
-      observations: null,
-      error: null,
-      evidence_id: null,
-      created_at: "2026-07-21T00:00:00Z",
-      updated_at: "2026-07-21T00:00:00Z",
-    };
-    vi.spyOn(api, "createScanJob").mockImplementation(async () => jobState);
+    let jobState = makeJob({ id: 9, test_id: "TEST-NET-PORTSCAN", status: "pending" });
+    vi.spyOn(api, "createAssessment").mockImplementation(async () => makeAssessmentResult([jobState]));
     vi.spyOn(api, "getScanJob").mockImplementation(async () => jobState);
+    vi.spyOn(api, "getAssessment").mockImplementation(async () => ({
+      id: "ASMT-2026-07-22-0001", device_id: "device-insecure", status: "running",
+      policy_version: "1.0.0", started_at: "2026-07-21T00:00:00Z", completed_at: null,
+      error: null, created_at: "2026-07-21T00:00:00Z", jobs: [jobState],
+    }));
 
     render(
       <MemoryRouter>
-        <RunScanPage />
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
     const user = userEvent.setup();
@@ -305,25 +347,17 @@ describe("RunScanPage", () => {
   });
 
   it("can select every test in a section at once via Select all", async () => {
-    vi.spyOn(api, "createScanJob").mockImplementation(async (_deviceId, testId) => ({
-      id: testId === "TEST-NET-PORTSCAN" ? 1 : 2,
-      device_id: "device-insecure",
-      test_id: testId,
-      status: "pending",
-      tool: null,
-      tool_version: null,
-      command: null,
-      raw_output: null,
-      observations: null,
-      error: null,
-      evidence_id: null,
-      created_at: "2026-07-12T00:00:00Z",
-      updated_at: "2026-07-12T00:00:00Z",
-    }));
+    vi.spyOn(api, "createAssessment").mockImplementation(async (_deviceId, testIds) =>
+      makeAssessmentResult(
+        testIds.map((testId) => makeJob({ id: testId === "TEST-NET-PORTSCAN" ? 1 : 2, test_id: testId })),
+      ),
+    );
 
     render(
       <MemoryRouter>
-        <RunScanPage />
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
     const user = userEvent.setup();
@@ -339,13 +373,17 @@ describe("RunScanPage", () => {
     expect(screen.getByRole("checkbox", { name: "Default credentials (admin/admin)" })).toBeChecked();
 
     await user.click(screen.getByRole("button", { name: /run selected \(2\)/i }));
-    await waitFor(() => expect(api.createScanJob).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(api.createAssessment).toHaveBeenCalledWith(
+        "device-insecure",
+        expect.arrayContaining(["TEST-NET-PORTSCAN", "TEST-AUTH-DEFAULT-CREDS"]),
+      ),
+    );
   });
 
   it("disables Record evidence until a finding is typed", async () => {
-    const jobState: ScanJob = {
+    const jobState = makeJob({
       id: 2,
-      device_id: "device-insecure",
       test_id: "TEST-NET-PORTSCAN",
       status: "awaiting_finding",
       tool: "nmap",
@@ -353,17 +391,15 @@ describe("RunScanPage", () => {
       command: "nmap -sV -p- device-insecure",
       raw_output: "80/tcp open http\n",
       observations: { open_ports: [80], telnet_open: false },
-      error: null,
-      evidence_id: null,
-      created_at: "2026-07-12T00:00:00Z",
-      updated_at: "2026-07-12T00:00:00Z",
-    };
-    vi.spyOn(api, "createScanJob").mockResolvedValue(jobState);
+    });
+    vi.spyOn(api, "createAssessment").mockResolvedValue(makeAssessmentResult([jobState]));
     vi.spyOn(api, "getScanJob").mockResolvedValue(jobState);
 
     render(
       <MemoryRouter>
-        <RunScanPage />
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
     const user = userEvent.setup();
@@ -375,5 +411,68 @@ describe("RunScanPage", () => {
 
     await screen.findByText(/Awaiting your finding/i);
     expect(screen.getByRole("button", { name: /record evidence/i })).toBeDisabled();
+  });
+
+  it("shows the assessment status bar and a cancel button while it's in flight", async () => {
+    const jobState = makeJob({ id: 3, test_id: "TEST-NET-PORTSCAN", status: "pending" });
+    vi.spyOn(api, "createAssessment").mockResolvedValue(makeAssessmentResult([jobState]));
+    vi.spyOn(api, "getScanJob").mockResolvedValue(jobState);
+    vi.spyOn(api, "getAssessment").mockResolvedValue({
+      id: "ASMT-2026-07-22-0001", device_id: "device-insecure", status: "queued",
+      policy_version: "1.0.0", started_at: null, completed_at: null,
+      error: null, created_at: "2026-07-22T00:00:00Z", jobs: [jobState],
+    });
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+    await user.click(await screen.findByRole("checkbox", { name: "Nmap service/port scan" }));
+    await user.click(screen.getByRole("button", { name: /run selected \(1\)/i }));
+
+    expect(await screen.findByText("ASMT-2026-07-22-0001")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancel assessment/i })).toBeInTheDocument();
+  });
+
+  it("cancels the assessment when the cancel button is clicked", async () => {
+    const jobState = makeJob({ id: 4, test_id: "TEST-NET-PORTSCAN", status: "pending" });
+    vi.spyOn(api, "createAssessment").mockResolvedValue(makeAssessmentResult([jobState]));
+    vi.spyOn(api, "getScanJob").mockResolvedValue(jobState);
+    vi.spyOn(api, "getAssessment").mockResolvedValue({
+      id: "ASMT-2026-07-22-0001", device_id: "device-insecure", status: "queued",
+      policy_version: "1.0.0", started_at: null, completed_at: null,
+      error: null, created_at: "2026-07-22T00:00:00Z", jobs: [jobState],
+    });
+    const cancelSpy = vi.spyOn(api, "cancelAssessment").mockResolvedValue({
+      id: "ASMT-2026-07-22-0001", device_id: "device-insecure", status: "cancelled",
+      policy_version: "1.0.0", started_at: null, completed_at: "2026-07-22T00:00:01Z",
+      error: null, created_at: "2026-07-22T00:00:00Z", jobs: [jobState],
+    });
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+    await user.click(await screen.findByRole("checkbox", { name: "Nmap service/port scan" }));
+    await user.click(screen.getByRole("button", { name: /run selected \(1\)/i }));
+
+    await user.click(await screen.findByRole("button", { name: /cancel assessment/i }));
+
+    await waitFor(() => expect(cancelSpy).toHaveBeenCalledWith("ASMT-2026-07-22-0001"));
+    expect(await screen.findByText(/^Cancelled$/i)).toBeInTheDocument();
   });
 });

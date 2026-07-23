@@ -1,10 +1,24 @@
 import type {
+  Assessment,
   ControlRecord,
   ControlVerdictRollup,
+  CreateAssessmentResult,
+  CreateNCAAssessmentPayload,
+  CreateNCAExceptionPayload,
   Device,
   DeviceDetail,
   DeviceMutationResult,
   EvidenceRecord,
+  NCAAssessment,
+  NCAControl,
+  NCAControlDetail,
+  NCADeviceComplianceRow,
+  NCADeviceDetail,
+  NCADomainSummary,
+  NCAException,
+  NCAOrganizationalCompliance,
+  NCAStatus,
+  NCASummary,
   RecomputeVerdictsResult,
   ScanJob,
   ScanTestSpec,
@@ -152,6 +166,13 @@ export const api = {
   recomputeVerdicts: (): Promise<RecomputeVerdictsResult> =>
     postJson<RecomputeVerdictsResult>("/verdicts/recompute", {}),
 
+  createAssessment: (deviceId: string, testIds: string[]): Promise<CreateAssessmentResult> =>
+    postJson<CreateAssessmentResult>("/assessments", { device_id: deviceId, test_ids: testIds }),
+  getAssessment: (assessmentId: string): Promise<Assessment> =>
+    getJson<Assessment>(`/assessments/${encodeURIComponent(assessmentId)}`),
+  cancelAssessment: (assessmentId: string): Promise<Assessment> =>
+    postJson<Assessment>(`/assessments/${encodeURIComponent(assessmentId)}/cancel`, {}),
+
   device: (deviceId: string): Promise<DeviceDetail> =>
     getJson<DeviceDetail>(`/devices/${encodeURIComponent(deviceId)}`),
   createDevice: (payload: CreateDevicePayload): Promise<DeviceMutationResult> =>
@@ -182,4 +203,67 @@ export const api = {
   // would yield a blob we'd then have to name ourselves.
   deviceReportUrl: (deviceId: string): string =>
     `${API_BASE_URL}/devices/${encodeURIComponent(deviceId)}/report.pdf`,
+  deviceReportHtmlUrl: (deviceId: string): string =>
+    `${API_BASE_URL}/devices/${encodeURIComponent(deviceId)}/report.html`,
+  deviceReportJsonUrl: (deviceId: string): string =>
+    `${API_BASE_URL}/devices/${encodeURIComponent(deviceId)}/report.json`,
+
+  // Points directly at document-store's raw output file, served statically
+  // by auditor-api - lets the UI's "view raw artefact" link open the exact
+  // file the evidence's sha256 was computed from.
+  rawArtefactUrl: (rawOutputPath: string): string => `${API_BASE_URL}/${rawOutputPath}`,
+
+  // -- NCA CGIoT-1:2024 compliance module --------------------------------
+
+  ncaSummary: (): Promise<NCASummary> => getJson<NCASummary>("/nca/summary"),
+  ncaDomains: (): Promise<NCADomainSummary> => getJson<NCADomainSummary>("/nca/domains"),
+  ncaControls: (filters?: { domainId?: string; scopeType?: string }): Promise<NCAControl[]> => {
+    const params = new URLSearchParams();
+    if (filters?.domainId) params.set("domain_id", filters.domainId);
+    if (filters?.scopeType) params.set("scope_type", filters.scopeType);
+    const query = params.toString();
+    return getJson<NCAControl[]>(`/nca/controls${query ? `?${query}` : ""}`);
+  },
+  ncaControl: (controlId: string): Promise<NCAControlDetail> =>
+    getJson<NCAControlDetail>(`/nca/controls/${encodeURIComponent(controlId)}`),
+  ncaDevices: (status?: NCAStatus): Promise<NCADeviceComplianceRow[]> =>
+    getJson<NCADeviceComplianceRow[]>(`/nca/devices${status ? `?status=${status}` : ""}`),
+  ncaDevice: (deviceId: string): Promise<NCADeviceDetail> =>
+    getJson<NCADeviceDetail>(`/nca/devices/${encodeURIComponent(deviceId)}`),
+  ncaOrganization: (): Promise<NCAOrganizationalCompliance> =>
+    getJson<NCAOrganizationalCompliance>("/nca/organization"),
+
+  createNcaAssessment: (payload: CreateNCAAssessmentPayload): Promise<NCAAssessment> =>
+    postJson<NCAAssessment>("/nca/assessments", payload),
+  recomputeNcaAssessments: (): Promise<{ created: number; assessment_ids: string[] }> =>
+    postJson("/nca/assessments/recompute", {}),
+  retestNcaAssessment: (
+    assessmentId: string,
+    payload: Partial<CreateNCAAssessmentPayload>,
+  ): Promise<NCAAssessment> =>
+    postJson<NCAAssessment>(`/nca/assessments/${encodeURIComponent(assessmentId)}/retest`, payload),
+
+  ncaExceptions: (filters?: { status?: string; controlId?: string; deviceId?: string }): Promise<NCAException[]> => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.controlId) params.set("control_id", filters.controlId);
+    if (filters?.deviceId) params.set("device_id", filters.deviceId);
+    const query = params.toString();
+    return getJson<NCAException[]>(`/nca/exceptions${query ? `?${query}` : ""}`);
+  },
+  createNcaException: (payload: CreateNCAExceptionPayload): Promise<NCAException> =>
+    postJson<NCAException>("/nca/exceptions", payload),
+  approveNcaException: (exceptionId: string, approvedBy: string): Promise<NCAException> =>
+    postJson<NCAException>(`/nca/exceptions/${encodeURIComponent(exceptionId)}/approve`, {
+      approved_by: approvedBy,
+    }),
+  rejectNcaException: (exceptionId: string, rejectedBy: string): Promise<NCAException> =>
+    postJson<NCAException>(`/nca/exceptions/${encodeURIComponent(exceptionId)}/reject`, {
+      rejected_by: rejectedBy,
+    }),
+
+  ncaDeviceReportCsvUrl: (): string => `${API_BASE_URL}/nca/reports/devices.csv`,
+  ncaControlsReportCsvUrl: (): string => `${API_BASE_URL}/nca/reports/controls.csv`,
+  ncaEvidenceReportCsvUrl: (): string => `${API_BASE_URL}/nca/reports/evidence.csv`,
+  ncaExecutiveReportPdfUrl: (): string => `${API_BASE_URL}/nca/reports/executive.pdf`,
 };

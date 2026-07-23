@@ -8,21 +8,35 @@ import { RunScanPage } from "@/pages/RunScanPage";
 import { DeviceConsolePage } from "@/pages/DeviceConsolePage";
 import { ControlsPage } from "@/pages/ControlsPage";
 import { ControlDetailPage } from "@/pages/ControlDetailPage";
+import { NCACompliancePage } from "@/pages/NCACompliancePage";
+import { NCAControlDetailPage } from "@/pages/NCAControlDetailPage";
+import { OrganizationalCompliancePage } from "@/pages/OrganizationalCompliancePage";
+import { NotFoundPage } from "@/pages/NotFoundPage";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ToastProvider } from "@/lib/useToast";
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<OverviewPage />} />
-        <Route path="/devices" element={<DevicesPage />} />
-        <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
-        <Route path="/evidence" element={<EvidencePage />} />
-        <Route path="/verdicts" element={<VerdictsPage />} />
-        <Route path="/run-scan" element={<RunScanPage />} />
-        <Route path="/console" element={<DeviceConsolePage />} />
-        <Route path="/controls" element={<ControlsPage />} />
-        <Route path="/controls/:controlId" element={<ControlDetailPage />} />
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <ToastProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<OverviewPage />} />
+            <Route path="/devices" element={<DevicesPage />} />
+            <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
+            <Route path="/evidence" element={<EvidencePage />} />
+            <Route path="/verdicts" element={<VerdictsPage />} />
+            <Route path="/run-scan" element={<RunScanPage />} />
+            <Route path="/console" element={<DeviceConsolePage />} />
+            <Route path="/controls" element={<ControlsPage />} />
+            <Route path="/controls/:controlId" element={<ControlDetailPage />} />
+            <Route path="/nca-compliance" element={<NCACompliancePage />} />
+            <Route path="/nca-compliance/organization" element={<OrganizationalCompliancePage />} />
+            <Route path="/nca-compliance/controls/:controlId" element={<NCAControlDetailPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </BrowserRouter>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, AlertTriangle } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,7 +10,14 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { ControlRecord, VerdictStatus } from "@/lib/types";
 
-const FILTERS: Array<VerdictStatus | "ALL"> = ["ALL", "PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"];
+const FILTERS: Array<VerdictStatus | "ALL"> = [
+  "ALL",
+  "PASS",
+  "FAIL",
+  "PARTIAL",
+  "INCONCLUSIVE",
+  "NOT_APPLICABLE",
+];
 
 function controlFor(controls: ControlRecord[] | null, controlId: string): ControlRecord | undefined {
   return controls?.find((c) => c.control_id === controlId);
@@ -79,6 +86,15 @@ export function VerdictsPage() {
                       {v.control_id} · {v.device_id}
                     </p>
                   </div>
+                  {v.conflict_detected ? (
+                    <span
+                      title="Conflicting evidence was found for this verdict"
+                      className="flex shrink-0 items-center gap-1 rounded-md bg-[color-mix(in_oklab,var(--color-medium)_16%,transparent)] px-2 py-0.5 text-xs font-medium text-[var(--color-medium)]"
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Conflict
+                    </span>
+                  ) : null}
                   <ChevronDown
                     className={cn(
                       "h-4 w-4 shrink-0 text-[var(--color-text-muted)] transition-transform",
@@ -88,6 +104,12 @@ export function VerdictsPage() {
                 </button>
                 {isOpen && (
                   <div className="space-y-3 border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-5 py-4 text-sm">
+                    {v.conflict_detected ? (
+                      <p className="flex items-start gap-2 rounded-md border border-[color-mix(in_oklab,var(--color-medium)_35%,transparent)] bg-[color-mix(in_oklab,var(--color-medium)_10%,transparent)] px-3 py-2 text-[var(--color-medium)]">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{v.conflict_reason ?? "Conflicting evidence records were found for this verdict."}</span>
+                      </p>
+                    ) : null}
                     <p>
                       <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
                         Reason{" "}
@@ -105,6 +127,14 @@ export function VerdictsPage() {
                         Remediation{" "}
                       </span>
                       <span className="text-[var(--color-text-secondary)]">{v.remediation}</span>
+                    </p>
+                    <p>
+                      <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                        Policy version{" "}
+                      </span>
+                      <span className="font-mono text-xs text-[var(--color-text-secondary)]">
+                        {v.policy_version ?? "unknown"}
+                      </span>
                     </p>
                     <p>
                       <span className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">

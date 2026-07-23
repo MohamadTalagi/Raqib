@@ -1,5 +1,6 @@
 control_id: SA-IOT-002
 title: No default or hard-coded credentials
+version: "1.0.0"
 saudi_source:
   - framework: CGIoT-1:2024
     reference: "2-2-2"
@@ -16,3 +17,4 @@ conditions:
   partial: null
   inconclusive: { when: "evidence_missing_or_low_confidence" }
 remediation: "Force a unique strong password on first boot; remove all vendor defaults."
+limitations: "Only tries the 10 most commonly documented default credential pairs against the login form; does not brute-force, does not check for hard-coded credentials embedded in firmware (see SA-IOT firmware checks), and only covers HTTP(S) login forms, not SSH/Telnet/MQTT credentials."

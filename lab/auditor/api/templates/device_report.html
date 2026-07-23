@@ -1,11 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Device Security Assessment — {{ device.display_name }}</title></head>
+<head><meta charset="utf-8"><title>Device Security Assessment — {{ device.display_name }}</title>
+{% if inline_css %}<style>{{ inline_css | safe }}</style>{% endif %}</head>
 <body>
 
 <h1>{{ device.display_name }}</h1>
 <p class="subtitle mono">{{ device.device_id }} &middot; {{ device.tier }} &middot; {{ device.host }}</p>
 <p class="cite">Assessed against NCA CGIoT-1:2024 &middot; generated {{ generated_at }}</p>
+<p class="value">{{ assessment_scope }}</p>
+<p class="cite">{{ methodology }}</p>
 
 <h2>1. Device profile</h2>
 <div class="grid">
@@ -43,10 +46,11 @@
 {% if controls %}
 <p class="cite">
   {{ counts.PASS }} pass &middot; {{ counts.FAIL }} fail &middot;
-  {{ counts.PARTIAL }} partial &middot; {{ counts.INCONCLUSIVE }} inconclusive
+  {{ counts.PARTIAL }} partial &middot; {{ counts.INCONCLUSIVE }} inconclusive &middot;
+  {{ counts.NOT_APPLICABLE }} not applicable
 </p>
 <table>
-  <thead><tr><th>Control</th><th>Title</th><th>Severity</th><th>Reference</th><th>Verdict</th></tr></thead>
+  <thead><tr><th>Control</th><th>Title</th><th>Severity</th><th>Reference</th><th>Verdict</th><th>Conflict</th></tr></thead>
   <tbody>
   {% for c in controls %}
     <tr>
@@ -55,6 +59,7 @@
       <td>{{ c.severity }}</td>
       <td class="mono">{% if c.framework %}{{ c.framework }} &sect;{{ c.reference }}{% else %}&mdash;{% endif %}</td>
       <td class="status status-{{ c.status }}">{{ c.status }}</td>
+      <td>{{ "yes" if c.conflict_detected else "no" }}</td>
     </tr>
   {% endfor %}
   </tbody>
@@ -68,16 +73,28 @@
     <div><span class="mono">{{ c.control_id }}</span> &mdash;
       <span class="status status-{{ c.status }}">{{ c.status }}</span>
       {% if c.title %}&middot; {{ c.title }}{% endif %}
+      {% if c.policy_version %}<span class="cite">(policy v{{ c.policy_version }})</span>{% endif %}
     </div>
     {% if c.clause %}<div class="clause">&ldquo;{{ c.clause }}&rdquo;</div>
     {% else %}<div class="clause incomplete">Control definition unavailable; verdict shown from stored record.</div>{% endif %}
     <div class="reason">{{ c.reason }}</div>
+    {% if c.conflict_detected %}<div class="reason"><strong>Conflicting evidence.</strong> {{ c.conflict_reason }}</div>{% endif %}
     {% if c.remediation %}<div class="remediation"><strong>Remediation.</strong> {{ c.remediation }}</div>{% endif %}
+    {% if c.limitations %}<div class="cite"><strong>Limitations.</strong> {{ c.limitations }}</div>{% endif %}
   </div>
   {% endfor %}
 {% else %}<p class="empty-state">No findings recorded for this device.</p>{% endif %}
 
-<h2>5. Evidence provenance</h2>
+<h2>5. Controls not assessed</h2>
+{% if controls_not_assessed %}
+<ul>
+  {% for c in controls_not_assessed %}
+  <li class="value"><span class="mono">{{ c.control_id }}</span> &mdash; {{ c.title or "control definition unavailable" }}</li>
+  {% endfor %}
+</ul>
+{% else %}<p class="empty-state">Every mapped control has at least one verdict for this device.</p>{% endif %}
+
+<h2>6. Evidence provenance</h2>
 {% if evidence %}
 <p class="cite">Each record is reproducible from its command and verifiable against its SHA-256.</p>
 <table class="provenance">
@@ -96,6 +113,8 @@
   </tbody>
 </table>
 {% else %}<p class="empty-state">No evidence recorded for this device.</p>{% endif %}
+
+<p class="cite" style="margin-top:6mm">{{ disclaimer }}</p>
 
 </body>
 </html>

@@ -46,6 +46,8 @@ VALID_CONTROL = {
         "inconclusive": {"when": "evidence_missing_or_low_confidence"},
     },
     "remediation": "Force a unique strong password on first boot; remove all vendor defaults.",
+    "version": "1.0.0",
+    "limitations": "Only tries a fixed set of default credential pairs.",
 }
 
 

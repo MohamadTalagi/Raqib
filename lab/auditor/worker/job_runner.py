@@ -65,6 +65,20 @@ def _patch(job_id: int, fields: dict) -> None:
     response.raise_for_status()
 
 
+def _record_failure(job_id: int, error_detail: str) -> None:
+    """Called only when the collector genuinely attempted to run and failed
+    (timeout, execution exception) - not for pre-execution rejections like an
+    invalid target or an inapplicable test/service combo, which are
+    configuration mismatches rather than a real collector run gone wrong.
+    Deterministically produces INCONCLUSIVE evidence server-side (see
+    main.py's record_scan_job_failure) rather than leaving the control
+    silently unassessed."""
+    response = requests.post(
+        f"{API_URL}/scan-jobs/{job_id}/record-failure", json={"error_detail": error_detail}, timeout=10
+    )
+    response.raise_for_status()
+
+
 def process_job(job: dict) -> None:
     job_id = job["id"]
     test_id = job["test_id"]
@@ -89,10 +103,10 @@ def process_job(job: dict) -> None:
         result = subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
         raw_output = (result.stdout or "") + (result.stderr or "")
     except subprocess.TimeoutExpired:
-        _patch(job_id, {"status": "failed", "error": f"command timed out after {COMMAND_TIMEOUT_SECONDS}s"})
+        _record_failure(job_id, f"command timed out after {COMMAND_TIMEOUT_SECONDS}s")
         return
     except Exception as exc:  # noqa: BLE001 - report any execution failure back to the job
-        _patch(job_id, {"status": "failed", "error": str(exc)})
+        _record_failure(job_id, str(exc))
         return
 
     observations = spec["parse_observations"](target, raw_output)

@@ -57,3 +57,41 @@ def test_returns_a_pdf_with_a_download_filename(client, postgres_url):
     assert disposition.startswith("attachment;")
     assert "iotguard-route-cam-" in disposition
     assert response.content.startswith(b"%PDF-")
+
+
+def test_unknown_device_returns_404_for_html(client):
+    assert client.get("/devices/no-such-device/report.html").status_code == 404
+
+
+def test_unknown_device_returns_404_for_json(client):
+    assert client.get("/devices/no-such-device/report.json").status_code == 404
+
+
+def test_html_report_renders_real_content_without_weasyprint(client, postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register(conn)
+    finally:
+        conn.close()
+
+    response = client.get("/devices/route-cam/report.html")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Route Cam" in response.text
+    assert "<style>" in response.text  # the stylesheet is inlined, not a relative <link>
+
+
+def test_json_report_includes_methodology_and_disclaimer(client, postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register(conn)
+    finally:
+        conn.close()
+
+    response = client.get("/devices/route-cam/report.json")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["device"]["display_name"] == "Route Cam"
+    assert "deterministic rule evaluator" in body["methodology"]
+    assert "not an official certification" in body["disclaimer"]
+    assert isinstance(body["controls_not_assessed"], list)

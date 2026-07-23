@@ -9,6 +9,7 @@ Nothing here generates narrative text. Every value is a database value or text
 copied verbatim from a control YAML - a generated summary paragraph would
 contradict the report's own determinism claim.
 """
+import glob
 import os
 import re
 from datetime import datetime, timezone
@@ -16,7 +17,9 @@ from pathlib import Path
 
 import yaml
 
-VERDICT_STATUSES = ("PASS", "FAIL", "PARTIAL", "INCONCLUSIVE")
+from policies.engine.report_text import DISCLAIMER, METHODOLOGY
+
+VERDICT_STATUSES = ("PASS", "FAIL", "PARTIAL", "INCONCLUSIVE", "NOT_APPLICABLE")
 
 # Same allow-list main.py's get_control_by_id() applies before touching the
 # filesystem. control_id comes from a verdict row - verdict.schema.json
@@ -51,6 +54,12 @@ def _load_control(control_id: str) -> dict | None:
 def _first_saudi_source(control: dict) -> dict:
     sources = control.get("saudi_source") or []
     return sources[0] if sources else {}
+
+
+def _all_control_ids() -> list[str]:
+    return sorted(
+        Path(p).stem for p in glob.glob(str(_controls_dir() / "SA-IOT-*.yaml"))
+    )
 
 
 def build_report_model(conn, device_id: str) -> dict | None:
@@ -88,7 +97,8 @@ def build_report_model(conn, device_id: str) -> dict | None:
 
     verdict_rows = conn.execute(
         """
-        SELECT verdict_id, control_id, status, severity, reason, timestamp
+        SELECT verdict_id, control_id, status, severity, reason, timestamp,
+               policy_version, conflict_detected, conflict_reason
         FROM verdicts WHERE device_id = %s ORDER BY control_id
         """,
         (device_id,),
@@ -96,7 +106,10 @@ def build_report_model(conn, device_id: str) -> dict | None:
 
     controls = []
     counts = {status: 0 for status in VERDICT_STATUSES}
-    for verdict_id, control_id, status, severity, reason, timestamp in verdict_rows:
+    assessed_control_ids = set()
+    for (verdict_id, control_id, status, severity, reason, timestamp,
+         policy_version, conflict_detected, conflict_reason) in verdict_rows:
+        assessed_control_ids.add(control_id)
         control = _load_control(control_id)
         source = _first_saudi_source(control) if control else {}
         controls.append(
@@ -108,15 +121,29 @@ def build_report_model(conn, device_id: str) -> dict | None:
                 "reference": source.get("reference"),
                 "clause": source.get("clause"),
                 "remediation": control.get("remediation") if control else None,
+                "limitations": control.get("limitations") if control else None,
                 "status": status,
                 "reason": reason,
                 "verdict_id": verdict_id,
                 "timestamp": timestamp.isoformat(),
                 "control_found": control is not None,
+                "policy_version": policy_version,
+                "conflict_detected": conflict_detected,
+                "conflict_reason": conflict_reason,
             }
         )
         if status in counts:
             counts[status] += 1
+
+    controls_not_assessed = []
+    for control_id in _all_control_ids():
+        if control_id in assessed_control_ids:
+            continue
+        control = _load_control(control_id)
+        controls_not_assessed.append({
+            "control_id": control_id,
+            "title": control.get("title") if control else None,
+        })
 
     evidence_rows = conn.execute(
         """
@@ -135,13 +162,22 @@ def build_report_model(conn, device_id: str) -> dict | None:
         for r in evidence_rows
     ]
 
+    assessment_scope = (
+        f"{device['display_name']} ({device_id}) and its {len(services)} registered "
+        f"service(s): {', '.join(s['service_type'] for s in services) or 'none'}."
+    )
+
     return {
         "device": device,
         "services": services,
         "controls": controls,
+        "controls_not_assessed": controls_not_assessed,
         "counts": counts,
         "evidence": evidence,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "assessment_scope": assessment_scope,
+        "methodology": METHODOLOGY,
+        "disclaimer": DISCLAIMER,
     }
 
 
@@ -175,3 +211,22 @@ def render_report_pdf(model: dict) -> bytes:
         ],
         font_config=font_config,
     )
+
+
+def render_report_html(model: dict) -> str:
+    """Same template and content as the PDF, served as a plain HTML string -
+    no WeasyPrint dependency. The stylesheet is inlined directly (rather than
+    a relative <link href="report.css">) since this is served from an API
+    route path, not the templates/ directory itself, so a relative href
+    would resolve against the wrong base. Its @font-face url()s stay
+    relative and won't load in a browser from this route - the report falls
+    back to a system font, a cosmetic-only difference from the PDF (every
+    value in the document is the same real data either way)."""
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+    env = Environment(
+        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        autoescape=select_autoescape(["html"]),
+    )
+    css_text = (TEMPLATE_DIR / "report.css").read_text(encoding="utf-8")
+    return env.get_template("device_report.html").render(**model, inline_css=css_text)

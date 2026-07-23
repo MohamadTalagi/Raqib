@@ -114,6 +114,10 @@ services:
       - ../policies:/work/policies:ro
       - ./auditor/worker:/work/lab/auditor/worker
       - ../document-store:/work/document-store
+      # Read-only source of truth for policies/nca/build_catalog.py, which
+      # parses the already-verified CGIoT-1:2024 transcription rather than
+      # re-reading the PDF at request time.
+      - ../docs:/work/docs:ro
     # NET_ADMIN/NET_RAW are needed only for TEST-NET-PKTCAPTURE, which runs
     # tcpdump on the worker's own interface (mirrors traffic-capture's
     # identical cap_add above - a Docker bridge won't let a passive third

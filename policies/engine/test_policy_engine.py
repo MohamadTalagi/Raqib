@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from policies.engine.policy_engine import evaluate, load_control, _get_field
+from policies.engine.policy_engine import (
+    build_not_applicable_verdict,
+    evaluate,
+    is_control_applicable,
+    load_control,
+    _get_field,
+)
 
 CONTROLS_DIR = Path(__file__).resolve().parents[1] / "controls"
 
@@ -102,3 +108,86 @@ def test_sa_iot_003_real_control_reproduces_historical_verdicts_via_open_ports()
     failing_evidence = {**_evidence(None), "observations": {"open_ports": [23]}}
     assert evaluate(control, passing_evidence)["status"] == "PASS"
     assert evaluate(control, failing_evidence)["status"] == "FAIL"
+
+
+# ---------------------------------------------------------------------------
+# Collector failure -> INCONCLUSIVE, never silence and never FAIL
+# ---------------------------------------------------------------------------
+
+
+def test_collector_error_produces_inconclusive_before_any_condition_runs():
+    # Even though default_creds is unset (which alone would already trip the
+    # missing-field inconclusive path), the collector_error flag must be
+    # checked first and gives its own distinct reason.
+    evidence = {**_evidence(None), "observations": {"collector_error": True, "error_detail": "command timed out after 30s"}}
+    verdict = evaluate(CONTROL, evidence)
+    assert verdict["status"] == "INCONCLUSIVE"
+    assert "collector failed" in verdict["reason"]
+    assert "timed out" in verdict["reason"]
+
+
+def test_collector_error_is_never_treated_as_fail_even_when_fail_condition_would_match():
+    # A failed collector must never be auto-scored as FAIL just because its
+    # (empty/garbage) observations happen to satisfy a fail condition.
+    evidence = {**_evidence(True), "observations": {"default_creds": True, "collector_error": True}}
+    verdict = evaluate(CONTROL, evidence)
+    assert verdict["status"] == "INCONCLUSIVE"
+
+
+# ---------------------------------------------------------------------------
+# The "when" mechanism is real, not dead code
+# ---------------------------------------------------------------------------
+
+
+def test_low_confidence_evidence_triggers_the_when_inconclusive_path_even_if_a_condition_would_match():
+    evidence = {**_evidence(True), "confidence": "low"}
+    verdict = evaluate(CONTROL, evidence)
+    assert verdict["status"] == "INCONCLUSIVE"
+    assert verdict["reason"] == "when: evidence_missing_or_low_confidence"
+
+
+def test_high_confidence_evidence_does_not_trigger_the_when_path():
+    evidence = {**_evidence(True), "confidence": "high"}
+    verdict = evaluate(CONTROL, evidence)
+    assert verdict["status"] == "FAIL"
+
+
+# ---------------------------------------------------------------------------
+# NOT_APPLICABLE
+# ---------------------------------------------------------------------------
+
+
+def test_is_control_applicable_true_when_a_registered_service_matches():
+    control = load_control(str(CONTROLS_DIR / "SA-IOT-004.yaml"))  # requires TEST-MQTT-OPEN
+    assert is_control_applicable(control, [{"service_type": "mqtt"}]) is True
+
+
+def test_is_control_applicable_false_when_no_registered_service_matches():
+    control = load_control(str(CONTROLS_DIR / "SA-IOT-004.yaml"))  # requires TEST-MQTT-OPEN
+    assert is_control_applicable(control, [{"service_type": "http"}]) is False
+
+
+def test_is_control_applicable_false_for_a_device_with_no_services_at_all():
+    control = load_control(str(CONTROLS_DIR / "SA-IOT-005.yaml"))
+    assert is_control_applicable(control, []) is False
+
+
+def test_is_control_applicable_true_when_the_required_test_has_no_automated_collector():
+    # SA-IOT-001 requires TEST-DEVICE-ID, which has no entry in SCAN_CATALOG
+    # at all (never wired into Run Scan) - regression: this must NOT be
+    # treated as "doesn't apply to this device" (which would wrongly mark
+    # every device NOT_APPLICABLE for a control that's simply not automated
+    # yet), it must stay possibly-applicable so the control is left
+    # unassessed instead.
+    control = load_control(str(CONTROLS_DIR / "SA-IOT-001.yaml"))
+    assert is_control_applicable(control, [{"service_type": "http"}]) is True
+    assert is_control_applicable(control, []) is True
+
+
+def test_build_not_applicable_verdict_has_no_evidence_and_the_right_status():
+    control = load_control(str(CONTROLS_DIR / "SA-IOT-005.yaml"))
+    verdict = build_not_applicable_verdict(control, "device-http-only", "2026-07-22T00:00:00Z")
+    assert verdict["status"] == "NOT_APPLICABLE"
+    assert verdict["matched"] == "not_applicable"
+    assert verdict["evidence_ids"] == []
+    assert verdict["device_id"] == "device-http-only"

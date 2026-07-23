@@ -1,4 +1,4 @@
-from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable, is_firmware_test
+from policies.catalog.scan_tests import ALL_SERVICE_TYPES, SCAN_CATALOG, is_applicable, is_firmware_test
 
 HTTP_TARGET = {
     "device_id": "device-insecure", "host": "device-insecure",
@@ -136,10 +136,37 @@ def test_web_and_auth_tests_are_categorized():
 
 def test_network_and_protocol_tests_are_categorized():
     for test_id in (
-        "TEST-NET-PORTSCAN", "TEST-NET-HTTP-INSPECT", "TEST-MQTT-OPEN",
+        "TEST-NET-REACHABILITY", "TEST-NET-PORTSCAN", "TEST-NET-HTTP-INSPECT", "TEST-MQTT-OPEN",
         "TEST-TLS-CONFIG", "TEST-NET-PKTCAPTURE",
     ):
         assert SCAN_CATALOG[test_id]["category"] == "network-and-protocol"
+
+
+# --- TEST-NET-REACHABILITY ---
+
+def test_reachability_command_invokes_the_check_script():
+    command = SCAN_CATALOG["TEST-NET-REACHABILITY"]["build_command"](HTTP_TARGET)
+    assert command == [
+        "python3", "/work/lab/auditor/worker/scan_scripts/reachability_check.py",
+        "device-insecure", "80",
+    ]
+
+
+def test_reachability_is_applicable_to_every_service_type():
+    assert SCAN_CATALOG["TEST-NET-REACHABILITY"]["applicable_service_types"] == ALL_SERVICE_TYPES
+
+
+def test_parse_reachability_observations_true_when_reachable():
+    obs = SCAN_CATALOG["TEST-NET-REACHABILITY"]["parse_observations"](HTTP_TARGET, "reachable=True\n")
+    assert obs["reachable"] is True
+    assert obs["error"] is None
+
+
+def test_parse_reachability_observations_false_with_error_detail():
+    output = "reachable=False\nerror=[Errno 111] Connection refused\n"
+    obs = SCAN_CATALOG["TEST-NET-REACHABILITY"]["parse_observations"](HTTP_TARGET, output)
+    assert obs["reachable"] is False
+    assert "Connection refused" in obs["error"]
 
 
 # --- TEST-AUTH-ANON-ACCESS ---
@@ -297,13 +324,17 @@ def test_parse_mqtt_observations_detects_rejected_connection():
 
 # --- TEST-TLS-CONFIG ---
 
-def test_tls_command_connects_with_brief_output():
+def test_tls_command_delegates_to_the_cert_check_script():
     command = SCAN_CATALOG["TEST-TLS-CONFIG"]["build_command"](HTTPS_TARGET)
-    assert command == ["openssl", "s_client", "-connect", "device-hardened:443", "-brief"]
+    assert command == [
+        "python3", "/work/lab/auditor/worker/scan_scripts/tls_cert_check.py",
+        "device-hardened", "443",
+    ]
 
 
 def test_parse_tls_observations_detects_weak_cert():
-    # Real committed raw output for the weak 1024-bit cert (document-store/raw/EV-2026-07-08-0019.txt)
+    # Real committed raw output for the weak 1024-bit cert (document-store/raw/EV-2026-07-08-0019.txt),
+    # with tls_cert_check.py's appended notAfter= line for a cert far in the future.
     output = (
         "Connecting to 172.30.0.2\n"
         "depth=0 CN=device-partial\n"
@@ -312,15 +343,18 @@ def test_parse_tls_observations_detects_weak_cert():
         "Protocol version: TLSv1.3\n"
         "Ciphersuite: TLS_AES_256_GCM_SHA384\n"
         "DONE\n"
+        "notBefore=Jul  8 00:00:00 2026 GMT\n"
+        "notAfter=Jul  8 00:00:00 2036 GMT\n"
     )
     obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
     assert obs["tls_version"] == "TLSv1.3"
     assert obs["weak_cipher"] is True
+    assert obs["cert_expired"] is False
     assert obs["notes"]
 
 
 def test_parse_tls_observations_detects_strong_cert():
-    # Real committed raw output for the strong 2048-bit cert (document-store/raw/EV-2026-07-08-0020.txt)
+    # Real committed raw output for the strong 2048-bit cert (document-store/raw/EV-2026-07-08-0020.txt).
     output = (
         "Connecting to 172.30.0.6\n"
         "depth=0 CN=device-hardened\n"
@@ -329,10 +363,13 @@ def test_parse_tls_observations_detects_strong_cert():
         "Protocol version: TLSv1.3\n"
         "Ciphersuite: TLS_AES_256_GCM_SHA384\n"
         "DONE\n"
+        "notBefore=Jul  8 00:00:00 2026 GMT\n"
+        "notAfter=Jul  8 00:00:00 2036 GMT\n"
     )
     obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
     assert obs["tls_version"] == "TLSv1.3"
     assert obs["weak_cipher"] is False
+    assert obs["cert_expired"] is False
     assert obs["notes"] == ["No weak key or deprecated protocol version detected."]
 
 
@@ -342,10 +379,30 @@ def test_parse_tls_observations_flags_deprecated_protocol_version():
         "CONNECTION ESTABLISHED\n"
         "Protocol version: TLSv1.1\n"
         "DONE\n"
+        "notAfter=Jul  8 00:00:00 2036 GMT\n"
     )
     obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
     assert obs["tls_version"] == "TLSv1.1"
     assert any("deprecated" in n for n in obs["notes"])
+
+
+def test_parse_tls_observations_flags_an_expired_certificate():
+    output = (
+        "CONNECTION ESTABLISHED\n"
+        "Protocol version: TLSv1.3\n"
+        "DONE\n"
+        "notAfter=Jul  8 00:00:00 2020 GMT\n"
+    )
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs["cert_expired"] is True
+    assert any("expired" in n for n in obs["notes"])
+
+
+def test_parse_tls_observations_reports_unknown_expiry_when_no_dates_present():
+    output = "CONNECTION ESTABLISHED\nProtocol version: TLSv1.3\nDONE\n"
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs["cert_expired"] is None
+    assert any("Could not determine" in n for n in obs["notes"])
 
 
 # --- TEST-NET-PKTCAPTURE ---

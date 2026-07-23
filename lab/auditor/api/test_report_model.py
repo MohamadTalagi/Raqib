@@ -88,7 +88,7 @@ def test_device_with_no_evidence_returns_empty_lists_not_an_error(postgres_url):
 
     assert model["evidence"] == []
     assert model["controls"] == []
-    assert model["counts"] == {"PASS": 0, "FAIL": 0, "PARTIAL": 0, "INCONCLUSIVE": 0}
+    assert model["counts"] == {"PASS": 0, "FAIL": 0, "PARTIAL": 0, "INCONCLUSIVE": 0, "NOT_APPLICABLE": 0}
 
 
 def test_provenance_fields_survive_byte_for_byte(postgres_url):
@@ -157,6 +157,63 @@ def test_verdict_with_missing_control_yaml_still_appears(postgres_url):
     assert control["title"] is None
     assert control["clause"] is None
     assert model["counts"]["FAIL"] == 1
+
+
+def test_model_includes_methodology_scope_and_disclaimer(postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register_device(conn)
+        conn.commit()
+        model = build_report_model(conn, "report-cam")
+    finally:
+        conn.close()
+
+    assert "deterministic rule evaluator" in model["methodology"]
+    assert "not an official certification" in model["disclaimer"]
+    assert "report-cam" in model["assessment_scope"]
+    assert "http" in model["assessment_scope"]
+
+
+def test_controls_not_assessed_lists_mapped_controls_with_no_verdict(postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register_device(conn)
+        _add_verdict(conn, "SA-IOT-002", "FAIL")
+        conn.commit()
+        model = build_report_model(conn, "report-cam")
+    finally:
+        conn.close()
+
+    not_assessed_ids = {c["control_id"] for c in model["controls_not_assessed"]}
+    assert "SA-IOT-002" not in not_assessed_ids  # it has a verdict
+    assert "SA-IOT-005" in not_assessed_ids  # no verdict was recorded for it
+    entry = next(c for c in model["controls_not_assessed"] if c["control_id"] == "SA-IOT-005")
+    assert entry["title"] == "Strong TLS configuration for device communications"
+
+
+def test_verdict_includes_policy_version_and_conflict_fields(postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register_device(conn)
+        conn.execute(
+            """
+            INSERT INTO verdicts (verdict_id, control_id, device_id, status, severity,
+                                  evidence_ids, reason, saudi_source, remediation, timestamp,
+                                  policy_version, conflict_detected, conflict_reason)
+            VALUES ('VD-R-2', 'SA-IOT-002', 'report-cam', 'FAIL', 'high', '["EV-1"]'::jsonb,
+                    'because', '{}'::jsonb, 'fix it', now(), '1.0.0', true, 'documentation disagreed')
+            """
+        )
+        conn.commit()
+        model = build_report_model(conn, "report-cam")
+    finally:
+        conn.close()
+
+    control = model["controls"][0]
+    assert control["policy_version"] == "1.0.0"
+    assert control["conflict_detected"] is True
+    assert control["conflict_reason"] == "documentation disagreed"
+    assert control["limitations"]  # SA-IOT-002.yaml has a real limitations string now
 
 
 def test_verdict_with_path_traversal_control_id_still_appears_and_does_not_raise(

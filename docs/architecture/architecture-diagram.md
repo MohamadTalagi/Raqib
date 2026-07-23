@@ -1,5 +1,13 @@
 # Lab Architecture — Phases 0-5
 
+> **Still accurate as of 2026-07-22.** Everything built since Phase 5 (device
+> registration, firmware upload, Run Scan/Assessments, the NCA CGIoT-1:2024
+> compliance module, PDF/HTML/JSON reports) is new **application logic inside
+> the already-diagrammed `auditor-api`/`auditor-worker`/`auditor-database`
+> containers** — no new container, network, or trust boundary was added, so
+> the topology below is unchanged. See `lab/README.md`'s "Application
+> features" section for what those containers now do.
+
 ![Architecture diagram](architecture-diagram.png)
 
 Rendered image above; Mermaid source below (also renders automatically on GitHub).

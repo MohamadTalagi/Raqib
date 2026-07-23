@@ -36,6 +36,10 @@ const VERDICTS: VerdictRecord[] = [
     saudi_source: "CGIoT-1:2024 §2-2-2",
     remediation: "Force a unique strong password on first boot.",
     timestamp: "2026-07-08T00:00:00Z",
+    assessment_id: null,
+    policy_version: "1.0.0",
+    conflict_detected: false,
+    conflict_reason: null,
   },
   {
     verdict_id: "V2",
@@ -49,6 +53,10 @@ const VERDICTS: VerdictRecord[] = [
     saudi_source: "CGIoT-1:2024 §2-2-2",
     remediation: "Force a unique strong password on first boot.",
     timestamp: "2026-07-08T00:05:00Z",
+    assessment_id: null,
+    policy_version: "1.0.0",
+    conflict_detected: false,
+    conflict_reason: null,
   },
 ];
 

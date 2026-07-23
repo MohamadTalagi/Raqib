@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RegisterDeviceForm } from "./RegisterDeviceForm";
 import { api, ApiError } from "@/lib/api";
+import { ToastProvider } from "@/lib/useToast";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -12,7 +13,11 @@ describe("RegisterDeviceForm", () => {
       .mockResolvedValue({ device_id: "test-camera", display_name: "Test Camera", services: [] } as never);
     const onRegistered = vi.fn();
 
-    render(<RegisterDeviceForm onRegistered={onRegistered} onCancel={() => {}} />);
+    render(
+      <ToastProvider>
+        <RegisterDeviceForm onRegistered={onRegistered} onCancel={() => {}} />
+      </ToastProvider>,
+    );
 
     fireEvent.change(screen.getByLabelText(/device id/i), {
       target: { value: "test-camera" },
@@ -36,12 +41,20 @@ describe("RegisterDeviceForm", () => {
   });
 
   it("does not offer a security-tier control", () => {
-    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    render(
+      <ToastProvider>
+        <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />
+      </ToastProvider>,
+    );
     expect(screen.queryByLabelText(/security tier/i)).not.toBeInTheDocument();
   });
 
   it("does not offer service quick-pick buttons", () => {
-    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    render(
+      <ToastProvider>
+        <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />
+      </ToastProvider>,
+    );
     expect(screen.queryByText(/smart camera \(http\)/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/mqtt broker/i)).not.toBeInTheDocument();
   });
@@ -51,7 +64,11 @@ describe("RegisterDeviceForm", () => {
       new ApiError("IP must be inside 172.30.0.0/24", 400, "host"),
     );
 
-    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    render(
+      <ToastProvider>
+        <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />
+      </ToastProvider>,
+    );
     fireEvent.change(screen.getByLabelText(/device id/i), {
       target: { value: "bad" },
     });
@@ -71,7 +88,11 @@ describe("RegisterDeviceForm", () => {
       new ApiError("port must be between 1 and 65535", 400, "port"),
     );
 
-    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    render(
+      <ToastProvider>
+        <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />
+      </ToastProvider>,
+    );
     fireEvent.change(screen.getByLabelText(/device id/i), {
       target: { value: "test-camera" },
     });
@@ -91,7 +112,11 @@ describe("RegisterDeviceForm", () => {
       new ApiError("some future validation failed", 400, "some_future_field"),
     );
 
-    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    render(
+      <ToastProvider>
+        <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />
+      </ToastProvider>,
+    );
     fireEvent.change(screen.getByLabelText(/device id/i), {
       target: { value: "test-camera" },
     });
@@ -108,20 +133,30 @@ describe("RegisterDeviceForm", () => {
 
   it("pre-fills the device id field when an initialDeviceId is given", () => {
     render(
-      <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} initialDeviceId="device-unregistered-cam" />,
+      <ToastProvider>
+        <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} initialDeviceId="device-unregistered-cam" />
+      </ToastProvider>,
     );
 
     expect(screen.getByLabelText(/device id/i)).toHaveValue("device-unregistered-cam");
   });
 
   it("leaves the device id field empty when no initialDeviceId is given", () => {
-    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    render(
+      <ToastProvider>
+        <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />
+      </ToastProvider>,
+    );
 
     expect(screen.getByLabelText(/device id/i)).toHaveValue("");
   });
 
   it("can add and remove service rows", async () => {
-    render(<RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />);
+    render(
+      <ToastProvider>
+        <RegisterDeviceForm onRegistered={() => {}} onCancel={() => {}} />
+      </ToastProvider>,
+    );
     expect(screen.getAllByLabelText(/service type/i)).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: /add service/i }));
     expect(screen.getAllByLabelText(/service type/i)).toHaveLength(2);

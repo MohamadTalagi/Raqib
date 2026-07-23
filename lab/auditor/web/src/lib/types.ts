@@ -1,5 +1,7 @@
 export type Confidence = "high" | "medium" | "low";
 
+export type SourceType = "automated" | "manual" | "document";
+
 export interface EvidenceRecord {
   evidence_id: string;
   device_id: string;
@@ -13,9 +15,13 @@ export interface EvidenceRecord {
   raw_output_path: string;
   confidence: Confidence;
   sha256: string;
+  assessment_id: string | null;
+  source_type: SourceType;
+  confidence_reason: string | null;
+  error_state: string | null;
 }
 
-export type VerdictStatus = "PASS" | "FAIL" | "PARTIAL" | "INCONCLUSIVE";
+export type VerdictStatus = "PASS" | "FAIL" | "PARTIAL" | "INCONCLUSIVE" | "NOT_APPLICABLE";
 export type Severity = "low" | "medium" | "high" | "critical";
 
 export interface VerdictRecord {
@@ -30,6 +36,10 @@ export interface VerdictRecord {
   saudi_source: string;
   remediation: string;
   timestamp: string;
+  assessment_id: string | null;
+  policy_version: string | null;
+  conflict_detected: boolean;
+  conflict_reason: string | null;
 }
 
 export interface SaudiSourceRef {
@@ -97,6 +107,7 @@ export interface ScanJob {
   observations: Record<string, unknown> | null;
   error: string | null;
   evidence_id: string | null;
+  assessment_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -104,6 +115,30 @@ export interface ScanJob {
 export interface RecomputeVerdictsResult {
   created: number;
   verdicts: VerdictRecord[];
+}
+
+export type AssessmentStatus =
+  | "queued"
+  | "running"
+  | "partially_completed"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface Assessment {
+  id: string;
+  device_id: string;
+  status: AssessmentStatus;
+  policy_version: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error: string | null;
+  created_at: string;
+  jobs: ScanJob[];
+}
+
+export interface CreateAssessmentResult extends Assessment {
+  errors: Record<string, string>;
 }
 
 export type ServiceType = "http" | "https" | "mqtt" | "mqtts" | "telnet" | "ssh";
@@ -214,4 +249,181 @@ export interface ControlVerdictRollup {
 export interface ApiFieldError {
   field: string;
   detail: string;
+}
+
+// ---------------------------------------------------------------------------
+// NCA CGIoT-1:2024 compliance module
+// ---------------------------------------------------------------------------
+
+export type NCAStatus = "pass" | "partial" | "fail" | "not_tested";
+export type NCAScopeType = "organization" | "device" | "mobile" | "supplier" | "cloud";
+export type NCAAssessmentType = "automated" | "manual" | "hybrid";
+export type NCAApplicability = "applicable" | "not_applicable";
+export type NCARetestStatus = "not_requested" | "pending" | "passed" | "failed" | null;
+
+export interface NCAControl {
+  id: string;
+  framework: string;
+  framework_version: string;
+  domain_id: string;
+  domain_name: string;
+  subdomain_id: string;
+  subdomain_name: string;
+  guideline_id: string;
+  canonical_requirement: string;
+  implementation_summary: string;
+  source_page: string | null;
+  scope_type: NCAScopeType;
+  assessment_type: NCAAssessmentType;
+  required: boolean;
+  severity: Severity;
+  evidence_requirements: unknown[];
+  remediation_guidance: string;
+  enabled: boolean;
+}
+
+export interface NCAAssessment {
+  id: string;
+  control_id: string;
+  device_id: string | null;
+  organizational_scope_id: string | null;
+  applicability: NCAApplicability;
+  applicability_reason: string | null;
+  status: NCAStatus;
+  severity: Severity;
+  finding: string | null;
+  test_method: NCAAssessmentType;
+  test_identifier: string | null;
+  raw_result_reference: string | null;
+  evidence_ids: string[];
+  scanner_tool: string | null;
+  scanner_tool_version: string | null;
+  firmware_version_assessed: string | null;
+  assessed_at: string;
+  assessed_by: string;
+  remediation: string | null;
+  remediation_due_date: string | null;
+  retest_status: NCARetestStatus;
+  retested_at: string | null;
+  superseded_by: string | null;
+  created_at: string;
+}
+
+export interface NCAException {
+  id: string;
+  control_id: string;
+  device_id: string | null;
+  organizational_scope_id: string | null;
+  reason: string;
+  compensating_control: string | null;
+  requested_by: string;
+  approved_by: string | null;
+  approved_at: string | null;
+  status: "pending" | "approved" | "rejected" | "expired";
+  expires_at: string;
+  created_at: string;
+}
+
+export interface NCADomainCounts {
+  pass: number;
+  partial: number;
+  fail: number;
+  not_tested: number;
+}
+
+export type NCADomainSummary = Record<string, NCADomainCounts>;
+
+export interface NCASummary {
+  product_label: string;
+  framework: string;
+  framework_version: string;
+  disclaimer: string;
+  total_devices: number;
+  device_counts: NCADomainCounts;
+  overall_pass_percentage: number | null;
+  total_controls: number;
+  last_assessment_at: string | null;
+}
+
+export interface NCADeviceComplianceRow {
+  device_id: string;
+  display_name: string;
+  tier: DeviceTier;
+  vendor: string | null;
+  model: string | null;
+  overall_status: NCAStatus;
+  score: number | null;
+  domain_summary: NCADomainSummary;
+}
+
+export interface NCADeviceControlRow {
+  control: NCAControl;
+  assessment: NCAAssessment | null;
+}
+
+export interface NCADeviceDetail {
+  device_id: string;
+  display_name: string;
+  tier: DeviceTier;
+  overall_status: NCAStatus;
+  score: number | null;
+  domain_summary: NCADomainSummary;
+  controls: NCADeviceControlRow[];
+  exceptions: NCAException[];
+}
+
+export interface NCAControlDetail {
+  control: NCAControl;
+  assessments: NCAAssessment[];
+  audit_events: Array<{
+    id: number;
+    event_type: string;
+    entity_type: string;
+    entity_id: string;
+    before_value: unknown;
+    after_value: unknown;
+    actor: string;
+    reason: string | null;
+    occurred_at: string;
+  }>;
+}
+
+export interface NCAOrganizationalCompliance {
+  organizational_scope_id: string;
+  overall_status: NCAStatus;
+  score: number | null;
+  domain_summary: NCADomainSummary;
+  controls: NCADeviceControlRow[];
+}
+
+export interface CreateNCAAssessmentPayload {
+  control_id: string;
+  device_id?: string | null;
+  organizational_scope_id?: string | null;
+  applicability?: NCAApplicability;
+  applicability_reason?: string | null;
+  status: NCAStatus;
+  severity: Severity;
+  finding?: string | null;
+  test_method: NCAAssessmentType;
+  test_identifier?: string | null;
+  raw_result_reference?: string | null;
+  evidence_ids?: string[];
+  scanner_tool?: string | null;
+  scanner_tool_version?: string | null;
+  firmware_version_assessed?: string | null;
+  assessed_by: string;
+  remediation?: string | null;
+  remediation_due_date?: string | null;
+  reason?: string;
+}
+
+export interface CreateNCAExceptionPayload {
+  control_id: string;
+  device_id?: string | null;
+  organizational_scope_id?: string | null;
+  reason: string;
+  compensating_control?: string | null;
+  requested_by: string;
+  expires_at: string;
 }

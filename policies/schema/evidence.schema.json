@@ -19,7 +19,11 @@
     "observations": {"type": "object"},
     "raw_output_path": {"type": "string"},
     "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "assessment_id": {"type": ["string", "null"]},
+    "source_type": {"type": "string", "enum": ["automated", "manual", "document"]},
+    "confidence_reason": {"type": "string"},
+    "error_state": {"type": ["string", "null"]}
   },
   "additionalProperties": false
 }

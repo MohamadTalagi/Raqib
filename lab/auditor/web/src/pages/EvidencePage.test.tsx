@@ -37,4 +37,20 @@ describe("EvidencePage", () => {
 
     expect(await screen.findByText("nmap -sV -p- device-insecure")).toBeInTheDocument();
   });
+
+  it("offers a link to open the raw artefact file", async () => {
+    render(
+      <MemoryRouter>
+        <EvidencePage />
+      </MemoryRouter>,
+    );
+
+    const row = await screen.findByText("EV-2026-07-08-0013");
+    const user = userEvent.setup();
+    await user.click(row);
+
+    const link = await screen.findByRole("link", { name: "document-store/raw/EV-2026-07-08-0013.txt" });
+    expect(link).toHaveAttribute("href", expect.stringContaining("document-store/raw/EV-2026-07-08-0013.txt"));
+    expect(link).toHaveAttribute("target", "_blank");
+  });
 });

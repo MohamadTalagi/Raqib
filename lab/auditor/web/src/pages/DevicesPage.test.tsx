@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DevicesPage } from "./DevicesPage";
 import { mockFetchImplementation } from "@/test/fixtures";
+import { ToastProvider } from "@/lib/useToast";
 
 describe("DevicesPage", () => {
   beforeEach(() => {
@@ -13,7 +14,9 @@ describe("DevicesPage", () => {
   it("renders a card per device", async () => {
     render(
       <MemoryRouter>
-        <DevicesPage />
+        <ToastProvider>
+          <DevicesPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -25,7 +28,9 @@ describe("DevicesPage", () => {
   it("no longer shows a security-tier badge on device cards", async () => {
     render(
       <MemoryRouter>
-        <DevicesPage />
+        <ToastProvider>
+          <DevicesPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -37,7 +42,9 @@ describe("DevicesPage", () => {
   it("renders a device with evidence but no device record as unregistered", async () => {
     render(
       <MemoryRouter>
-        <DevicesPage />
+        <ToastProvider>
+          <DevicesPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -49,7 +56,9 @@ describe("DevicesPage", () => {
   it("makes a registered device's whole card a link to its detail page", async () => {
     render(
       <MemoryRouter>
-        <DevicesPage />
+        <ToastProvider>
+          <DevicesPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -60,7 +69,9 @@ describe("DevicesPage", () => {
   it("does not render an unregistered card as a link to the (404-ing) detail page", async () => {
     render(
       <MemoryRouter>
-        <DevicesPage />
+        <ToastProvider>
+          <DevicesPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -73,7 +84,9 @@ describe("DevicesPage", () => {
 
     render(
       <MemoryRouter>
-        <DevicesPage />
+        <ToastProvider>
+          <DevicesPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 

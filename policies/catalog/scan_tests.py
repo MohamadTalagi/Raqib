@@ -93,6 +93,28 @@ def _http_flags(scheme: str, *extra: str) -> list[str]:
     return ["-s", *extra, "-k"] if scheme == "https" else ["-s", *extra]
 
 
+REACHABILITY_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/reachability_check.py"
+
+
+def _reachability_command(target: dict) -> list[str]:
+    return ["python3", REACHABILITY_CHECK_SCRIPT, target["host"], str(target["port"])]
+
+
+def _parse_reachability_observations(target: dict, output: str) -> dict:
+    reachable = "reachable=True" in output
+    error = re.search(r"^error=(.+)$", output, re.MULTILINE)
+    notes = (
+        [f"Could not open a TCP connection to {target['host']}:{target['port']}."]
+        if not reachable
+        else [f"{target['host']}:{target['port']} accepted a TCP connection."]
+    )
+    return {
+        "reachable": reachable,
+        "error": error.group(1) if error else None,
+        "notes": notes,
+    }
+
+
 def _nmap_command(target: dict) -> list[str]:
     # Full range, not just the registered port: this test is the evidence
     # source for the "unnecessary services" control, which requires finding
@@ -384,11 +406,17 @@ def _parse_mqtt_observations(target: dict, output: str) -> dict:
     }
 
 
+TLS_CERT_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/tls_cert_check.py"
+
+
 def _tls_command(target: dict) -> list[str]:
-    # Worker's stdin is already /dev/null (see job_runner's detached CMD), so
-    # s_client gets an immediate EOF and exits after printing the handshake -
-    # no explicit stdin redirect is needed or possible without a shell.
-    return ["openssl", "s_client", "-connect", f"{target['host']}:{target['port']}", "-brief"]
+    # A single `openssl s_client -brief` can't also report the certificate's
+    # notBefore/notAfter dates without a second `openssl x509` invocation fed
+    # its PEM output on stdin - not expressible as one argv command without a
+    # shell pipe, so this delegates to a small compound script that chains
+    # both openssl calls and prints its output in the same shape the
+    # original single invocation did (see tls_cert_check.py's own docstring).
+    return ["python3", TLS_CERT_CHECK_SCRIPT, target["host"], str(target["port"])]
 
 
 DEPRECATED_TLS_VERSIONS = {"SSLv2", "SSLv3", "TLSv1", "TLSv1.1"}
@@ -402,6 +430,22 @@ def _parse_tls_observations(target: dict, output: str) -> dict:
     # distinguishes the lab's weak 1024-bit cert from the strong one in
     # committed raw output (EV-2026-07-08-0019 vs -0020).
     weak_cipher = "certificate key too weak" in output.lower()
+
+    not_after = re.search(r"notAfter=(.+)$", output, re.MULTILINE)
+    cert_expired = None
+    if not_after:
+        import datetime as _dt
+
+        try:
+            # openssl's notAfter= value is always UTC (it prints "GMT"), but
+            # %Z doesn't reliably attach tzinfo for that abbreviation across
+            # platforms - compare as naive UTC on both sides instead.
+            expiry = _dt.datetime.strptime(not_after.group(1).strip(), "%b %d %H:%M:%S %Y %Z")
+            now_utc = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+            cert_expired = expiry < now_utc
+        except ValueError:
+            cert_expired = None
+
     notes = []
     if weak_cipher:
         notes.append(
@@ -414,11 +458,16 @@ def _parse_tls_observations(target: dict, output: str) -> dict:
             f"{tls_version} is deprecated and should be disabled in favor of "
             "TLS 1.2 or 1.3.",
         )
+    if cert_expired:
+        notes.append("The certificate has expired - reissue it before it is used to accept a real connection.")
+    elif cert_expired is None:
+        notes.append("Could not determine certificate expiry from the handshake output.")
     if not notes:
         notes.append("No weak key or deprecated protocol version detected.")
     return {
         "tls_version": tls_version,
         "weak_cipher": weak_cipher,
+        "cert_expired": cert_expired,
         "notes": notes,
     }
 
@@ -587,6 +636,15 @@ def _parse_fw_updatescript_observations(target: dict, output: str) -> dict:
 
 
 SCAN_CATALOG = {
+    "TEST-NET-REACHABILITY": {
+        "label": "Host reachability",
+        "tool": "python3 (socket)",
+        "tool_version_command": ["python3", "--version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": ALL_SERVICE_TYPES,
+        "build_command": _reachability_command,
+        "parse_observations": _parse_reachability_observations,
+    },
     "TEST-NET-PORTSCAN": {
         "label": "Nmap service/port scan",
         "tool": "nmap",

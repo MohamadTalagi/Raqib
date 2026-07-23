@@ -4,11 +4,14 @@
   "type": "object",
   "required": [
     "control_id", "title", "saudi_source", "applicability",
-    "required_evidence", "automated_test_ids", "severity", "conditions", "remediation"
+    "required_evidence", "automated_test_ids", "severity", "conditions", "remediation",
+    "version", "limitations"
   ],
   "properties": {
     "control_id": {"type": "string", "pattern": "^SA-IOT-\\d{3}$"},
     "title": {"type": "string"},
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "limitations": {"type": "string"},
     "saudi_source": {
       "type": "array",
       "minItems": 1,

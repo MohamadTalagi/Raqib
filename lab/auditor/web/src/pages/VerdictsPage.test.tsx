@@ -3,7 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VerdictsPage } from "./VerdictsPage";
-import { mockFetchImplementation } from "@/test/fixtures";
+import { api } from "@/lib/api";
+import { controlsFixture, mockFetchImplementation, verdictsFixture } from "@/test/fixtures";
+import type { VerdictRecord } from "@/lib/types";
 
 describe("VerdictsPage", () => {
   beforeEach(() => {
@@ -34,5 +36,60 @@ describe("VerdictsPage", () => {
     await user.click(screen.getByRole("button", { name: "PASS" }));
 
     expect(screen.queryByText(/SA-IOT-002/)).not.toBeInTheDocument();
+  });
+
+  it("offers a NOT_APPLICABLE filter and filters by it", async () => {
+    const notApplicable: VerdictRecord = {
+      ...verdictsFixture[0],
+      verdict_id: "VD-2026-07-22-0001",
+      control_id: "SA-IOT-004",
+      status: "NOT_APPLICABLE",
+      reason: "No MQTT service registered for this device.",
+    };
+    vi.spyOn(api, "verdicts").mockResolvedValue([...verdictsFixture, notApplicable]);
+    vi.spyOn(api, "controls").mockResolvedValue(controlsFixture);
+
+    render(
+      <MemoryRouter>
+        <VerdictsPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Disable unnecessary network services");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "NOT_APPLICABLE" }));
+
+    const [heading] = screen.getAllByText(/SA-IOT-004/);
+    await user.click(heading.closest("button") as HTMLButtonElement);
+
+    expect(screen.getByText(/No MQTT service registered/)).toBeInTheDocument();
+    expect(screen.queryByText(/SA-IOT-002/)).not.toBeInTheDocument();
+  });
+
+  it("shows a conflict indicator and the policy version in an expanded verdict", async () => {
+    const conflicted: VerdictRecord = {
+      ...verdictsFixture[0],
+      verdict_id: "VD-2026-07-22-0002",
+      policy_version: "1.1.0",
+      conflict_detected: true,
+      conflict_reason: "Automated evidence disagrees with a manually recorded finding.",
+    };
+    vi.spyOn(api, "verdicts").mockResolvedValue([conflicted]);
+    vi.spyOn(api, "controls").mockResolvedValue(controlsFixture);
+
+    render(
+      <MemoryRouter>
+        <VerdictsPage />
+      </MemoryRouter>,
+    );
+
+    const title = await screen.findByText("Disable unnecessary network services");
+    expect(screen.getByText("Conflict")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(title.closest("button") as HTMLButtonElement);
+
+    expect(screen.getByText(/Automated evidence disagrees with a manually recorded finding\./)).toBeInTheDocument();
+    expect(screen.getByText("1.1.0")).toBeInTheDocument();
   });
 });

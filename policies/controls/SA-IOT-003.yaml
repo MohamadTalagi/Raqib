@@ -1,5 +1,6 @@
 control_id: SA-IOT-003
 title: Disable unnecessary network services
+version: "1.0.0"
 saudi_source:
   - framework: CGIoT-1:2024
     reference: "2-15-2"
@@ -19,3 +20,4 @@ conditions:
   partial: null
   inconclusive: { when: "evidence_missing_or_low_confidence" }
 remediation: "Remove Telnet and any other non-essential listening service from the device image."
+limitations: "Only flags Telnet (port 23) specifically; a full port-range scan runs and records every open port in observations.services, but the pass/fail condition itself only keys on Telnet, so other unnecessary services must be reviewed by hand from the same scan's output."

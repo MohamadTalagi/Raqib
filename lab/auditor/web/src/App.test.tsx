@@ -20,4 +20,11 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: /evidence/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /verdicts/i })).toBeInTheDocument();
   });
+
+  it("renders a 404 page for an unknown route", async () => {
+    window.history.pushState({}, "", "/this-route-does-not-exist");
+    render(<App />);
+    expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
+    window.history.pushState({}, "", "/");
+  });
 });

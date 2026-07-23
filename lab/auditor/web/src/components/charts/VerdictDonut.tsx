@@ -6,12 +6,13 @@ interface VerdictDonutProps {
   counts: Record<VerdictStatus, number>;
 }
 
-const ORDER: VerdictStatus[] = ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"];
+const ORDER: VerdictStatus[] = ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE", "NOT_APPLICABLE"];
 const COLOR_BY_STATUS: Record<VerdictStatus, string> = {
   PASS: CHART_COLORS.pass,
   FAIL: CHART_COLORS.critical,
   PARTIAL: CHART_COLORS.medium,
   INCONCLUSIVE: CHART_COLORS.inconclusive,
+  NOT_APPLICABLE: CHART_COLORS.textMuted,
 };
 
 export function VerdictDonut({ counts }: VerdictDonutProps) {

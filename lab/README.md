@@ -49,13 +49,40 @@ docker compose down
 
 Beyond the Day-1/2/3 core, the lab now includes:
 
-- **auditor-database** (PostgreSQL) — stores evidence and verdicts. Schema auto-created on first boot from
-  `lab/auditor/db/init.sql`.
+- **auditor-database** (PostgreSQL) — stores devices, assessments, scan jobs, evidence, verdicts,
+  and the NCA CGIoT-1:2024 compliance module's own tables. Schema auto-created on first boot from
+  `lab/auditor/db/init.sql`; existing volumes are brought up to date via the numbered files in
+  `lab/auditor/db/migrations/` (see "Migrations" below).
 - **auditor-api** (FastAPI, `:8000` internal / `:8000` host-published via `docker-compose.dev.yml`) — REST
-  API for evidence, verdicts, controls, devices, and summary stats. No authentication (network-isolated).
-- **auditor-web** (Flutter Web, `:8080` host-published) — the dashboard. Open http://localhost:8080 after
-  bringing the stack up.
+  API for devices, assessments, scan jobs, evidence, verdicts, controls, NCA compliance, and per-device
+  reports (PDF/HTML/JSON). No authentication (network-isolated).
+- **auditor-worker** — polls `auditor-api` for pending scan jobs and is the only thing that ever runs a
+  real collector command (nmap/curl/openssl/mosquitto_sub/tcpdump/...) against a live device or parses a
+  firmware archive.
+- **auditor-web** (React + Vite + TypeScript, `:8080` host-published) — the dashboard. Open
+  http://localhost:8080 after bringing the stack up.
 - **traffic-capture** — `tcpdump` on `audit-network`, writes `.pcap` files to `document-store/pcap/`.
+
+### Application features (dashboard)
+
+- **Devices** — register/deregister a device and its exposed services, upload/remove a firmware
+  archive.
+- **Run Scan** — pick a device and one or more whitelisted tests; launching creates a real
+  **Assessment** (`POST /assessments`) grouping the batch under one id with an aggregate status
+  (`queued` → `running` → `completed`/`partially_completed`/`failed`, or `cancelled`), visible as a
+  status bar with a Cancel button. Each individual test still goes through its own job card to read
+  the collector's raw output/observations and record a human-typed finding as evidence.
+- **Evidence** / **Verdicts** / **Controls** — browse recorded evidence, computed verdicts (including
+  `NOT_APPLICABLE` for controls that genuinely can't apply to a device's registered services, and
+  conflict-flagged verdicts when two evidence records disagree), and the 5 `SA-IOT-*` control
+  definitions. "Recompute verdicts" is idempotent — safe to click repeatedly.
+- **NCA Compliance** — a separate, additive module (`policies/nca/`) covering all 81 real
+  CGIoT-1:2024 guidelines with its own device/organizational assessments, evidence, and exceptions.
+  See `docs/nca-compliance.md`.
+- **Device reports** — `GET /devices/{id}/report.pdf` (WeasyPrint), `.html`, and `.json` — same
+  underlying `build_report_model()`, covering device profile, scope, methodology, control results
+  (with policy version and conflict flags), controls not yet assessed, evidence provenance, and a
+  not-an-official-certification disclaimer.
 
 ### Bring up the full stack
 
@@ -91,12 +118,28 @@ docker compose exec auditor-worker sh -c "cd /work && python -m policies.engine.
 
 This one *does* run in the worker — it POSTs to `auditor-api` rather than touching the database.
 
+### Migrations (existing volumes only — fresh clones get all of this from `init.sql`)
+
+Postgres only runs `init.sql` on a **fresh** volume (see `docs/errors/021`); an already-initialized
+one needs each numbered migration applied by hand once:
+
+```
+docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/002-devices-firmware-columns.sql
+docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/003-nca-compliance.sql
+docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/004-assessments-and-evidence-fields.sql
+```
+
+All three are idempotent — safe to re-run.
+
 ### Verify
 
 - Dashboard: http://localhost:8080 — Devices should list six devices, and Overview should show
   non-zero evidence/verdict counts.
-- API directly: http://localhost:8000/summary — expect
-  `{"total_evidence": 13, "total_verdicts": 8, "verdicts_by_status": {"PASS": 4, "FAIL": 4, "PARTIAL": 0, "INCONCLUSIVE": 0}}`
+- API directly: http://localhost:8000/summary should return non-zero `total_evidence`/`total_verdicts`
+  and a `verdicts_by_status` breakdown across `PASS`/`FAIL`/`PARTIAL`/`INCONCLUSIVE`/`NOT_APPLICABLE`
+  (exact numbers aren't pinned here since they grow as more scans are recorded).
+- Clean-deployment smoke test: `bash scripts/smoke_test.sh` from the repo root brings the stack up
+  and asserts every health-checked service reports healthy plus a few HTTP endpoints respond.
 
 ### A note on where data lives
 

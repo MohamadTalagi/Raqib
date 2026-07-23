@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { api, ApiError, type CreateDevicePayload } from "@/lib/api";
 import type { DeviceMutationResult, ServiceType } from "@/lib/types";
+import { useToast } from "@/lib/useToast";
 
 const SERVICE_TYPES: ServiceType[] = ["http", "https", "mqtt", "mqtts", "telnet", "ssh"];
 
@@ -80,6 +81,7 @@ const INPUT_CLASS =
 const LABEL_CLASS = "text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase";
 
 export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: RegisterDeviceFormProps) {
+  const { showToast } = useToast();
   const [fields, setFields] = useState<FormFields>({
     ...EMPTY_FIELDS,
     device_id: initialDeviceId ?? EMPTY_FIELDS.device_id,
@@ -146,6 +148,7 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
       if (firmwareFile) {
         try {
           const withFirmware = await api.uploadFirmware(device.device_id, firmwareFile);
+          showToast(`Device "${withFirmware.device_id}" registered with firmware.`, "success");
           onRegistered(withFirmware);
         } catch (firmwareErr) {
           const message =
@@ -156,6 +159,7 @@ export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: 
           setRegisteredDevice(device);
         }
       } else {
+        showToast(`Device "${device.device_id}" registered.`, "success");
         onRegistered(device);
       }
     } catch (caught) {

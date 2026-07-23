@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-21
+> **Last updated:** 2026-07-22
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,229 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Three more owner-requested dashboard refinements — all COMPLETE**,
+**Phase:** **Dashboard UX/UI improvement pass — COMPLETE** (2026-07-22). The
+owner asked for three things in one go: "further improve the UX/UI," "add a
+dashboard in NCA Compliance section or something better and usable," and
+"make overall improvement and modification to the overall web interface and
+make it ready to go." Planned via plan mode (findings grounded in the actual
+code, not general impressions) and executed in four parts, all against
+`lab/auditor/web/`:
+1. **NCA Compliance page rebuilt as an actual dashboard**, not a stat-tile
+   list. New `components/charts/NCADomainBarChart.tsx` (a stacked bar chart,
+   one bar per CGIoT-1:2024 domain, pass/partial/fail/not_tested segments —
+   same recharts + `CHART_COLORS` convention as the existing
+   `DeviceActivityBar`); the plain "Overall pass rate" stat tile became a
+   real `ComplianceGauge` (already existed, already used on Overview); a new
+   "Devices needing attention" panel (worst-first: fail > partial >
+   not_tested, mirroring Overview's "Highest-priority failures" list); and a
+   new "Reports" card wiring up the 4 CSV/PDF export endpoints
+   (`ncaDeviceReportCsvUrl`/`ncaControlsReportCsvUrl`/`ncaEvidenceReportCsvUrl`/
+   `ncaExecutiveReportPdfUrl`) that existed in `api.ts` since an earlier
+   session but were never linked from any page. The old per-domain count
+   cards and the filterable device compliance table both stayed, moved below
+   the new visual section rather than removed.
+2. **`VerdictsPage.tsx` correctness fixes**: `NOT_APPLICABLE` was missing from
+   the `FILTERS` array (added to the backend/types in the Week 1 gap-closure
+   work above but never wired into this page's filter bar), and
+   `conflict_detected`/`conflict_reason`/`policy_version` — all real fields
+   added in that same earlier work — were never surfaced anywhere in the UI.
+   Added a small "Conflict" badge on the collapsed row header plus the full
+   conflict reason and policy version inside the expanded panel.
+3. **Production-readiness baseline the dashboard never had**: a real
+   `NotFoundPage.tsx` + catch-all `<Route path="*">` (previously an unknown
+   URL just rendered nothing); a class-based `ErrorBoundary.tsx` wrapping
+   `<Routes>` in `App.tsx` so an unexpected render error shows a recoverable
+   "reload the page" screen instead of a blank one; and a responsive
+   collapsible sidebar — `Sidebar.tsx` now takes `open`/`onClose` props and
+   slides off-canvas below the `lg` breakpoint behind a hamburger button
+   (`Menu` icon, new in `TopBar.tsx`) with a click-to-close backdrop,
+   `Shell.tsx` now owns the open/close state and its content padding changed
+   from unconditional `pl-60` to `lg:pl-60`. Also grouped the sidebar's 8 flat
+   nav items into three labeled sections (Monitoring / Assessment /
+   Compliance) since the flat list had grown cluttered.
+4. **A consistent toast notification system**, replacing several different
+   ad hoc inline success/error paragraphs with one pattern: `components/ui/toast.tsx`
+   (presentational stack, bottom-right, auto-dismissing, dismissible) +
+   `lib/useToast.tsx` (context/provider + `useToast()` hook), mounted once in
+   `App.tsx` inside the new `ErrorBoundary`. Wired into `RegisterDeviceForm`
+   (success toast; the existing per-field inline validation errors were
+   deliberately left untouched — that pattern is correct UX and predates this
+   pass), Run Scan's recompute-verdicts result and each `ScanJobCard`'s
+   "evidence recorded" outcome (replacing an inline paragraph that could only
+   ever show the *last* action's result), and `DeviceDetailPage`'s firmware
+   upload/remove and deregister outcomes (replacing per-action inline error
+   paragraphs with toasts for both success and failure, since these are
+   one-shot action outcomes, not form-field validation).
+
+**Verified for real, not just unit-tested**: the Claude-in-Chrome browser
+extension was unavailable again this session (checked, not connected), so
+live verification used a headless Playwright script (already an established
+pattern in this project's history) driven against the actual rebuilt
+`auditor-web` Docker image and the real dev stack — confirmed the NCA
+dashboard renders live gauge/chart/attention-panel/report-link data matching
+the real `/nca/domains` API response byte-for-byte, confirmed the sidebar
+correctly collapses off-canvas at a 480px viewport and opens via the
+hamburger with a backdrop, confirmed a bad route renders the real 404 page,
+confirmed a real device registration produces a real toast that appears and
+auto-dismisses (screenshotted), and confirmed the Verdicts page's
+`NOT_APPLICABLE` filter and expanded "Policy version" field both work
+against real live verdict rows already in the dev database (the conflict
+badge itself has no live data to show today — no real conflicting evidence
+pair currently exists in this dev DB — so that path is unit-tested only,
+not live-confirmed). 108 frontend tests passing (was 96 before this pass;
++12: NCA dashboard reports/attention-panel tests, Verdicts NOT_APPLICABLE +
+conflict/policy-version tests, a 404-route test, ErrorBoundary tests, and
+`useToast` tests), `tsc --noEmit` clean. Not committed to git yet.
+
+Before that: **Week 1 mentor-brief gap closure — COMPLETE** (2026-07-22). The owner
+asked for a gap analysis of the mentor's "Week 1" task brief
+(`docs/week1-gap-analysis.md`, written the same day) against the real
+`SA-IOT-*` assessment pipeline, then asked to close every ❌/⚠️ item found.
+Additive throughout — the existing evidence/verdict/scan_jobs flow and the
+NCA compliance module below are both untouched in behavior, only extended.
+Highlights:
+- **A real `assessments` entity**: `POST /assessments` (device_id + test_ids[])
+  groups a batch of `scan_jobs` under one id with an aggregate status computed
+  by one pure function (`policies/engine/assessment_status.py` —
+  `queued`/`running`/`partially_completed`/`completed`/`failed`/`cancelled`),
+  never hand-set beyond queued/cancelled. `POST /assessments/{id}/cancel`
+  fails not-yet-started jobs and marks the assessment terminal (an already
+  `running` job is left to finish — no process-group tracking to kill it
+  safely, documented as a limitation, not silently promised). Run Scan's
+  existing "Run selected" batch launch now creates a real Assessment instead
+  of N unlinked jobs, with a status bar and Cancel button; the existing
+  per-job card UI is unchanged.
+- **A failed collector now produces `INCONCLUSIVE`, never silence or FAIL.**
+  `job_runner.py`'s timeout/exception paths call a new
+  `POST /scan-jobs/{id}/record-failure`, which deterministically writes
+  evidence flagged `observations.collector_error` — `policy_engine.py`'s
+  `evaluate()` checks that flag before any condition matching and always
+  scores it `INCONCLUSIVE`.
+- **`NOT_APPLICABLE` is now a real, reachable verdict status** — derived from
+  the *existing* `is_applicable()`/`applicable_service_types` machinery
+  (never the unused `applicability.device_type` YAML field, which
+  corresponds to no column `devices` actually has), synthesized at
+  `/verdicts/recompute` time for a registered device whose services never
+  match a control's required tests. The previously dead `"when":
+  "evidence_missing_or_low_confidence"` YAML mechanism is now real code too
+  (a `WHEN_HANDLERS` dispatch), not just a fallback default.
+- **Evidence conflict detection** (`policies/engine/conflict.py`) — the
+  mentor's own example (documentation says MQTT uses TLS, a packet capture
+  shows plaintext): evidence for the same (device, control) pair is now
+  evaluated together, `source_type == "automated"` wins over
+  `"manual"`/`"document"` on disagreement, and the resulting verdict carries
+  `conflict_detected`/`conflict_reason` plus every evidence id considered
+  (not just the winner).
+- **Two real bugs caught live**, not by unit tests alone (both now have
+  regression tests + `docs/errors/024`/`025`): conflict detection crashed on
+  a real list-valued observation field (`open_ports`) since a plain `set()`
+  can't hold unhashable values; and `is_control_applicable()` initially
+  marked *every* device `NOT_APPLICABLE` for SA-IOT-001 because its required
+  test has no automated collector at all — conflating "not yet automated"
+  with "doesn't apply."
+- **New collectors**: `TEST-NET-REACHABILITY` (plain TCP connect probe) and
+  real TLS certificate expiry (`TEST-TLS-CONFIG` now also reports
+  `cert_expired`, via a second `openssl s_client -showcerts` handshake fed
+  into `openssl x509 -noout -dates` — confirmed live that `-brief` suppresses
+  the certificate PEM even with `-showcerts` together, so this needs two
+  separate handshakes, not one).
+- **Evidence/verdict schema additions**: `source_type`, `confidence_reason`,
+  `error_state`, `assessment_id` on evidence; `policy_version`,
+  `conflict_detected`, `conflict_reason`, `assessment_id` on verdicts — all
+  optional (not required) in `evidence.schema.json`/`verdict.schema.json` so
+  every existing caller keeps validating unchanged. Every control YAML
+  gained `version` and a real `limitations` string.
+- **Reports**: `GET /devices/{id}/report.html` and `.json` alongside the
+  existing `.pdf`, all three sharing one `build_report_model()` now extended
+  with `methodology`, `disclaimer`, `assessment_scope`, and
+  `controls_not_assessed`. A new `GET /document-store/{path}` route (path-
+  traversal-safe) actually serves raw evidence artefacts so the dashboard's
+  "view raw artefact" link opens a real file instead of just printing a path
+  as text.
+- **Tests**: a systematic pass/fail/inconclusive/contradictory-evidence
+  matrix across all 5 real `SA-IOT-*` controls (20 parametrized cases,
+  `policies/engine/test_controls_four_cases.py`), a database-persistence
+  test (write via one connection, read via a fresh one), and
+  `scripts/smoke_test.sh` — a real clean-deployment smoke test, verified live
+  end to end against the actual stack. 149 backend `lab/auditor/api` tests +
+  148 `policies/*` tests + 96 frontend tests passing (only the 2 pre-existing
+  WeasyPrint-native-library gaps on this Windows dev shell still fail,
+  unrelated to this work).
+- **Docs**: `docs/known-limitations.md` (consolidated register),
+  `lab/README.md` updated to cover every application feature (was still
+  describing the dashboard as Flutter Web from Day 1), and a note added to
+  `docs/architecture/architecture-diagram.md` confirming the topology is
+  unchanged (this work added application logic inside existing containers,
+  no new container/network).
+
+Before that: **NCA CGIoT-1:2024 Compliance Module — COMPLETE** (2026-07-22). A full,
+production-quality compliance module built as a parallel system alongside the
+original 5-control `SA-IOT-*` policy-as-code pilot (which is untouched — Run Scan,
+`ControlsPage`, `VerdictsPage`, the `evidence`/`verdicts` tables all still work exactly
+as before). Covers all 81 real CGIoT-1:2024 guidelines across all 4 domains, with
+device-scope and organizational-scope assessments, an append-only audit trail,
+exceptions with mandatory expiry, and a "NCA CGIoT-1:2024 Alignment" dashboard page
+that is careful never to claim NCA certification. Full detail in
+`docs/nca-compliance.md`. Highlights:
+- **Catalog**: `policies/nca/build_catalog.py` deterministically parses the
+  already-verified `docs/reference/CGIoT-1_2024.md` transcription into 81 guideline
+  entries + 11 Manufacturer Principles — canonical wording copied verbatim, never
+  invented; IoTGuard's own scope/assessment-type/severity classification kept
+  clearly separate from NCA's own text.
+- **Data model**: 6 new Postgres tables (`compliance_controls`,
+  `compliance_finding_mappings`, `compliance_assessments`, `compliance_evidence`,
+  `compliance_exceptions`, `compliance_audit_events`) via `init.sql` +
+  `migrations/003-nca-compliance.sql`. Assessments are append-only (re-assessment
+  supersedes the prior row, never overwrites it) with a full before/after audit
+  trail. Automated evidence reuses the existing `evidence` table by reference
+  (`linked_evidence_id`) rather than duplicating it.
+- **Evaluator**: one centralized, pure-function module
+  (`policies/nca/evaluator.py`, 45 unit tests) computes every status/score/domain-count
+  — the API and UI only ever render its output, never recompute it. Hit and fixed a
+  real bug here during integration: a never-assessed device's rows are a *full* list
+  where every status defaults to `not_tested` (not an empty list), which the first
+  version of `device_overall_status` mis-classified as PARTIAL instead of "Not
+  Assessed" — caught by hitting the live API with a freshly-seeded, unassessed device.
+- **Finding-to-control mapping**: `policies/nca/finding_mappings.py`, a configurable
+  ~20-entry table (not hardcoded in the API/UI) reusing `policy_engine.py`'s existing
+  `{field, op, value}` predicate. Deliberately has **zero** mappings into domain 1
+  (governance) or the mobile/supplier/cloud groups — a scan cannot demonstrate policy
+  approval, training, audits, or contract compliance, so those stay
+  manual-assessment-only, enforced by its own regression test. Hit and fixed a real
+  bug: a mapping's `not_equals` rule matched evidence that never even carried the
+  relevant observation key at all (`None != []` is spuriously `True`), so the mapper
+  now requires the field to actually be present before evaluating any rule.
+- **API**: `lab/auditor/api/nca_routes.py`, a new `APIRouter` (~25 endpoints:
+  summary/domains/controls/devices/assessments/exceptions/organization/reports)
+  mounted into the existing app — same `get_connection()`/`ValidationError`→400
+  conventions as the rest of the API. Reviewer identity (free-text name + reason),
+  not real authentication — this app has no login system anywhere, and this is
+  documented as a deliberate, explicit limitation rather than glossed over.
+- **Frontend**: new "NCA Compliance" nav entry + page (header/disclaimer, summary
+  tiles, 4-domain breakdown, status-tabbed/filterable device table), a control detail
+  page, an organizational compliance page, and a new Compliance tab on the existing
+  device detail page — all built from the existing `Shell`/`Card`/`Skeleton` component
+  vocabulary, plus one genuinely new shared primitive (`ui/tabs.tsx`, needed twice).
+  Status is always icon+text (`NCAStatusBadge`), never color alone. 92 frontend tests
+  passing (was 77).
+- **Demo seed**: `policies/nca/seed_demo_assessments.py` (manual, not wired into any
+  entrypoint) builds the 3 required real scenarios against the real lab devices,
+  linking real committed Day-2 evidence rows — verified live against the dev DB:
+  `device-hardened` → PASS/100%, `device-partial` → PARTIAL/89% (one genuinely partial
+  weak-TLS-cert control, one left NOT_TESTED for physical tamper protection), `device-insecure`
+  → FAIL/0% (5 concrete failures, each linked to real evidence).
+- **Verified live**: full regression run (133 backend tests across `policies/nca`,
+  `policies/catalog`, and the full `lab/auditor/api` suite — only the 2 pre-existing
+  WeasyPrint-native-library gaps on this Windows dev shell fail, unrelated to this
+  work; 92 frontend tests; `tsc --noEmit` clean), plus real end-to-end verification
+  against the live `auditor-api`/`auditor-database` containers: seeded the real
+  catalog + mappings + demo assessments, hit every `/nca/*` endpoint including the
+  create/retest/audit-trail/exception-422 flows, and confirmed the executive PDF
+  renders real data. Browser-based visual verification of the new dashboard pages
+  was **not** performed this session (the Claude-in-Chrome extension was not
+  connected) — noted here rather than claimed.
+
+Before that: **Three more owner-requested dashboard refinements — all COMPLETE**,
 same day (2026-07-21): (1) removed the security-tier concept from the UI
 entirely — the tier badge/pill ("Insecure"/"Partial"/"Hardened"/"Unknown") is
 gone from the Devices list, the device detail page, and Device Console, and
@@ -379,6 +601,9 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-22 | **Dashboard UX/UI improvement pass** — see §0 for the full breakdown. NCA Compliance page rebuilt as a real dashboard (new stacked `NCADomainBarChart`, a `ComplianceGauge` in place of a plain stat tile, a worst-first "Devices needing attention" panel, and a "Reports" card finally linking the 4 CSV/PDF export endpoints that existed in `api.ts` but were never wired into any page); `VerdictsPage.tsx` gained the missing `NOT_APPLICABLE` filter plus conflict/policy-version display for fields that existed in the schema but were invisible in the UI; production-readiness baseline added (`NotFoundPage` + catch-all route, a class `ErrorBoundary` wrapping `<Routes>`, a responsive collapsible sidebar with a hamburger toggle and grouped nav sections); and a consistent toast notification system (`components/ui/toast.tsx` + `lib/useToast.tsx`) replacing several different ad hoc inline success/error paragraphs across `RegisterDeviceForm`, Run Scan, and the device detail page. Verified live via a headless Playwright script against the rebuilt `auditor-web` image and the real dev stack (screenshots of the new dashboard, the mobile sidebar collapse/expand, the 404 page, and a real toast appearing and auto-dismissing after a live device registration) since the Claude-in-Chrome extension was unavailable again this session. 108 frontend tests passing (was 96), `tsc` clean. Not committed to git yet. |
+| 2026-07-22 | **Closed every gap `docs/week1-gap-analysis.md` found in the mentor's Week 1 brief** — see §0 for the full breakdown. A real `assessments` entity (groups a `scan_jobs` batch under one id + aggregate status, cancellable); a failed collector now produces `INCONCLUSIVE` (never silence or FAIL) via a new `record-failure` endpoint; `NOT_APPLICABLE` is a real, reachable verdict status derived from existing service-applicability logic; the previously-dead `"when"` YAML mechanism is real code now; evidence conflict detection (`policies/engine/conflict.py`) implements the brief's own documentation-vs-packet-capture example, preferring automated evidence; new `TEST-NET-REACHABILITY` collector and real TLS certificate expiry checking; `source_type`/`policy_version`/`conflict_detected`/`assessment_id` added to evidence/verdicts (all optional, zero breakage to existing callers); HTML/JSON report formats alongside the existing PDF, all three sharing one extended `build_report_model()`; a new path-traversal-safe `/document-store/{path}` route so raw artefacts are actually openable from the UI. Two real bugs caught live against the actual dev database (not by unit tests alone, both logged as `docs/errors/024`/`025` and now regression-tested): conflict detection crashed on a real list-valued observation field, and every device was wrongly marked NOT_APPLICABLE for SA-IOT-001 because its required test has no automated collector at all. Added a systematic 20-case pass/fail/inconclusive/contradictory-evidence matrix across all 5 real controls, a database-persistence test, and `scripts/smoke_test.sh` (verified live against the real stack). New `docs/known-limitations.md`; `lab/README.md` brought current (was still describing the dashboard as Flutter Web). 149 backend `lab/auditor/api` + 148 `policies/*` + 96 frontend tests passing (only the 2 pre-existing WeasyPrint-native-library gaps on this Windows host still fail, unrelated). |
+| 2026-07-22 | **Built the full NCA CGIoT-1:2024 compliance module** — see §0 for the complete breakdown (catalog generation, 6-table data model, centralized evaluator, configurable finding-mapping layer, ~25-endpoint API router, 3 new dashboard pages + a Compliance tab on the device detail page, demo seed script). Additive alongside the existing `SA-IOT-*` policy pilot, which is untouched. Two real bugs caught during integration (not by unit tests alone): the evaluator initially misclassified a never-assessed device as PARTIAL instead of "Not Assessed" (caught by hitting the live API against a freshly seeded device with zero assessments), and the finding-mapping layer initially let a `not_equals` rule spuriously match evidence that never carried the relevant observation key at all (`None != []`). Both fixed with regression tests. 133 backend tests + 92 frontend tests passing; `docs/nca-compliance.md` has the full writeup including known limitations (reviewer-identity ≠ real auth, page-range source citations, IoTGuard's own scope/severity classification kept distinct from NCA's text, single fixed organizational scope). |
 | 2026-07-07 | Project initialized. Copied reference docs (IoTGuard vision, CGIoT-1:2024) into `docs/reference/`. Read and summarized mentor's preliminary 3-day sprint tasks. Created CLAUDE.md charter, error-log convention, and folder scaffolding. |
 | 2026-07-07 | **Stack decisions** (see §9): all-Python spine, FastAPI for device + auditor API; sprint needs **no frontend**; LLM stages use the **Claude API (Opus 4.8)**; run the lab in **WSL2**. Adopted the "AI-assisted, not AI-decided" principle — evidence and verdicts are deterministic Python, never LLM output. |
 | 2026-07-07 | Ran a full **brainstorming** pass (Superpowers) on the mentor's 3-day sprint. Decisions: standalone project · full 11-container architecture (Option A) · `auditor-web` = thin Flutter/Dart built last · manual-then-automated assessment · hybrid real/simulated services · target machine = the 32 GB PC · single deliverer. Design approved section-by-section and written to `docs/superpowers/specs/2026-07-07-preliminary-iot-security-lab-design.md`. Created `setup/ssh-mcp/` scripts to remote-control the PC over Tailscale. Next: user reviews spec → set up ssh-mcp + switch Opus→Sonnet → implementation plan. |

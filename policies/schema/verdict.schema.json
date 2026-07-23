@@ -10,14 +10,18 @@
     "verdict_id": {"type": "string", "pattern": "^VD-\\d{4}-\\d{2}-\\d{2}-\\d{4}$"},
     "control_id": {"type": "string"},
     "device_id": {"type": "string"},
-    "status": {"type": "string", "enum": ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"]},
+    "status": {"type": "string", "enum": ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE", "NOT_APPLICABLE"]},
     "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
-    "evidence_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-    "matched": {"type": "string", "enum": ["pass", "fail", "partial", "inconclusive"]},
+    "evidence_ids": {"type": "array", "items": {"type": "string"}},
+    "matched": {"type": "string", "enum": ["pass", "fail", "partial", "inconclusive", "not_applicable"]},
     "reason": {"type": "string"},
     "saudi_source": {"type": "string"},
     "remediation": {"type": "string"},
-    "timestamp": {"type": "string"}
+    "timestamp": {"type": "string"},
+    "assessment_id": {"type": ["string", "null"]},
+    "policy_version": {"type": ["string", "null"]},
+    "conflict_detected": {"type": "boolean"},
+    "conflict_reason": {"type": ["string", "null"]}
   },
   "additionalProperties": false
 }

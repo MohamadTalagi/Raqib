@@ -1,16 +1,27 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { PlayCircle, RefreshCw, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { PlayCircle, RefreshCw, Loader2, CheckCircle2, XCircle, Ban } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/state";
 import { api, ApiError } from "@/lib/api";
 import { useFetch } from "@/lib/useFetch";
-import type { ScanJob, ScanTestCategory, ScanTestSpec, ServiceType } from "@/lib/types";
+import type { AssessmentStatus, ScanJob, ScanTestCategory, ScanTestSpec, ServiceType } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/lib/useToast";
 
 const POLL_INTERVAL_MS = 1200;
 const IN_FLIGHT_STATUSES = new Set(["pending", "running"]);
+const IN_FLIGHT_ASSESSMENT_STATUSES = new Set<AssessmentStatus>(["queued", "running"]);
+
+const ASSESSMENT_STATUS_COPY: Record<AssessmentStatus, { label: string; tone: string }> = {
+  queued: { label: "Queued", tone: "text-[var(--color-text-muted)]" },
+  running: { label: "Running", tone: "text-[var(--color-low)]" },
+  partially_completed: { label: "Partially completed", tone: "text-[var(--color-medium)]" },
+  completed: { label: "Completed", tone: "text-[var(--color-pass)]" },
+  failed: { label: "Failed", tone: "text-[var(--color-critical)]" },
+  cancelled: { label: "Cancelled", tone: "text-[var(--color-text-muted)]" },
+};
 
 const SECTIONS: { category: ScanTestCategory; title: string }[] = [
   { category: "web-and-auth", title: "1. Web and Authentication Assessment" },
@@ -62,11 +73,11 @@ const STATUS_COPY: Record<ScanJob["status"], { label: string; tone: string }> = 
 interface ScanJobCardProps {
   jobId: number;
   testLabel: string;
-  onRecorded: () => void;
   onStatusChange: (jobId: number, status: ScanJob["status"]) => void;
 }
 
-function ScanJobCard({ jobId, testLabel, onRecorded, onStatusChange }: ScanJobCardProps) {
+function ScanJobCard({ jobId, testLabel, onStatusChange }: ScanJobCardProps) {
+  const { showToast } = useToast();
   const [job, setJob] = useScanJob(jobId);
   const [finding, setFinding] = useState("");
   const [confidence, setConfidence] = useState<"high" | "medium" | "low">("high");
@@ -83,7 +94,7 @@ function ScanJobCard({ jobId, testLabel, onRecorded, onStatusChange }: ScanJobCa
       await api.recordScanJob(job.id, finding, confidence);
       const latest = await api.getScanJob(job.id);
       setJob(latest);
-      onRecorded();
+      showToast(`Evidence recorded for ${testLabel}.`, "success");
     } catch (err) {
       setRecordError(err instanceof ApiError ? err.message : "Could not record this evidence.");
     }
@@ -236,19 +247,55 @@ function TestCheckbox({
 export function RunScanPage() {
   const devices = useFetch(api.devices, []);
   const scanTests = useFetch(api.scanTests, []);
+  const { showToast } = useToast();
   const [deviceId, setDeviceId] = useState<string>("");
   const [selectedTestIds, setSelectedTestIds] = useState<Set<string>>(new Set());
   const [jobs, setJobs] = useState<RunningJob[]>([]);
   const [jobStatuses, setJobStatuses] = useState<Record<number, ScanJob["status"]>>({});
   const [launchErrors, setLaunchErrors] = useState<Record<string, string>>({});
   const [launching, setLaunching] = useState(false);
-  const [recomputeResult, setRecomputeResult] = useState<number | null>(null);
   const [recomputing, setRecomputing] = useState(false);
+  const [assessmentId, setAssessmentId] = useState<string | null>(null);
+  const [assessmentStatus, setAssessmentStatus] = useState<AssessmentStatus | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   // A scan already in flight (pending/running) blocks launching another one -
   // there's no need to distinguish which test it is, just whether the
   // worker is currently busy with something the user started here.
   const hasRunningJob = Object.values(jobStatuses).some((status) => IN_FLIGHT_STATUSES.has(status));
+
+  // Polls the current assessment's aggregate status while it's in flight -
+  // the same lightweight setTimeout-poll pattern useScanJob already uses
+  // per job, one level up for the batch as a whole.
+  useEffect(() => {
+    if (assessmentId === null || assessmentStatus === null || !IN_FLIGHT_ASSESSMENT_STATUSES.has(assessmentStatus)) {
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const latest = await api.getAssessment(assessmentId);
+        if (!cancelled) setAssessmentStatus(latest.status);
+      } catch {
+        // Transient poll failure - the next tick will retry.
+      }
+    }, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [assessmentId, assessmentStatus]);
+
+  async function handleCancelAssessment() {
+    if (assessmentId === null) return;
+    setCancelling(true);
+    try {
+      const updated = await api.cancelAssessment(assessmentId);
+      setAssessmentStatus(updated.status);
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   function handleJobStatusChange(jobId: number, status: ScanJob["status"]) {
     setJobStatuses((prev) => (prev[jobId] === status ? prev : { ...prev, [jobId]: status }));
@@ -305,44 +352,49 @@ export function RunScanPage() {
 
   async function handleRunSelected() {
     setLaunchErrors({});
-    setRecomputeResult(null);
     setLaunching(true);
     const testIds = Array.from(selectedTestIds);
-    const results = await Promise.allSettled(
-      testIds.map((testId) => api.createScanJob(deviceId, testId)),
-    );
 
-    const newJobs: RunningJob[] = [];
-    const newStatuses: Record<number, ScanJob["status"]> = {};
-    const errors: Record<string, string> = {};
-    results.forEach((result, index) => {
-      const testId = testIds[index];
-      const label = testsForDevice.find((t) => t.test_id === testId)?.label ?? testId;
-      if (result.status === "fulfilled") {
-        newJobs.push({ jobId: result.value.id, testId, testLabel: label });
-        // Seed the status from the create response itself (rather than
-        // waiting for ScanJobCard's first poll) so "a scan is running"
-        // is true from the instant it's launched, with no gap.
-        newStatuses[result.value.id] = result.value.status;
-      } else {
-        const err = result.reason;
-        errors[testId] = err instanceof ApiError ? err.message : "Could not start this scan.";
+    try {
+      // One real Assessment groups this whole batch under one id with an
+      // aggregate status - "Select device -> create assessment -> run
+      // collectors -> ..." per the brief's own workflow description. Tests
+      // that don't apply are reported in `errors` without failing the batch.
+      const result = await api.createAssessment(deviceId, testIds);
+      setAssessmentId(result.id);
+      setAssessmentStatus(result.status);
+
+      const newJobs: RunningJob[] = result.jobs.map((job) => ({
+        jobId: job.id,
+        testId: job.test_id,
+        testLabel: testsForDevice.find((t) => t.test_id === job.test_id)?.label ?? job.test_id,
+      }));
+      const newStatuses: Record<number, ScanJob["status"]> = {};
+      for (const job of result.jobs) {
+        newStatuses[job.id] = job.status;
       }
-    });
 
-    setJobs((prev) => [...newJobs, ...prev]);
-    setJobStatuses((prev) => ({ ...prev, ...newStatuses }));
-    setLaunchErrors(errors);
-    setLaunching(false);
+      setJobs((prev) => [...newJobs, ...prev]);
+      setJobStatuses((prev) => ({ ...prev, ...newStatuses }));
+      setLaunchErrors(result.errors);
+    } catch (err) {
+      setLaunchErrors({ _assessment: err instanceof ApiError ? err.message : "Could not create the assessment." });
+    } finally {
+      setLaunching(false);
+    }
   }
 
   async function handleRecompute() {
     setRecomputing(true);
     try {
       const result = await api.recomputeVerdicts();
-      setRecomputeResult(result.created);
-    } catch {
-      setRecomputeResult(null);
+      const message =
+        result.created === 0
+          ? "No new verdicts (evidence didn't map to a new control result)."
+          : `${result.created} new verdict${result.created === 1 ? "" : "s"} generated — check the Verdicts page.`;
+      showToast(message, "success");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Could not recompute verdicts.", "error");
     } finally {
       setRecomputing(false);
     }
@@ -494,7 +546,7 @@ export function RunScanPage() {
               )}
               {Object.entries(launchErrors).map(([testId, message]) => (
                 <p key={testId} className="text-sm text-[var(--color-critical)]">
-                  {testId}: {message}
+                  {testId === "_assessment" ? message : `${testId}: ${message}`}
                 </p>
               ))}
             </div>
@@ -516,19 +568,34 @@ export function RunScanPage() {
                   Recompute verdicts
                 </button>
               </div>
-              {recomputeResult !== null && (
-                <p className="text-sm text-[var(--color-pass)]">
-                  {recomputeResult === 0
-                    ? "No new verdicts (evidence didn't map to a new control result)."
-                    : `${recomputeResult} new verdict${recomputeResult === 1 ? "" : "s"} generated — check the Verdicts page.`}
-                </p>
+
+              {assessmentId && assessmentStatus && (
+                <div className="flex flex-wrap items-center gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+                  {IN_FLIGHT_ASSESSMENT_STATUSES.has(assessmentStatus) && (
+                    <Loader2 className="h-4 w-4 animate-spin text-[var(--color-low)]" />
+                  )}
+                  <span className="font-mono text-xs text-[var(--color-text-muted)]">{assessmentId}</span>
+                  <span className={cn("text-sm font-medium", ASSESSMENT_STATUS_COPY[assessmentStatus].tone)}>
+                    {ASSESSMENT_STATUS_COPY[assessmentStatus].label}
+                  </span>
+                  {IN_FLIGHT_ASSESSMENT_STATUSES.has(assessmentStatus) && (
+                    <button
+                      type="button"
+                      onClick={handleCancelAssessment}
+                      disabled={cancelling}
+                      className="ml-auto inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-critical)] hover:text-[var(--color-critical)] disabled:opacity-50"
+                    >
+                      <Ban className="h-3.5 w-3.5" />
+                      Cancel assessment
+                    </button>
+                  )}
+                </div>
               )}
               {jobs.map((j) => (
                 <ScanJobCard
                   key={j.jobId}
                   jobId={j.jobId}
                   testLabel={j.testLabel}
-                  onRecorded={() => setRecomputeResult(null)}
                   onStatusChange={handleJobStatusChange}
                 />
               ))}

@@ -60,6 +60,16 @@ td { padding: 1.8mm 2mm 1.8mm 0; border-bottom: 1px solid #eef0f3; vertical-alig
 .status-PARTIAL { color: var(--partial); }
 .status-INCONCLUSIVE { color: var(--inconclusive); }
 
+/* Lowercase variants for the NCA compliance module's own status vocabulary
+   (pass/partial/fail/not_tested) - kept separate from the verdict engine's
+   PASS/FAIL/PARTIAL/INCONCLUSIVE above rather than reusing them, since the
+   two systems classify differently (not_tested has no verdict-engine
+   equivalent, and INCONCLUSIVE has no NCA equivalent). */
+.status-pass { color: var(--pass); }
+.status-fail { color: var(--fail); }
+.status-partial { color: var(--partial); }
+.status-not_tested { color: var(--inconclusive); }
+
 /* Keep a control's clause, verdict and remediation together. Splitting these
    across a page is the most common reason a generated PDF looks amateur. */
 .finding { break-inside: avoid; padding: 3mm 0; border-bottom: 1px solid #eef0f3; }

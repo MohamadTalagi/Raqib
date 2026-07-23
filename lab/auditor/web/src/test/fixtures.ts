@@ -3,7 +3,7 @@ import type { ControlRecord, Device, EvidenceRecord, Summary, VerdictRecord } fr
 export const summaryFixture: Summary = {
   total_evidence: 12,
   total_verdicts: 8,
-  verdicts_by_status: { PASS: 4, FAIL: 4, PARTIAL: 0, INCONCLUSIVE: 0 },
+  verdicts_by_status: { PASS: 4, FAIL: 4, PARTIAL: 0, INCONCLUSIVE: 0, NOT_APPLICABLE: 0 },
   device_compliance: [
     { device_id: "device-insecure", framework: "CGIoT-1:2024", tested_controls: 2, passing_controls: 0, percentage: 0 },
     { device_id: "device-hardened", framework: "CGIoT-1:2024", tested_controls: 2, passing_controls: 2, percentage: 100 },
@@ -107,6 +107,10 @@ export const evidenceFixture: EvidenceRecord[] = [
     raw_output_path: "document-store/raw/EV-2026-07-08-0013.txt",
     confidence: "high",
     sha256: "f".repeat(64),
+    assessment_id: null,
+    source_type: "automated",
+    confidence_reason: null,
+    error_state: null,
   },
 ];
 
@@ -123,6 +127,10 @@ export const verdictsFixture: VerdictRecord[] = [
     saudi_source: "CGIoT-1:2024 §2-15-2",
     remediation: "Remove Telnet and any other non-essential listening service from the device image.",
     timestamp: "2026-07-08T08:58:42Z",
+    assessment_id: null,
+    policy_version: "1.0.0",
+    conflict_detected: false,
+    conflict_reason: null,
   },
   {
     verdict_id: "VD-2026-07-08-0002",
@@ -136,6 +144,10 @@ export const verdictsFixture: VerdictRecord[] = [
     saudi_source: "CGIoT-1:2024 §2-4-1",
     remediation: "Force a password change on first boot.",
     timestamp: "2026-07-08T08:58:42Z",
+    assessment_id: null,
+    policy_version: "1.0.0",
+    conflict_detected: false,
+    conflict_reason: null,
   },
 ];
 

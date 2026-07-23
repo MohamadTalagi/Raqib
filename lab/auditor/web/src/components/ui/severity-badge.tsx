@@ -1,5 +1,6 @@
+import { CheckCircle2, AlertTriangle, XCircle, CircleDashed } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Severity, VerdictStatus, Confidence } from "@/lib/types";
+import type { Severity, VerdictStatus, Confidence, NCAStatus } from "@/lib/types";
 
 const SEVERITY_STYLES: Record<Severity, string> = {
   critical: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
@@ -27,6 +28,7 @@ const STATUS_STYLES: Record<VerdictStatus, string> = {
   FAIL: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
   PARTIAL: "bg-[color-mix(in_oklab,var(--color-medium)_16%,transparent)] text-[var(--color-medium)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-medium)_35%,transparent)]",
   INCONCLUSIVE: "bg-[color-mix(in_oklab,var(--color-inconclusive)_16%,transparent)] text-[var(--color-inconclusive)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-inconclusive)_35%,transparent)]",
+  NOT_APPLICABLE: "bg-[color-mix(in_oklab,var(--color-text-muted)_16%,transparent)] text-[var(--color-text-muted)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-text-muted)_35%,transparent)]",
 };
 
 export function StatusBadge({ status }: { status: VerdictStatus }) {
@@ -61,6 +63,47 @@ function complianceStyle(percentage: number | null): string {
   if (percentage >= 80) return STATUS_STYLES.PASS;
   if (percentage >= 50) return STATUS_STYLES.PARTIAL;
   return STATUS_STYLES.FAIL;
+}
+
+const NCA_STATUS_STYLES: Record<NCAStatus, string> = {
+  pass: "bg-[color-mix(in_oklab,var(--color-pass)_16%,transparent)] text-[var(--color-pass)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-pass)_35%,transparent)]",
+  fail: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
+  partial: "bg-[color-mix(in_oklab,var(--color-medium)_16%,transparent)] text-[var(--color-medium)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-medium)_35%,transparent)]",
+  not_tested: "bg-[color-mix(in_oklab,var(--color-inconclusive)_16%,transparent)] text-[var(--color-inconclusive)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-inconclusive)_35%,transparent)]",
+};
+
+const NCA_STATUS_ICON: Record<NCAStatus, typeof CheckCircle2> = {
+  pass: CheckCircle2,
+  fail: XCircle,
+  partial: AlertTriangle,
+  not_tested: CircleDashed,
+};
+
+const NCA_STATUS_LABEL: Record<NCAStatus, string> = {
+  pass: "Pass",
+  fail: "Fail",
+  partial: "Partial",
+  not_tested: "Not Assessed",
+};
+
+/**
+ * Icon + text always together, never color alone - the compliance brief is
+ * explicit that a colourblind reader or a greyscale printout must still be
+ * able to tell PASS from FAIL from the badge itself.
+ */
+export function NCAStatusBadge({ status }: { status: NCAStatus }) {
+  const Icon = NCA_STATUS_ICON[status];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold tracking-wide",
+        NCA_STATUS_STYLES[status],
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" strokeWidth={2} />
+      {NCA_STATUS_LABEL[status]}
+    </span>
+  );
 }
 
 /** A percentage-based compliance pill, shared by the device detail page and the Overview fleet breakdown. */
