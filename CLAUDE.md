@@ -12,7 +12,54 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Discovery-first device onboarding — COMPLETE** (2026-07-23).
+**Phase:** **Discovery panel persistence + a gentler, more accurate scan —
+COMPLETE** (2026-07-23). Two refinements to the discovery-first onboarding
+feature built earlier the same day, both owner-requested: (1) registering
+one discovered host no longer hides the discovery panel or discards its
+scan results — `DevicesPage.tsx`'s `openForm`/`openFormWithPrefill` no
+longer force `showDiscovery` closed, so the panel and a completed scan's
+host list stay visible alongside the registration form. Since
+`NetworkDiscoveryPanel` stays mounted, its scan state survives, and each
+freshly-registered host flips from "Register" to "Already registered"
+inline the moment `handleRegistered()` refreshes the device list — the
+whole point being "register several discovered hosts from one scan," not
+"rescan before every registration." (2) The scan itself is now explicitly
+tuned for an IoT environment where real devices can have weak network
+stacks: `-T4` (Aggressive) → `-T3` (Normal - nmap's own docs say `-T4`
+assumes "a reasonably fast and reliable network," not a safe assumption for
+constrained gear), added `--max-rate 50` (hard packet-rate ceiling) and
+`--version-intensity 2` (lighter service-fingerprint probes — the
+classifier only needs the port number). Verified live this costs no real
+time in this lab (~25s either way, since a /24 sweep is dominated by the
+mostly-silent discovery phase, not per-host probe aggressiveness) - but
+raised this test's own timeout to 90s anyway (via a new per-test
+`timeout_seconds` override in `SCAN_CATALOG`, read by both
+`job_runner.py`'s `process_job` and `process_network_scan`; every other
+test keeps the 30s default) purely for headroom, since a real network
+won't always be this fast.
+
+**A real, unrelated accuracy bug turned up during that same live-tuning
+pass** (`docs/errors/029`): `--open` (present since this test was first
+built) doesn't just hide closed/filtered port rows — it silently omits a
+live host's *entire* report if none of the 6 signature ports are open, so
+a real non-IoT appliance on the VLAN (the subnet gateway, an infra
+container) never appeared in the output at all, making the `"unknown"`
+classification unreachable from genuine scan output despite being unit-
+tested. Fixed by dropping `--open` entirely (the parser already only counts
+literal "open" port lines, so closed/filtered rows are correctly ignored
+with no parser change needed). Re-verified live: the gateway and two
+infrastructure containers now correctly appear and classify as `"unknown"`
+— a real, accurate demonstration of "another network appliance sharing the
+VLAN" that isn't just the `telnet-sim` `"uncertain"` case.
+
+Backend: 2 new `policies/catalog` tests (verifying the gentler command
+shape and the longer timeout) + 2 new `job_runner` tests (verifying the
+per-test timeout actually reaches `subprocess.run`) — 84 and 17 tests in
+those files respectively, all passing. Frontend: 124 tests passing (was
+123; +1 `DevicesPage` test for the panel-stays-open-while-registering
+behavior), `tsc` clean.
+
+Before that: **Discovery-first device onboarding — COMPLETE** (2026-07-23).
 Follow-up to the Network Discovery scan built earlier the same day: the
 owner clarified the actual goal wasn't a scan test to run against an
 already-registered device, but a real replacement for manual device
@@ -729,6 +776,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-23 | **Discovery panel persistence + a gentler, more accurate scan** — see §0 for the full breakdown. Registering a discovered host no longer hides the discovery panel or discards its scan results, so multiple hosts from one scan can be registered without rescanning; each one flips to "Already registered" inline as soon as the device list refreshes. The scan command itself is now deliberately gentle for an IoT environment (`-T3` instead of `-T4`, `--max-rate 50`, `--version-intensity 2`) with a per-test 90s timeout override (`SCAN_CATALOG`'s new `timeout_seconds` key, read by `job_runner.py`) since the gentler settings trade a little more time for going easier on constrained devices - verified live this costs no real time in this lab. One real, unrelated accuracy bug caught during that same live-tuning pass (`docs/errors/029`): `--open` was silently omitting every live host with no signature port open (the subnet gateway, infra containers), making the `"unknown"` classification unreachable from real output despite being unit-tested - fixed by dropping `--open`, re-verified live that those hosts now correctly appear and classify as `"unknown"`. 4 new backend tests, 1 new frontend test (124 total), `tsc` clean. |
 | 2026-07-23 | **Discovery-first device onboarding** — see §0 for the full breakdown. A new `network_scans` table (no `device_id` at all - deliberately decoupled from the existing per-device `scan_jobs` machinery) + `POST /network-scans` + a second `job_runner.py` poll loop reusing `TEST-NET-DISCOVERY`'s own command/parser. The Devices page gained a "Discover devices" panel: scan the subnet, see every live host classified, click Register to open the existing form pre-filled (device id/name guessed from this lab's container-naming convention, host = the discovered IP, services derived from open ports) instead of typing every field by hand. One real bug caught live (`docs/errors/028`): "Already registered" matched only by IP, missing every real lab device (which registers with a container name as `host`, not an IP) - fixed to match on either. 8 new `lab/auditor/api` + 3 new `job_runner` backend tests (162 total API tests); 123 frontend tests passing (was 114), `tsc` clean. |
 | 2026-07-23 | **NCA per-device domain-summary cleanup + a new Network Discovery scan** — see §0 for the full breakdown. Governance and the Third-Party/Cloud domain group no longer show in the per-device NCA domain breakdown (a real, general `applicableDomains()` zero-total filter, not a hardcoded name removal, so Resilience stays visible today and would only disappear on its own if it too became genuinely empty). New `TEST-NET-DISCOVERY` sweeps the whole audit-network subnet and classifies each live host as `iot_device`/`uncertain`/`unknown` from its open-port signature, honestly declining to use MAC-vendor/OS fingerprinting inside this Docker bridge network. Verified live against the real lab: correctly classified all 5 real IoT devices/brokers as `iot_device` and `telnet-sim` as only `uncertain` - the "distinguish another appliance on the VLAN" scenario, with real containers. One real regex bug caught by that live run (`docs/errors/026`, a `\s+`-swallows-the-next-port-line bug) and one unrelated Docker-tooling incident (`docs/errors/027`, a stray empty `device_validation.py` that crash-looped the live worker) - both fixed, both logged. 82 `policies/catalog` + 24 `lab/auditor/api` scan-job + 14 `job_runner` backend tests passing; 114 frontend tests passing (was 108), `tsc` clean. |
 | 2026-07-22 | **Dashboard UX/UI improvement pass** — see §0 for the full breakdown. NCA Compliance page rebuilt as a real dashboard (new stacked `NCADomainBarChart`, a `ComplianceGauge` in place of a plain stat tile, a worst-first "Devices needing attention" panel, and a "Reports" card finally linking the 4 CSV/PDF export endpoints that existed in `api.ts` but were never wired into any page); `VerdictsPage.tsx` gained the missing `NOT_APPLICABLE` filter plus conflict/policy-version display for fields that existed in the schema but were invisible in the UI; production-readiness baseline added (`NotFoundPage` + catch-all route, a class `ErrorBoundary` wrapping `<Routes>`, a responsive collapsible sidebar with a hamburger toggle and grouped nav sections); and a consistent toast notification system (`components/ui/toast.tsx` + `lib/useToast.tsx`) replacing several different ad hoc inline success/error paragraphs across `RegisterDeviceForm`, Run Scan, and the device detail page. Verified live via a headless Playwright script against the rebuilt `auditor-web` image and the real dev stack (screenshots of the new dashboard, the mobile sidebar collapse/expand, the 404 page, and a real toast appearing and auto-dismissing after a live device registration) since the Claude-in-Chrome extension was unavailable again this session. 108 frontend tests passing (was 96), `tsc` clean. |

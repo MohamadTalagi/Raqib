@@ -111,11 +111,12 @@ def process_job(job: dict) -> None:
     _patch(job_id, {"status": "running"})
 
     command = spec["build_command"](target)
+    timeout_seconds = spec.get("timeout_seconds", COMMAND_TIMEOUT_SECONDS)
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout_seconds)
         raw_output = (result.stdout or "") + (result.stderr or "")
     except subprocess.TimeoutExpired:
-        _record_failure(job_id, f"command timed out after {COMMAND_TIMEOUT_SECONDS}s")
+        _record_failure(job_id, f"command timed out after {timeout_seconds}s")
         return
     except Exception as exc:  # noqa: BLE001 - report any execution failure back to the job
         _record_failure(job_id, str(exc))
@@ -160,11 +161,12 @@ def process_network_scan(scan: dict) -> None:
 
     target: dict = {}
     command = spec["build_command"](target)
+    timeout_seconds = spec.get("timeout_seconds", COMMAND_TIMEOUT_SECONDS)
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout_seconds)
         raw_output = (result.stdout or "") + (result.stderr or "")
     except subprocess.TimeoutExpired:
-        _patch_network_scan(scan_id, {"status": "failed", "error": f"command timed out after {COMMAND_TIMEOUT_SECONDS}s"})
+        _patch_network_scan(scan_id, {"status": "failed", "error": f"command timed out after {timeout_seconds}s"})
         return
     except Exception as exc:  # noqa: BLE001 - report any execution failure back to the scan
         _patch_network_scan(scan_id, {"status": "failed", "error": str(exc)})

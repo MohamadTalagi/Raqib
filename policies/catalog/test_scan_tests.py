@@ -671,10 +671,36 @@ def test_network_discovery_command_sweeps_the_audit_network_subnet():
     assert command[0] == "nmap"
     assert command[-1] == "172.30.0.0/24"
     # Restricted to the small, known signature-port set - not -p- across a
-    # /24, so the scan reliably finishes inside job_runner's 30s timeout.
+    # /24, so the scan reliably finishes and every open port found is one
+    # the classifier actually knows how to interpret.
     assert "-p" in command
     ports_arg = command[command.index("-p") + 1]
     assert set(ports_arg.split(",")) == {"22", "23", "80", "443", "1883", "8883"}
+
+
+def test_network_discovery_command_is_tuned_gentle_for_resource_constrained_devices():
+    # This is an IoT environment - real devices can have weak network stacks
+    # that struggle under aggressive scanning. -T4 (Aggressive) and --open
+    # were both replaced after live verification surfaced two real issues:
+    # -T4 assumes "a reasonably fast and reliable network" (not a safe
+    # assumption for constrained IoT gear), and --open silently omitted live
+    # hosts with none of the signature ports open (docs/errors/029),
+    # collapsing the "unknown" classification into dead code.
+    command = SCAN_CATALOG["TEST-NET-DISCOVERY"]["build_command"](DISCOVERY_TARGET)
+    assert "-T4" not in command
+    assert "--open" not in command
+    assert "-T3" in command
+    assert "--max-rate" in command
+    assert command[command.index("--max-rate") + 1] == "50"
+    assert "--version-intensity" in command
+    assert command[command.index("--version-intensity") + 1] == "2"
+
+
+def test_network_discovery_has_a_longer_timeout_than_the_default():
+    # The gentler timing trades a little more time for going easier on
+    # constrained devices - it needs real headroom above job_runner.py's
+    # default 30s, not the same budget as a fast single-host test.
+    assert SCAN_CATALOG["TEST-NET-DISCOVERY"]["timeout_seconds"] > 30
 
 
 def _discovery_output(*blocks: str) -> str:

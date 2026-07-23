@@ -114,13 +114,17 @@ export function DevicesPage() {
   function openForm(deviceId?: string) {
     setPrefill(deviceId ? { device_id: deviceId, display_name: "", host: "", services: [] } : null);
     setShowForm(true);
-    setShowDiscovery(false);
   }
 
+  // Deliberately does NOT hide the discovery panel: its scan results live in
+  // its own local state, so closing it here would force a full rescan just
+  // to register a second discovered host. Keeping both open lets the user
+  // register every host they care about from one completed scan, and each
+  // one flips from "Register" to "Already registered" inline as soon as
+  // handleRegistered() below refreshes the device list - no rescan needed.
   function openFormWithPrefill(fromHost: DeviceRegistrationPrefill) {
     setPrefill(fromHost);
     setShowForm(true);
-    setShowDiscovery(false);
   }
 
   function closeForm() {

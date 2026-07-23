@@ -183,11 +183,30 @@ def _network_discovery_command(target: dict) -> list[str]:
     # target is unused: this test sweeps the whole subnet rather than one
     # device's host/port, exactly like the firmware tests ignore host/port
     # and key on device_id alone. Restricted to a fixed, small port list
-    # (rather than -p- across a /24) so the scan finishes reliably inside
-    # job_runner's 30s timeout and every open port found is one this
-    # catalog's classifier actually knows how to interpret.
+    # (rather than -p- across a /24) so the scan finishes reliably and every
+    # open port found is one this catalog's classifier actually knows how to
+    # interpret.
+    #
+    # Tuned deliberately gentle, not for speed: this is an IoT environment,
+    # and many real IoT devices have weak network stacks that can become
+    # slow or unresponsive under aggressive scanning. -T3 (Normal) rather
+    # than -T4 (Aggressive, which nmap's own docs say assumes "a reasonably
+    # fast and reliable network" - not a safe assumption for constrained IoT
+    # gear); --max-rate caps the packet rate so no single burst can flood a
+    # fragile target; --version-intensity 2 sends lighter service-
+    # fingerprinting probes (default is 7) since the classifier only needs
+    # the port number, not a deep version fingerprint. Verified live against
+    # the real lab that this costs no real time here (~25s either way, since
+    # the dominant factor for a /24 sweep is the mostly-silent discovery
+    # phase, not per-host probe aggressiveness) - see docs/errors/029 for
+    # why --open was also dropped (it was silently omitting live hosts with
+    # none of these ports open, e.g. the subnet gateway, making "unknown" an
+    # unreachable classification in practice).
     ports = ",".join(str(p) for p in NETWORK_DISCOVERY_PORTS)
-    return ["nmap", "-sV", "-p", ports, "--open", "-T4", "--max-retries", "1", AUDIT_NETWORK_CIDR]
+    return [
+        "nmap", "-sV", "--version-intensity", "2", "-p", ports,
+        "-T3", "--max-retries", "1", "--max-rate", "50", AUDIT_NETWORK_CIDR,
+    ]
 
 
 def _classify_host(open_ports: set[int]) -> tuple[str, str, str]:
@@ -791,6 +810,14 @@ SCAN_CATALOG = {
         "applicable_service_types": (),
         "build_command": _network_discovery_command,
         "parse_observations": _parse_network_discovery_observations,
+        # A whole-subnet sweep is inherently slower than a single-host test,
+        # and the deliberately gentle timing (see _network_discovery_command)
+        # trades a little more time for going easier on constrained IoT
+        # devices - give it real headroom above job_runner.py's default 30s
+        # rather than risk a false timeout. job_runner.py reads this key via
+        # spec.get("timeout_seconds", COMMAND_TIMEOUT_SECONDS); every other
+        # test omits it and keeps the 30s default.
+        "timeout_seconds": 90,
     },
     "TEST-NET-PORTSCAN": {
         "label": "Nmap service/port scan",

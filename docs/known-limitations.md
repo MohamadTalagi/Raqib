@@ -40,9 +40,27 @@ evidence before treating any single classification as certain. An
 host was ruled out as non-IoT — it always needs manual confirmation.
 Restricted to a small, fixed set of signature ports (22, 23, 80, 443, 1883,
 8883) rather than a full port sweep across the whole /24, so the scan
-finishes reliably inside `job_runner.py`'s 30-second timeout; a host running
-an IoT service on a port outside this set will show as `unknown` rather than
-`iot_device`.
+finishes reliably and every open port found is one the classifier actually
+knows how to interpret; a host running an IoT service on a port outside
+this set will show as `unknown` rather than `iot_device`.
+
+**Deliberately tuned gentle, not fast**, because this is an IoT environment
+and real devices can have weak network stacks: `-T3` (Normal) rather than
+`-T4` (Aggressive, which nmap's own docs say assumes "a reasonably fast and
+reliable network"), `--max-rate 50` to cap the packet rate so no burst can
+flood a fragile target, and `--version-intensity 2` for lighter service-
+fingerprinting probes (default is 7) since the classifier only needs the
+port number, not a deep fingerprint. Verified live that this costs no real
+time in this lab (~25s either way — the dominant factor for a /24 sweep is
+the mostly-silent host-discovery phase, not per-host probe aggressiveness),
+so this test's job-level timeout was still raised to 90s (from the 30s
+default every other test uses) purely for headroom, not because the gentler
+settings made it slower here. `--open` was deliberately **not** used
+(removed after `docs/errors/029` found it silently omitted every live host
+with none of the signature ports open — e.g. the subnet gateway — collapsing
+the `"unknown"` classification into dead code); every scanned port's real
+state is always printed, and the parser ignores anything that isn't
+literally "open."
 
 ## Per-control coverage gaps
 

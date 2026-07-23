@@ -234,6 +234,9 @@ def test_process_network_scan_runs_the_sweep_and_marks_completed(mock_run, mock_
     scan_call_args = mock_run.call_args_list[0].args[0]
     assert scan_call_args[0] == "nmap"
     assert "172.30.0.0/24" in scan_call_args
+    # Uses TEST-NET-DISCOVERY's own longer timeout, not job_runner's default
+    # 30s - the deliberately gentle scan settings need real headroom.
+    assert mock_run.call_args_list[0].kwargs["timeout"] == 90
 
     calls = mock_patch.call_args_list
     assert calls[0].args[0] == "http://auditor-api:8000/network-scans/1"
@@ -241,6 +244,22 @@ def test_process_network_scan_runs_the_sweep_and_marks_completed(mock_run, mock_
     final_call = calls[-1]
     assert final_call.kwargs["json"]["status"] == "completed"
     assert final_call.kwargs["json"]["observations"]["subnet"] == "172.30.0.0/24"
+
+
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_job_uses_the_default_timeout_for_a_test_with_no_override(mock_run, mock_patch):
+    mock_run.side_effect = [
+        _mock_completed(stdout="80/tcp   open  http\n"),
+        _mock_completed(stdout="Nmap version 7.95\n"),
+    ]
+
+    process_job({
+        "id": 20, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN",
+        "host": "device-insecure", "service_type": "http", "port": 80,
+    })
+
+    assert mock_run.call_args_list[0].kwargs["timeout"] == 30
 
 
 @patch("job_runner.requests.patch")
