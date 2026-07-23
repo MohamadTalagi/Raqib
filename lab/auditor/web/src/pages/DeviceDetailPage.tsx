@@ -17,6 +17,7 @@ import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
+import { applicableDomains } from "@/lib/nca";
 import type { Confidence, Severity, VerdictStatus } from "@/lib/types";
 
 const VERDICT_STATUSES: readonly VerdictStatus[] = ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"];
@@ -435,19 +436,23 @@ export function DeviceDetailPage() {
                       <CardTitle>Domain summary</CardTitle>
                     </CardHeader>
                     <CardContent className="pt-2">
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        {Object.entries(ncaDetail.data.domain_summary).map(([domainName, counts]) => (
-                          <div key={domainName} className="rounded-md border border-[var(--color-border)] p-4">
-                            <p className="text-xs font-medium text-[var(--color-text-secondary)]">{domainName}</p>
-                            <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                              <span className="text-[var(--color-pass)]">{counts.pass} pass</span>
-                              <span className="text-[var(--color-medium)]">{counts.partial} partial</span>
-                              <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
-                              <span className="text-[var(--color-text-muted)]">{counts.not_tested} not tested</span>
+                      {applicableDomains(ncaDetail.data.domain_summary).length === 0 ? (
+                        <EmptyState message="No device-scope domains loaded." />
+                      ) : (
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                          {applicableDomains(ncaDetail.data.domain_summary).map(([domainName, counts]) => (
+                            <div key={domainName} className="rounded-md border border-[var(--color-border)] p-4">
+                              <p className="text-xs font-medium text-[var(--color-text-secondary)]">{domainName}</p>
+                              <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                                <span className="text-[var(--color-pass)]">{counts.pass} pass</span>
+                                <span className="text-[var(--color-medium)]">{counts.partial} partial</span>
+                                <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
+                                <span className="text-[var(--color-text-muted)]">{counts.not_tested} not tested</span>
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 

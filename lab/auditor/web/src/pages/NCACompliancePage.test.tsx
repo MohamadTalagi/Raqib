@@ -92,6 +92,28 @@ describe("NCACompliancePage", () => {
     expect(screen.getByText("Third-Party and Cloud Computing Cybersecurity")).toBeInTheDocument();
   });
 
+  it("excludes an organization-scope-only domain with zero device-scope controls of any status", async () => {
+    // Governance and the mobile/supplier/cloud group have no device-scope
+    // guideline at all - a real all-zero entry (not "9 not_tested" like the
+    // shared DOMAINS fixture models), so it must not clutter this per-device
+    // breakdown. A domain with only not_tested controls (Resilience below)
+    // is a genuinely different case and must still show.
+    vi.spyOn(api, "ncaSummary").mockResolvedValue(SUMMARY);
+    vi.spyOn(api, "ncaDomains").mockResolvedValue({
+      "Cybersecurity Governance": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
+      "Cybersecurity Defense": { pass: 10, partial: 2, fail: 4, not_tested: 0 },
+      "Cybersecurity Resilience": { pass: 1, partial: 0, fail: 0, not_tested: 1 },
+      "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
+    });
+    vi.spyOn(api, "ncaDevices").mockResolvedValue(DEVICES);
+    renderPage();
+
+    await screen.findByText("Cybersecurity Defense");
+    expect(screen.queryByText("Cybersecurity Governance")).not.toBeInTheDocument();
+    expect(screen.queryByText("Third-Party and Cloud Computing Cybersecurity")).not.toBeInTheDocument();
+    expect(screen.getByText("Cybersecurity Resilience")).toBeInTheDocument();
+  });
+
   it("lists devices with icon-and-text status badges, never color alone", async () => {
     setup();
     renderPage();

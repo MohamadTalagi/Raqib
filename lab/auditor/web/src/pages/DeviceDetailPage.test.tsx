@@ -322,6 +322,24 @@ describe("DeviceDetailPage", () => {
     expect(await screen.findByLabelText(/firmware archive/i)).toBeInTheDocument();
   });
 
+  it("excludes organization-scope-only domains with zero device-scope controls from the Compliance tab", async () => {
+    // NCA_DETAIL's fixture domain_summary has Governance/Resilience/Third-
+    // Party all at zero across every status - those domains have no
+    // device-scope guideline at all, so they must not appear here, while
+    // Defense (which has real pass/fail counts) must still show.
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    renderPage();
+
+    await screen.findByText("Smart Camera — Insecure");
+    await user.click(screen.getByRole("tab", { name: /NCA Compliance/i }));
+
+    expect(await screen.findByText("Cybersecurity Defense")).toBeInTheDocument();
+    expect(screen.queryByText("Cybersecurity Governance")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cybersecurity Resilience")).not.toBeInTheDocument();
+    expect(screen.queryByText("Third-Party and Cloud Computing Cybersecurity")).not.toBeInTheDocument();
+  });
+
   it("shows the NCA Compliance tab with per-control status, hidden until selected", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "device").mockResolvedValue(DETAIL);

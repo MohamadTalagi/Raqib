@@ -21,6 +21,7 @@ import { ComplianceGauge } from "@/components/charts/ComplianceGauge";
 import { NCADomainBarChart } from "@/components/charts/NCADomainBarChart";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
+import { applicableDomains } from "@/lib/nca";
 import type { NCADeviceComplianceRow, NCAStatus } from "@/lib/types";
 
 const ATTENTION_ORDER: Record<NCAStatus, number> = { fail: 0, partial: 1, not_tested: 2, pass: 3 };
@@ -69,6 +70,17 @@ export function NCACompliancePage() {
     }
     return counts;
   }, [devices.data]);
+
+  // Governance and the mobile/supplier/cloud group are organization-scope
+  // only (see OrganizationalCompliancePage) - a device has no device-scope
+  // guideline in those domains at all, so they show up here as an all-zero
+  // entry rather than a real, if untested, one. Excluded from this
+  // per-device breakdown for that reason; kept on the organizational page,
+  // where those same domains are exactly the ones that DO apply.
+  const deviceApplicableDomains = useMemo(
+    () => (domains.data ? applicableDomains(domains.data) : []),
+    [domains.data],
+  );
 
   const devicesNeedingAttention = useMemo(() => {
     return [...(devices.data ?? [])]
@@ -174,18 +186,18 @@ export function NCACompliancePage() {
               <CardContent className="pt-2">
                 {loading || !domains.data ? (
                   <Skeleton className="h-64" />
-                ) : Object.keys(domains.data).length === 0 ? (
-                  <EmptyState message="No controls loaded." />
+                ) : deviceApplicableDomains.length === 0 ? (
+                  <EmptyState message="No device-scope controls loaded." />
                 ) : (
-                  <NCADomainBarChart domains={domains.data} />
+                  <NCADomainBarChart domains={Object.fromEntries(deviceApplicableDomains)} />
                 )}
               </CardContent>
             </Card>
           </div>
 
-          {!loading && domains.data && Object.keys(domains.data).length > 0 ? (
+          {!loading && deviceApplicableDomains.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {Object.entries(domains.data).map(([domainName, counts]) => (
+              {deviceApplicableDomains.map(([domainName, counts]) => (
                 <div key={domainName} className="rounded-md border border-[var(--color-border)] p-4">
                   <p className="text-xs font-medium text-[var(--color-text-secondary)]">{domainName}</p>
                   <div className="mt-2 flex flex-wrap gap-3 text-xs">
