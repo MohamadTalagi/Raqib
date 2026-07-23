@@ -96,4 +96,23 @@ describe("DevicesPage", () => {
     const deviceIdInput = await screen.findByLabelText(/device id/i);
     expect(deviceIdInput).toHaveValue("device-unregistered-cam");
   });
+
+  it("reveals the network discovery panel, offering it as an alternative to manual registration", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <DevicesPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("device-insecure");
+    expect(screen.queryByText(/discover devices on the network/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /discover devices/i }));
+    expect(screen.getByText(/discover devices on the network/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /scan network/i })).toBeInTheDocument();
+  });
 });

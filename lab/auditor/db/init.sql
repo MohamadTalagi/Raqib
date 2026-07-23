@@ -70,6 +70,24 @@ CREATE TABLE scan_jobs (
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Not tied to any device row on purpose: this is the discovery-first
+-- onboarding path (scan the subnet, then register whichever hosts turn out
+-- to matter), not a per-device test - see TEST-NET-DISCOVERY in
+-- policies/catalog/scan_tests.py for the shared nmap command/parser this
+-- reuses.
+CREATE TABLE network_scans (
+    id               SERIAL PRIMARY KEY,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    tool             TEXT,
+    tool_version     TEXT,
+    command          TEXT,
+    raw_output       TEXT,
+    observations     JSONB,
+    error            TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX idx_assessments_device_id ON assessments(device_id);
 CREATE INDEX idx_assessments_status ON assessments(status);
 CREATE INDEX idx_evidence_device_id ON evidence(device_id);

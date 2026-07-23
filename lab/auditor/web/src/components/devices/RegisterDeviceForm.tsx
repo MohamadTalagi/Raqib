@@ -74,19 +74,43 @@ interface RegisterDeviceFormProps {
    * and must match exactly for that evidence to attach to the new record.
    */
   initialDeviceId?: string;
+  /** Pre-fills the display name — used by the network-discovery "Register"
+   * flow, where a real hostname/IP is already known. */
+  initialDisplayName?: string;
+  /** Pre-fills the host field — same discovery flow, always the discovered
+   * IP (a raw discovered hostname can contain dots/underscores that fail
+   * validate_host's NAME_PATTERN, so the IP is the only safe universal
+   * prefill). */
+  initialHost?: string;
+  /** Pre-fills the services repeater from a discovered host's open ports,
+   * replacing the single default HTTP:80 row entirely when provided. */
+  initialServices?: Array<{ service_type: ServiceType; port: number }>;
 }
 
 const INPUT_CLASS =
   "mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-brand)] focus:outline-none";
 const LABEL_CLASS = "text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase";
 
-export function RegisterDeviceForm({ onRegistered, onCancel, initialDeviceId }: RegisterDeviceFormProps) {
+export function RegisterDeviceForm({
+  onRegistered,
+  onCancel,
+  initialDeviceId,
+  initialDisplayName,
+  initialHost,
+  initialServices,
+}: RegisterDeviceFormProps) {
   const { showToast } = useToast();
   const [fields, setFields] = useState<FormFields>({
     ...EMPTY_FIELDS,
     device_id: initialDeviceId ?? EMPTY_FIELDS.device_id,
+    display_name: initialDisplayName ?? EMPTY_FIELDS.display_name,
+    host: initialHost ?? EMPTY_FIELDS.host,
   });
-  const [services, setServices] = useState<ServiceRow[]>([{ ...EMPTY_SERVICE }]);
+  const [services, setServices] = useState<ServiceRow[]>(
+    initialServices && initialServices.length > 0
+      ? initialServices.map((s) => ({ service_type: s.service_type, port: String(s.port), published_port: "" }))
+      : [{ ...EMPTY_SERVICE }],
+  );
   const [firmwareFile, setFirmwareFile] = useState<File | null>(null);
   const [firmwareWarning, setFirmwareWarning] = useState<string | null>(null);
   // Set only when the device registered successfully but the firmware

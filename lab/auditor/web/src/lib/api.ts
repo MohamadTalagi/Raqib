@@ -9,6 +9,7 @@ import type {
   DeviceDetail,
   DeviceMutationResult,
   EvidenceRecord,
+  NetworkScan,
   NCAAssessment,
   NCAControl,
   NCAControlDetail,
@@ -197,6 +198,11 @@ export const api = {
     deleteRequest(`/devices/${encodeURIComponent(deviceId)}/firmware`),
   controlVerdicts: (controlId: string): Promise<ControlVerdictRollup> =>
     getJson<ControlVerdictRollup>(`/controls/${encodeURIComponent(controlId)}/verdicts`),
+
+  // -- Network discovery (discovery-first device onboarding) --------------
+
+  createNetworkScan: (): Promise<NetworkScan> => postJson<NetworkScan>("/network-scans", {}),
+  getNetworkScan: (id: number): Promise<NetworkScan> => getJson<NetworkScan>(`/network-scans/${id}`),
 
   // Returns a URL rather than fetching: the browser must perform the download
   // itself so the server's Content-Disposition filename is honoured. Fetching

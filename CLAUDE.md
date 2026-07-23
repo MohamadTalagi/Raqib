@@ -12,7 +12,56 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **NCA domain-summary cleanup + a new Network Discovery scan —
+**Phase:** **Discovery-first device onboarding — COMPLETE** (2026-07-23).
+Follow-up to the Network Discovery scan built earlier the same day: the
+owner clarified the actual goal wasn't a scan test to run against an
+already-registered device, but a real replacement for manual device
+registration — "use network discovery to search for devices in its
+environment instead of register them manually." Built as a new, small
+subsystem deliberately decoupled from the existing `scan_jobs`/device
+machinery (which requires a device to already exist before anything can run
+against it): a new `network_scans` table with **no** `device_id` column at
+all, `POST /network-scans` (auditor-api only ever inserts a pending row,
+same "never executes anything itself" boundary as scan_jobs), and a second
+poll loop in `job_runner.py` (`poll_network_scans_once()`/
+`process_network_scan()`) that reuses `TEST-NET-DISCOVERY`'s own
+`build_command`/`parse_observations` pure functions from
+`policies/catalog/scan_tests.py` rather than duplicating the classifier.
+The Devices page gained a "Discover devices" toggle
+(`components/devices/NetworkDiscoveryPanel.tsx`) — click "Scan network,"
+see every live host with its `iot_device`/`uncertain`/`unknown`
+classification and rationale, and click **Register** on any one of them to
+open the existing `RegisterDeviceForm` pre-filled (device id and display
+name guessed from this lab's own `kaust-iot-lab-<name>-<index>` container
+naming convention, host set to the discovered IP, services derived from
+open ports via a small port→service-type map) instead of typing every field
+in from scratch. `RegisterDeviceForm` gained `initialDisplayName`/
+`initialHost`/`initialServices` props alongside the pre-existing
+`initialDeviceId` to support this. No new tool was needed — the already-
+built, already-verified `nmap` invocation and classifier from the earlier
+Network Discovery work were reused as-is.
+
+**Verified for real against the live lab**, not just unit-tested: triggered
+a real scan through the actual browser UI, watched it classify all 6 real
+containers correctly, clicked Register on a real discovered host and
+confirmed the form opened pre-filled with the right device id/host/services,
+and confirmed the "Already registered" state for hosts that already have a
+real `devices` row. **Caught one real bug this way** (`docs/errors/028`):
+the "Already registered" check compared a discovered host's IP against
+registered devices' `host` field, but every one of this lab's seeded devices
+registers with its **container name** as `host`, never an IP — so every
+already-registered device wrongly still showed a "Register" button. Fixed
+by also matching on the container name guessed from the discovered
+hostname (the same guess `RegisterDeviceForm`'s prefill already computes),
+with regression tests for both matching paths.
+
+Backend: 8 new `lab/auditor/api` network-scan tests + 3 new `job_runner`
+tests, all passing (162 total `lab/auditor/api`, was 154). Frontend: 123
+tests passing (was 114; +6 `NetworkDiscoveryPanel` + 1 `RegisterDeviceForm`
+prefill + 1 `DevicesPage` toggle, one further regression added after the
+live-caught bug above), `tsc` clean.
+
+Before that: **NCA domain-summary cleanup + a new Network Discovery scan —
 COMPLETE** (2026-07-23). Two owner requests handled together: (1) the
 per-device NCA domain breakdown (NCA Compliance page + the device detail
 page's Compliance tab) no longer shows Governance or the Third-Party/
@@ -680,6 +729,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-23 | **Discovery-first device onboarding** — see §0 for the full breakdown. A new `network_scans` table (no `device_id` at all - deliberately decoupled from the existing per-device `scan_jobs` machinery) + `POST /network-scans` + a second `job_runner.py` poll loop reusing `TEST-NET-DISCOVERY`'s own command/parser. The Devices page gained a "Discover devices" panel: scan the subnet, see every live host classified, click Register to open the existing form pre-filled (device id/name guessed from this lab's container-naming convention, host = the discovered IP, services derived from open ports) instead of typing every field by hand. One real bug caught live (`docs/errors/028`): "Already registered" matched only by IP, missing every real lab device (which registers with a container name as `host`, not an IP) - fixed to match on either. 8 new `lab/auditor/api` + 3 new `job_runner` backend tests (162 total API tests); 123 frontend tests passing (was 114), `tsc` clean. |
 | 2026-07-23 | **NCA per-device domain-summary cleanup + a new Network Discovery scan** — see §0 for the full breakdown. Governance and the Third-Party/Cloud domain group no longer show in the per-device NCA domain breakdown (a real, general `applicableDomains()` zero-total filter, not a hardcoded name removal, so Resilience stays visible today and would only disappear on its own if it too became genuinely empty). New `TEST-NET-DISCOVERY` sweeps the whole audit-network subnet and classifies each live host as `iot_device`/`uncertain`/`unknown` from its open-port signature, honestly declining to use MAC-vendor/OS fingerprinting inside this Docker bridge network. Verified live against the real lab: correctly classified all 5 real IoT devices/brokers as `iot_device` and `telnet-sim` as only `uncertain` - the "distinguish another appliance on the VLAN" scenario, with real containers. One real regex bug caught by that live run (`docs/errors/026`, a `\s+`-swallows-the-next-port-line bug) and one unrelated Docker-tooling incident (`docs/errors/027`, a stray empty `device_validation.py` that crash-looped the live worker) - both fixed, both logged. 82 `policies/catalog` + 24 `lab/auditor/api` scan-job + 14 `job_runner` backend tests passing; 114 frontend tests passing (was 108), `tsc` clean. |
 | 2026-07-22 | **Dashboard UX/UI improvement pass** — see §0 for the full breakdown. NCA Compliance page rebuilt as a real dashboard (new stacked `NCADomainBarChart`, a `ComplianceGauge` in place of a plain stat tile, a worst-first "Devices needing attention" panel, and a "Reports" card finally linking the 4 CSV/PDF export endpoints that existed in `api.ts` but were never wired into any page); `VerdictsPage.tsx` gained the missing `NOT_APPLICABLE` filter plus conflict/policy-version display for fields that existed in the schema but were invisible in the UI; production-readiness baseline added (`NotFoundPage` + catch-all route, a class `ErrorBoundary` wrapping `<Routes>`, a responsive collapsible sidebar with a hamburger toggle and grouped nav sections); and a consistent toast notification system (`components/ui/toast.tsx` + `lib/useToast.tsx`) replacing several different ad hoc inline success/error paragraphs across `RegisterDeviceForm`, Run Scan, and the device detail page. Verified live via a headless Playwright script against the rebuilt `auditor-web` image and the real dev stack (screenshots of the new dashboard, the mobile sidebar collapse/expand, the 404 page, and a real toast appearing and auto-dismissing after a live device registration) since the Claude-in-Chrome extension was unavailable again this session. 108 frontend tests passing (was 96), `tsc` clean. |
 | 2026-07-22 | **Closed every gap `docs/week1-gap-analysis.md` found in the mentor's Week 1 brief** — see §0 for the full breakdown. A real `assessments` entity (groups a `scan_jobs` batch under one id + aggregate status, cancellable); a failed collector now produces `INCONCLUSIVE` (never silence or FAIL) via a new `record-failure` endpoint; `NOT_APPLICABLE` is a real, reachable verdict status derived from existing service-applicability logic; the previously-dead `"when"` YAML mechanism is real code now; evidence conflict detection (`policies/engine/conflict.py`) implements the brief's own documentation-vs-packet-capture example, preferring automated evidence; new `TEST-NET-REACHABILITY` collector and real TLS certificate expiry checking; `source_type`/`policy_version`/`conflict_detected`/`assessment_id` added to evidence/verdicts (all optional, zero breakage to existing callers); HTML/JSON report formats alongside the existing PDF, all three sharing one extended `build_report_model()`; a new path-traversal-safe `/document-store/{path}` route so raw artefacts are actually openable from the UI. Two real bugs caught live against the actual dev database (not by unit tests alone, both logged as `docs/errors/024`/`025` and now regression-tested): conflict detection crashed on a real list-valued observation field, and every device was wrongly marked NOT_APPLICABLE for SA-IOT-001 because its required test has no automated collector at all. Added a systematic 20-case pass/fail/inconclusive/contradictory-evidence matrix across all 5 real controls, a database-persistence test, and `scripts/smoke_test.sh` (verified live against the real stack). New `docs/known-limitations.md`; `lab/README.md` brought current (was still describing the dashboard as Flutter Web). 149 backend `lab/auditor/api` + 148 `policies/*` + 96 frontend tests passing (only the 2 pre-existing WeasyPrint-native-library gaps on this Windows host still fail, unrelated). |

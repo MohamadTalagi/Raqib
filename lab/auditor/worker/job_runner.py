@@ -143,11 +143,61 @@ def poll_once() -> int:
     return len(jobs)
 
 
+def _patch_network_scan(scan_id: int, fields: dict) -> None:
+    response = requests.patch(f"{API_URL}/network-scans/{scan_id}", json=fields, timeout=10)
+    response.raise_for_status()
+
+
+def process_network_scan(scan: dict) -> None:
+    """Runs the same subnet sweep TEST-NET-DISCOVERY uses (build_command/
+    parse_observations are pure functions of `target`, which this test never
+    reads - see scan_tests.py), but keyed on a network_scans row instead of
+    a scan_jobs row tied to a device. This is the discovery-first onboarding
+    path: scan first, then decide which hosts are worth registering."""
+    scan_id = scan["id"]
+    spec = SCAN_CATALOG["TEST-NET-DISCOVERY"]
+    _patch_network_scan(scan_id, {"status": "running"})
+
+    target: dict = {}
+    command = spec["build_command"](target)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
+        raw_output = (result.stdout or "") + (result.stderr or "")
+    except subprocess.TimeoutExpired:
+        _patch_network_scan(scan_id, {"status": "failed", "error": f"command timed out after {COMMAND_TIMEOUT_SECONDS}s"})
+        return
+    except Exception as exc:  # noqa: BLE001 - report any execution failure back to the scan
+        _patch_network_scan(scan_id, {"status": "failed", "error": str(exc)})
+        return
+
+    observations = spec["parse_observations"](target, raw_output)
+    tool_version = _tool_version(spec["tool_version_command"])
+
+    _patch_network_scan(scan_id, {
+        "status": "completed",
+        "tool": spec["tool"],
+        "tool_version": tool_version,
+        "command": " ".join(command),
+        "raw_output": raw_output,
+        "observations": observations,
+    })
+
+
+def poll_network_scans_once() -> int:
+    response = requests.get(f"{API_URL}/network-scans", params={"status": "pending"}, timeout=10)
+    response.raise_for_status()
+    scans = response.json()
+    for scan in scans:
+        process_network_scan(scan)
+    return len(scans)
+
+
 def main() -> None:
     print(f"job_runner: polling {API_URL} every {POLL_INTERVAL_SECONDS}s", flush=True)
     while True:
         try:
             poll_once()
+            poll_network_scans_once()
         except Exception as exc:  # noqa: BLE001 - never let a poll failure kill the loop
             print(f"job_runner: poll error: {exc}", file=sys.stderr, flush=True)
         time.sleep(POLL_INTERVAL_SECONDS)

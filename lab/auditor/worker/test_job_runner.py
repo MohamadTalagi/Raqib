@@ -1,7 +1,7 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from job_runner import poll_once, process_job
+from job_runner import poll_once, poll_network_scans_once, process_job, process_network_scan
 
 
 def _mock_completed(stdout="", stderr="", returncode=0):
@@ -217,3 +217,55 @@ def test_process_job_runs_a_network_discovery_test_without_a_live_target(mock_ru
     final_call = mock_patch.call_args_list[-1]
     assert final_call.kwargs["json"]["status"] == "awaiting_finding"
     assert final_call.kwargs["json"]["observations"]["subnet"] == "172.30.0.0/24"
+
+
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_network_scan_runs_the_sweep_and_marks_completed(mock_run, mock_patch):
+    # A network_scans row is not tied to any device at all - this is the
+    # discovery-first onboarding path, distinct from a scan_jobs row.
+    mock_run.side_effect = [
+        _mock_completed(stdout="Nmap scan report for device-insecure (172.30.0.6)\nHost is up.\n"),
+        _mock_completed(stdout="nmap version 7.95\n"),
+    ]
+
+    process_network_scan({"id": 1, "status": "pending"})
+
+    scan_call_args = mock_run.call_args_list[0].args[0]
+    assert scan_call_args[0] == "nmap"
+    assert "172.30.0.0/24" in scan_call_args
+
+    calls = mock_patch.call_args_list
+    assert calls[0].args[0] == "http://auditor-api:8000/network-scans/1"
+    assert calls[0].kwargs["json"]["status"] == "running"
+    final_call = calls[-1]
+    assert final_call.kwargs["json"]["status"] == "completed"
+    assert final_call.kwargs["json"]["observations"]["subnet"] == "172.30.0.0/24"
+
+
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_network_scan_marks_failed_on_timeout(mock_run, mock_patch):
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd=["nmap"], timeout=30)
+
+    process_network_scan({"id": 2, "status": "pending"})
+
+    final_call = mock_patch.call_args_list[-1]
+    assert final_call.kwargs["json"]["status"] == "failed"
+    assert "timed out" in final_call.kwargs["json"]["error"]
+
+
+@patch("job_runner.requests.get")
+@patch("job_runner.process_network_scan")
+def test_poll_network_scans_once_processes_every_pending_scan(mock_process_scan, mock_get):
+    response = MagicMock()
+    response.json.return_value = [{"id": 5, "status": "pending"}, {"id": 6, "status": "pending"}]
+    response.raise_for_status.return_value = None
+    mock_get.return_value = response
+
+    count = poll_network_scans_once()
+
+    assert count == 2
+    assert mock_process_scan.call_count == 2
+    mock_get.assert_called_once()
+    assert mock_get.call_args.kwargs["params"] == {"status": "pending"}

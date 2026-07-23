@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, X, CheckCircle2, CircleDashed, ArrowUpRight, HardDrive } from "lucide-react";
+import { Plus, X, CheckCircle2, CircleDashed, ArrowUpRight, HardDrive, RadioTower } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { RegisterDeviceForm } from "@/components/devices/RegisterDeviceForm";
+import { NetworkDiscoveryPanel, type DeviceRegistrationPrefill } from "@/components/devices/NetworkDiscoveryPanel";
 import { serviceIcon } from "@/lib/serviceIcons";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
@@ -104,19 +105,27 @@ export function DevicesPage() {
   const devices = useFetch(api.devices, [refreshKey]);
   const verdicts = useFetch(api.verdicts, []);
   const [showForm, setShowForm] = useState(false);
-  const [prefillDeviceId, setPrefillDeviceId] = useState<string | null>(null);
+  const [showDiscovery, setShowDiscovery] = useState(false);
+  const [prefill, setPrefill] = useState<DeviceRegistrationPrefill | null>(null);
 
   const loading = devices.loading || verdicts.loading;
   const error = devices.error ?? verdicts.error;
 
   function openForm(deviceId?: string) {
-    setPrefillDeviceId(deviceId ?? null);
+    setPrefill(deviceId ? { device_id: deviceId, display_name: "", host: "", services: [] } : null);
     setShowForm(true);
+    setShowDiscovery(false);
+  }
+
+  function openFormWithPrefill(fromHost: DeviceRegistrationPrefill) {
+    setPrefill(fromHost);
+    setShowForm(true);
+    setShowDiscovery(false);
   }
 
   function closeForm() {
     setShowForm(false);
-    setPrefillDeviceId(null);
+    setPrefill(null);
   }
 
   function handleRegistered() {
@@ -126,7 +135,15 @@ export function DevicesPage() {
 
   return (
     <Shell title="Devices" subtitle="Simulated IoT device profiles in the lab">
-      <div className="mb-4 flex items-center justify-end">
+      <div className="mb-4 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setShowDiscovery((v) => !v)}
+          className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)]"
+        >
+          {showDiscovery ? <X className="h-4 w-4" /> : <RadioTower className="h-4 w-4" />}
+          {showDiscovery ? "Hide discovery" : "Discover devices"}
+        </button>
         <button
           type="button"
           onClick={() => (showForm ? closeForm() : openForm())}
@@ -137,12 +154,19 @@ export function DevicesPage() {
         </button>
       </div>
 
+      {showDiscovery && (
+        <NetworkDiscoveryPanel devices={devices.data ?? []} onRegisterHost={openFormWithPrefill} />
+      )}
+
       {showForm && (
         <Card className="mb-6">
           <CardContent className="pt-5">
             <RegisterDeviceForm
-              key={prefillDeviceId ?? "new"}
-              initialDeviceId={prefillDeviceId ?? undefined}
+              key={prefill?.device_id ?? "new"}
+              initialDeviceId={prefill?.device_id}
+              initialDisplayName={prefill?.display_name}
+              initialHost={prefill?.host}
+              initialServices={prefill?.services}
               onRegistered={handleRegistered}
               onCancel={closeForm}
             />

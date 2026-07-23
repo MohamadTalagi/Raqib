@@ -97,6 +97,50 @@ export interface ScanTestSpec {
   applicable_service_types: ServiceType[];
 }
 
+// -- Network discovery (discovery-first device onboarding) -----------------
+
+export type HostClassification = "iot_device" | "uncertain" | "unknown";
+
+export interface DiscoveredHostService {
+  port: number;
+  service: string;
+  version: string | null;
+}
+
+export interface DiscoveredHost {
+  ip: string;
+  hostname: string | null;
+  open_ports: number[];
+  services: DiscoveredHostService[];
+  classification: HostClassification;
+  confidence: "high" | "low";
+  rationale: string;
+}
+
+export interface NetworkScanObservations {
+  subnet: string;
+  hosts: DiscoveredHost[];
+  iot_device_count: number;
+  uncertain_count: number;
+  unknown_count: number;
+  notes: string[];
+}
+
+export type NetworkScanStatus = "pending" | "running" | "completed" | "failed";
+
+export interface NetworkScan {
+  id: number;
+  status: NetworkScanStatus;
+  tool: string | null;
+  tool_version: string | null;
+  command: string | null;
+  raw_output: string | null;
+  observations: NetworkScanObservations | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type ScanJobStatus = "pending" | "running" | "awaiting_finding" | "recorded" | "failed";
 
 export interface ScanJob {

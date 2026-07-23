@@ -593,6 +593,102 @@ def patch_scan_job(job_id: int, payload: dict):
     return _row_to_scan_job(row)
 
 
+NETWORK_SCAN_COLUMNS = (
+    "id, status, tool, tool_version, command, raw_output, observations, error, created_at, updated_at"
+)
+
+
+def _row_to_network_scan(row: tuple) -> dict:
+    (scan_id, status, tool, tool_version, command, raw_output, observations, error, created_at, updated_at) = row
+    return {
+        "id": scan_id, "status": status, "tool": tool, "tool_version": tool_version,
+        "command": command, "raw_output": raw_output, "observations": observations, "error": error,
+        "created_at": created_at.isoformat(), "updated_at": updated_at.isoformat(),
+    }
+
+
+@app.post("/network-scans", status_code=201)
+def create_network_scan():
+    """Kicks off a subnet-wide discovery scan, independent of any registered
+    device - the discovery-first onboarding path (scan the audit-network
+    subnet, then decide which hosts are worth registering) rather than
+    typing every device's host/services in by hand. auditor-api still never
+    executes anything itself: this only inserts a pending row, and
+    auditor-worker's poll_network_scans() (job_runner.py) is the sole
+    executor, reusing TEST-NET-DISCOVERY's own command/parser from
+    policies/catalog/scan_tests.py."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"INSERT INTO network_scans DEFAULT VALUES RETURNING {NETWORK_SCAN_COLUMNS}"
+        ).fetchone()
+        conn.commit()
+    finally:
+        conn.close()
+    return _row_to_network_scan(row)
+
+
+@app.get("/network-scans")
+def list_network_scans(status: str | None = None):
+    conn = get_connection()
+    try:
+        query = f"SELECT {NETWORK_SCAN_COLUMNS} FROM network_scans WHERE 1=1"
+        params: list = []
+        if status is not None:
+            query += " AND status = %s"
+            params.append(status)
+        query += " ORDER BY created_at DESC LIMIT 20"
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+    return [_row_to_network_scan(row) for row in rows]
+
+
+@app.get("/network-scans/{scan_id}")
+def get_network_scan(scan_id: int):
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"SELECT {NETWORK_SCAN_COLUMNS} FROM network_scans WHERE id = %s", (scan_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="network scan not found")
+    return _row_to_network_scan(row)
+
+
+NETWORK_SCAN_PATCHABLE_FIELDS = {"status", "tool", "tool_version", "command", "raw_output", "observations", "error"}
+
+
+@app.patch("/network-scans/{scan_id}")
+def patch_network_scan(scan_id: int, payload: dict):
+    fields = {k: v for k, v in payload.items() if k in NETWORK_SCAN_PATCHABLE_FIELDS}
+    if not fields:
+        raise HTTPException(status_code=422, detail="no valid fields to update")
+
+    set_clauses = []
+    values: list = []
+    for key, value in fields.items():
+        set_clauses.append(f"{key} = %s")
+        values.append(json.dumps(value) if key == "observations" else value)
+    values.append(scan_id)
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"UPDATE network_scans SET {', '.join(set_clauses)}, updated_at = now() "
+            f"WHERE id = %s RETURNING {NETWORK_SCAN_COLUMNS}",
+            values,
+        ).fetchone()
+        conn.commit()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="network scan not found")
+    return _row_to_network_scan(row)
+
+
 def _next_evidence_id(conn, now: datetime) -> str:
     date_str = now.strftime("%Y-%m-%d")
     prefix = f"EV-{date_str}-"

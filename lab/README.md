@@ -66,7 +66,13 @@ Beyond the Day-1/2/3 core, the lab now includes:
 ### Application features (dashboard)
 
 - **Devices** — register/deregister a device and its exposed services, upload/remove a firmware
-  archive.
+  archive. A **Discover devices** panel sweeps the audit-network subnet (`POST /network-scans`,
+  reusing `TEST-NET-DISCOVERY`'s own nmap command/parser but independent of any device row) and
+  lists each live host with its classification, offering a **Register** button per host that
+  pre-fills the registration form (device id/display name/host/services) instead of typing every
+  field in by hand. A host already matching a registered device (by host or device id, not IP
+  alone — this lab's own seeded devices register with a container name, not an IP) shows "Already
+  registered" instead.
 - **Run Scan** — pick a device and one or more whitelisted tests; launching creates a real
   **Assessment** (`POST /assessments`) grouping the batch under one id with an aggregate status
   (`queued` → `running` → `completed`/`partially_completed`/`failed`, or `cancelled`), visible as a
@@ -131,9 +137,10 @@ one needs each numbered migration applied by hand once:
 docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/002-devices-firmware-columns.sql
 docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/003-nca-compliance.sql
 docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/004-assessments-and-evidence-fields.sql
+docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/005-network-scans.sql
 ```
 
-All three are idempotent — safe to re-run.
+All are idempotent — safe to re-run.
 
 ### Verify
 

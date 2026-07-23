@@ -151,6 +151,31 @@ describe("RegisterDeviceForm", () => {
     expect(screen.getByLabelText(/device id/i)).toHaveValue("");
   });
 
+  it("pre-fills display name, host, and services from a network-discovery prefill", () => {
+    render(
+      <ToastProvider>
+        <RegisterDeviceForm
+          onRegistered={() => {}}
+          onCancel={() => {}}
+          initialDeviceId="device-insecure"
+          initialDisplayName="device-insecure"
+          initialHost="172.30.0.6"
+          initialServices={[
+            { service_type: "telnet", port: 23 },
+            { service_type: "http", port: 80 },
+          ]}
+        />
+      </ToastProvider>,
+    );
+
+    expect(screen.getByLabelText(/device id/i)).toHaveValue("device-insecure");
+    expect(screen.getByLabelText(/display name/i)).toHaveValue("device-insecure");
+    expect(screen.getByLabelText(/^host/i)).toHaveValue("172.30.0.6");
+    expect(screen.getAllByLabelText(/service type/i)).toHaveLength(2);
+    expect(screen.getByLabelText("Port 1")).toHaveValue("23");
+    expect(screen.getByLabelText("Port 2")).toHaveValue("80");
+  });
+
   it("can add and remove service rows", async () => {
     render(
       <ToastProvider>
