@@ -66,22 +66,27 @@ Beyond the Day-1/2/3 core, the lab now includes:
 ### Application features (dashboard)
 
 - **Devices** — register/deregister a device and its exposed services, upload/remove a firmware
-  archive. A **Discover devices** panel sweeps the audit-network subnet (`POST /network-scans`,
-  reusing `TEST-NET-DISCOVERY`'s own nmap command/parser but independent of any device row) and
-  lists each live host with its classification, offering a **Register** button per host that
-  pre-fills the registration form (device id/display name/host/services) instead of typing every
-  field in by hand. A host already matching a registered device (by host or device id, not IP
-  alone — this lab's own seeded devices register with a container name, not an IP) shows "Already
-  registered" instead.
+  archive. A standalone **Discover devices** panel (no device selection needed — this is the
+  network-scan entry point) sweeps the audit-network subnet (`POST /network-scans`, reusing
+  `TEST-NET-DISCOVERY`'s own nmap command/parser but independent of any device row) and lists each
+  live host with its classification, offering a **Register** button per host that pre-fills the
+  registration form (device id/display name/host/services) instead of typing every field in by
+  hand. Registering one discovered host doesn't hide the panel or discard its results — the list
+  stays visible so you can register several hosts from one scan, and each one flips to "Already
+  registered" inline once registered. A host already matching a registered device (by host or
+  device id, not IP alone — this lab's own seeded devices register with a container name, not an
+  IP) shows "Already registered" from the start. The scan itself is deliberately tuned gentle
+  (`-T3`, `--max-rate 50`, `--version-intensity 2`) since real IoT devices can have weak network
+  stacks — see `docs/known-limitations.md` for exactly what the classification can and can't tell
+  you.
 - **Run Scan** — pick a device and one or more whitelisted tests; launching creates a real
   **Assessment** (`POST /assessments`) grouping the batch under one id with an aggregate status
   (`queued` → `running` → `completed`/`partially_completed`/`failed`, or `cancelled`), visible as a
   status bar with a Cancel button. Each individual test still goes through its own job card to read
-  the collector's raw output/observations and record a human-typed finding as evidence. A 4th
-  section, **Network Discovery** (`TEST-NET-DISCOVERY`), sweeps the whole audit-network subnet
-  rather than the selected device and classifies every live host as an IoT appliance, uncertain, or
-  unknown from its open-port signature — see `docs/known-limitations.md` for exactly what that
-  classification can and can't tell you.
+  the collector's raw output/observations and record a human-typed finding as evidence. Network
+  discovery is deliberately **not** one of this page's sections — it never needed a device to
+  begin with, so it lives only as the standalone Devices-page panel above, with a pointer link from
+  here to it.
 - **Evidence** / **Verdicts** / **Controls** — browse recorded evidence, computed verdicts (including
   `NOT_APPLICABLE` for controls that genuinely can't apply to a device's registered services, and
   conflict-flagged verdicts when two evidence records disagree), and the 5 `SA-IOT-*` control

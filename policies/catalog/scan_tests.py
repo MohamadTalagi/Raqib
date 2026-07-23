@@ -24,6 +24,16 @@ by the live-device gating in `is_applicable()`. `POST /scan-jobs` and
 service-type resolution entirely and checking the device's uploaded firmware
 in its place. See `lab/auditor/worker/scan_scripts/firmware_check.py`.
 
+TEST-NET-DISCOVERY's "network-discovery" category is deliberately NOT a 4th
+Run Scan section: it never needed a device to run against in the first
+place (it always swept the whole subnet), so gating it behind "select a
+device" was actively wrong, not just an omission. It's still in this
+catalog (job_runner.py's process_network_scan reads it directly by key) and
+still reachable per-device via POST /scan-jobs if something calls that API
+directly, but the only real UI entry point is the standalone "Discover
+devices" panel on the Devices page (POST /network-scans), which needs no
+device selection at all.
+
 TEST-ADMIN-UNAUTH, TEST-MQTT-OPEN and TEST-TLS-CONFIG are not new tests:
 they were run manually per lab/auditor/worker/tests/run_catalog.md and
 already have real evidence (document-store/evidence/EV-2026-07-08-0017,

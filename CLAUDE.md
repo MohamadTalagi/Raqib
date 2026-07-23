@@ -12,7 +12,30 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Discovery panel persistence + a gentler, more accurate scan —
+**Phase:** **Network discovery fully separated from Run Scan — COMPLETE**
+(2026-07-23). Closed the last piece of overlap between the two network-
+discovery entry points built earlier the same day: Run Scan's "4. Network
+Discovery" section still required selecting a device from the dropdown
+before it would even appear, even though the scan itself never used that
+device's host/port at all (it always swept the whole subnet). Removed that
+section entirely from `RunScanPage.tsx` (and the `"network-discovery"`
+special case in `testsInSection`/the "any tests selected" check that
+existed only to support it) — the standalone "Discover devices" panel on
+the Devices page (`POST /network-scans`, no device required at all) is now
+the only real entry point. Added a pointer note under Run Scan's device
+selector linking to it, so the capability doesn't just quietly disappear.
+`TEST-NET-DISCOVERY` itself, its `SCAN_CATALOG` entry, and the backend
+per-device dispatch path (`is_network_discovery_test()` in `job_runner.py`/
+`main.py`) are all untouched — `process_network_scan()` still reads the
+catalog entry directly by key for the standalone flow, and the per-device
+path stays reachable via a direct `POST /scan-jobs` call if anything needs
+it, just no longer surfaced in this page's UI.
+
+1 test removed (asserted the now-deleted section), 2 added (one confirming
+the section is genuinely gone, one confirming the pointer link works) —
+125 frontend tests passing (was 124), `tsc` clean. No backend changes.
+
+Before that: **Discovery panel persistence + a gentler, more accurate scan —
 COMPLETE** (2026-07-23). Two refinements to the discovery-first onboarding
 feature built earlier the same day, both owner-requested: (1) registering
 one discovered host no longer hides the discovery panel or discards its
@@ -776,6 +799,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-23 | **Removed Run Scan's "Network Discovery" section** — see §0 for the full breakdown. It required selecting a device before it would even appear, despite the scan itself never using that device's host/port (it always swept the whole subnet) - a leftover overlap with the standalone "Discover devices" panel on the Devices page, which is now the only real entry point (no device selection needed). Added a pointer link from Run Scan to it. Backend catalog/dispatch untouched. 125 frontend tests passing (was 124), `tsc` clean. |
 | 2026-07-23 | **Discovery panel persistence + a gentler, more accurate scan** — see §0 for the full breakdown. Registering a discovered host no longer hides the discovery panel or discards its scan results, so multiple hosts from one scan can be registered without rescanning; each one flips to "Already registered" inline as soon as the device list refreshes. The scan command itself is now deliberately gentle for an IoT environment (`-T3` instead of `-T4`, `--max-rate 50`, `--version-intensity 2`) with a per-test 90s timeout override (`SCAN_CATALOG`'s new `timeout_seconds` key, read by `job_runner.py`) since the gentler settings trade a little more time for going easier on constrained devices - verified live this costs no real time in this lab. One real, unrelated accuracy bug caught during that same live-tuning pass (`docs/errors/029`): `--open` was silently omitting every live host with no signature port open (the subnet gateway, infra containers), making the `"unknown"` classification unreachable from real output despite being unit-tested - fixed by dropping `--open`, re-verified live that those hosts now correctly appear and classify as `"unknown"`. 4 new backend tests, 1 new frontend test (124 total), `tsc` clean. |
 | 2026-07-23 | **Discovery-first device onboarding** — see §0 for the full breakdown. A new `network_scans` table (no `device_id` at all - deliberately decoupled from the existing per-device `scan_jobs` machinery) + `POST /network-scans` + a second `job_runner.py` poll loop reusing `TEST-NET-DISCOVERY`'s own command/parser. The Devices page gained a "Discover devices" panel: scan the subnet, see every live host classified, click Register to open the existing form pre-filled (device id/name guessed from this lab's container-naming convention, host = the discovered IP, services derived from open ports) instead of typing every field by hand. One real bug caught live (`docs/errors/028`): "Already registered" matched only by IP, missing every real lab device (which registers with a container name as `host`, not an IP) - fixed to match on either. 8 new `lab/auditor/api` + 3 new `job_runner` backend tests (162 total API tests); 123 frontend tests passing (was 114), `tsc` clean. |
 | 2026-07-23 | **NCA per-device domain-summary cleanup + a new Network Discovery scan** — see §0 for the full breakdown. Governance and the Third-Party/Cloud domain group no longer show in the per-device NCA domain breakdown (a real, general `applicableDomains()` zero-total filter, not a hardcoded name removal, so Resilience stays visible today and would only disappear on its own if it too became genuinely empty). New `TEST-NET-DISCOVERY` sweeps the whole audit-network subnet and classifies each live host as `iot_device`/`uncertain`/`unknown` from its open-port signature, honestly declining to use MAC-vendor/OS fingerprinting inside this Docker bridge network. Verified live against the real lab: correctly classified all 5 real IoT devices/brokers as `iot_device` and `telnet-sim` as only `uncertain` - the "distinguish another appliance on the VLAN" scenario, with real containers. One real regex bug caught by that live run (`docs/errors/026`, a `\s+`-swallows-the-next-port-line bug) and one unrelated Docker-tooling incident (`docs/errors/027`, a stray empty `device_validation.py` that crash-looped the live worker) - both fixed, both logged. 82 `policies/catalog` + 24 `lab/auditor/api` scan-job + 14 `job_runner` backend tests passing; 114 frontend tests passing (was 108), `tsc` clean. |
