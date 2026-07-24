@@ -25,6 +25,7 @@ function makeControl(overrides: Partial<NCAControl>): NCAControl {
     assessment_type: "automated",
     required: true,
     severity: "high",
+    blocking: false,
     evidence_requirements: [],
     remediation_guidance: "",
     enabled: true,

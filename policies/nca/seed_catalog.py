@@ -26,7 +26,7 @@ def seed(conn) -> int:
                 id, framework, framework_version, domain_id, domain_name,
                 subdomain_id, subdomain_name, guideline_id,
                 canonical_requirement, implementation_summary, source_page,
-                scope_type, assessment_type, required, severity,
+                scope_type, assessment_type, required, severity, blocking,
                 evidence_requirements, remediation_guidance, enabled
             )
             VALUES (
@@ -34,7 +34,7 @@ def seed(conn) -> int:
                 %(domain_name)s, %(subdomain_id)s, %(subdomain_name)s,
                 %(guideline_id)s, %(canonical_requirement)s,
                 %(implementation_summary)s, %(source_page)s, %(scope_type)s,
-                %(assessment_type)s, %(required)s, %(severity)s,
+                %(assessment_type)s, %(required)s, %(severity)s, %(blocking)s,
                 %(evidence_requirements)s, %(remediation_guidance)s, %(enabled)s
             )
             ON CONFLICT (framework, framework_version, guideline_id) DO UPDATE SET
@@ -47,6 +47,7 @@ def seed(conn) -> int:
                 assessment_type = EXCLUDED.assessment_type,
                 required = EXCLUDED.required,
                 severity = EXCLUDED.severity,
+                blocking = EXCLUDED.blocking,
                 evidence_requirements = EXCLUDED.evidence_requirements,
                 remediation_guidance = EXCLUDED.remediation_guidance,
                 enabled = EXCLUDED.enabled,

@@ -49,6 +49,7 @@ const DETAIL: NCAControlDetail = {
     assessment_type: "automated",
     required: true,
     severity: "high",
+    blocking: true,
     evidence_requirements: [],
     remediation_guidance: "Force a unique password on first boot.",
     enabled: true,

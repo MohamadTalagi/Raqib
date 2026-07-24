@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-23
+> **Last updated:** 2026-07-24
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,83 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **NCA Compliance module made real, not a prototype — COMPLETE**
+**Phase:** **NCA compliance-assessment robustness pass — COMPLETE** (2026-07-24).
+The owner asked (as a senior full-stack/IoT-security/compliance-architect brief) to
+inspect the existing project and add a "robust automated compliance-assessment
+feature" — not a rebuild: an earlier, much larger scope-conflicting prompt asking
+for a full Next.js/Prisma/BullMQ greenfield rebuild was surfaced back to the owner
+via a clarifying question (it contradicted this same file's already-documented
+"deferred, do not start" decision on a production rebuild) and the owner replied
+with this smaller, correctly-scoped one instead. Inspection found the module (see
+the phase below) already had the full data model, a centralized evaluator, and a
+now-real dashboard UI — genuinely missing were the specific mechanics the brief
+named: an explicit Passed/Partially-Passed/Failed **readiness classification** that
+doesn't rely on percentage alone, a **blocking-condition** concept, a real
+**`REVIEW_REQUIRED`** status, and an **auditor-override** workflow with mandatory
+justification. All four added additively — every existing endpoint, UI flow, and
+field keeps working unchanged.
+- **`overall_classification()`** (`policies/nca/evaluator.py`) — Passed (score
+  ≥85%, no critical failure, no blocking condition, no mandatory control
+  `NOT_TESTED`/`REVIEW_REQUIRED`) / Partially Passed (50-84.99%, or a high score
+  offset by a critical failure/untested/review-required mandatory control) /
+  Failed (below 50%, or a blocking control failed, or nothing has ever been
+  assessed) — thresholds configurable, reuses `device_score()`/`has_blocking_failure()`
+  rather than duplicating the math, and sits alongside (never replacing)
+  `device_overall_status()`/`device_score()`, which the existing dashboard keeps
+  using exactly as before. Returned as `readiness` on `GET /nca/devices/{id}` and
+  `/nca/organization`, and `readiness_classification` on each `GET /nca/devices` row.
+- **`blocking`** — a new `compliance_controls` column, authored the same way
+  `severity`/`scope_type` already are (`policies/nca/build_catalog.py`'s
+  `BLOCKING_GUIDELINES` set — real NCA guideline text has no literal technical
+  trigger phrases, confirmed by searching the live catalog before deciding this had
+  to be IoTGuard's own judgment call, not NCA's). Limited to 3 guidelines matching
+  the brief's own worked examples: `2-2-2` (default/hard-coded credentials),
+  `2-4-3` (unencrypted sensitive data), `2-15-2` (unnecessary/insecure exposed
+  services, e.g. Telnet). A failure here forces `readiness` to Failed regardless
+  of score.
+- **`review_required`** — a real sixth assessment status (DB CHECK constraint +
+  evaluator + `_validate_assessment_payload`), distinct from `not_tested`: an
+  assessment *was* recorded but needs a human to look again (e.g. conflicting
+  evidence, mirroring `policies/engine/conflict.py`'s existing precedent). Rolls
+  into the existing PARTIAL bucket for `device_overall_status` but blocks a Passed
+  readiness classification on its own.
+- **`POST /nca/assessments/{id}/override`** — mandatory `justification` +
+  `overridden_by`, optional `original_status` (rejected with 400 if stale — the
+  assessment changed since the auditor loaded it). Never mutates the original row:
+  inserts a new superseding assessment through the same audit-trail mechanism
+  `retest` already uses, so the original result and the override both stay
+  permanently visible in the control's audit trail. New
+  `components/nca/OverrideAssessmentDialog.tsx` + an "Override" button next to
+  "Retest" on `NCAControlDetailPage`.
+- **Migration**: `lab/auditor/db/migrations/006-nca-blocking-and-review-required.sql`
+  (idempotent — `blocking BOOLEAN DEFAULT false` column, `review_required` added to
+  the status CHECK constraint).
+- **Tests**: 21 new `policies/nca/test_evaluator.py` cases (blocking failure
+  detection, all 9 named classification scenarios from the brief — high score +
+  critical failure, blocking condition at high score, all-not-applicable, nothing
+  ever tested, configurable thresholds, etc.) + 15 new `lab/auditor/api/test_nca_routes.py`
+  cases (readiness wiring, `review_required` accepted/rejected, override
+  success/missing-justification/missing-identity/404/stale-original-status) + 5 new
+  frontend `OverrideAssessmentDialog.test.tsx` cases. 82 `policies/nca` + 205
+  `lab/auditor/api` (only the 2 pre-existing WeasyPrint-native-library gaps on this
+  Windows host fail, unrelated) + 158 frontend tests passing (full-suite frontend
+  runs occasionally show unrelated timeout flakiness under this host's parallel
+  test-runner load — confirmed by re-running the same files in isolation and with
+  `--no-file-parallelism`, both 100% green; not a regression from this work).
+- **Not done this pass** (documented rather than silently skipped, since the
+  brief's scope was large): per-scope configurable pass/partial thresholds stored
+  in the DB (currently function parameters with sensible defaults, not yet a
+  per-framework-version DB setting); a dedicated assessment-snapshot table capturing
+  control definitions/weights at assessment time (the append-only
+  `compliance_assessments` + never-mutated `compliance_controls` history already
+  gives every past assessment's control text as of when the guideline itself last
+  changed, but a literal weights/thresholds snapshot column doesn't exist yet);
+  rate limiting and RBAC (this application has no login system anywhere, a
+  pre-existing, explicitly documented limitation this pass didn't change). Full
+  detail in `docs/nca-compliance.md`'s new "Compliance readiness classification"
+  and "Auditor override" sections.
+
+Before that: **NCA Compliance module made real, not a prototype — COMPLETE**
 (2026-07-23). The owner's own words: "make it real, not just prototype...
 if you automate it, go for it." A full audit of the existing module (built
 earlier this project, 6 tables, 81 real guidelines, a centralized evaluator,
@@ -865,6 +941,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-24 | **NCA compliance-assessment robustness pass** — see §0 for the full breakdown. Added a Passed/Partially Passed/Failed readiness classification (`overall_classification()` in `policies/nca/evaluator.py`, additive alongside the existing `device_overall_status`/`device_score`) that explicitly does not rely on percentage alone; a new `compliance_controls.blocking` flag (IoTGuard's own judgment call, authored the same way `severity` already is, limited to 3 guidelines — default credentials, unencrypted sensitive data, unnecessary exposed services) that forces Failed regardless of score; a real sixth `review_required` assessment status distinct from `not_tested`; and `POST /nca/assessments/{id}/override` (mandatory justification + auditor identity, never mutates the original row, same supersede-and-audit-trail mechanism as retest). New migration `006-nca-blocking-and-review-required.sql`. 82 `policies/nca` + 205 `lab/auditor/api` (2 pre-existing WeasyPrint gaps, unrelated) + 158 frontend tests passing. |
 | 2026-07-23 | **Made the NCA Compliance module real** — see §0 for the full breakdown. Every write endpoint (record/retest an assessment, request/approve/reject an exception, recompute from evidence) already existed and was already tested at the API layer, but had zero UI wired to it - the module was a read-only viewer for script-seeded data, and 60+ organization-scope guidelines had no path to ever being assessed through the product at all. Added `RecordAssessmentDialog`/`RequestExceptionDialog` (scope-adaptive: device picker vs. fixed organizational scope), an Exceptions card + Record/Retest actions on `NCAControlDetailPage` and per-control-row links from the device Compliance tab and organizational page, a new full-catalog `NCAControlsPage` (all 81, filterable), and a "Recompute from evidence" button. Zero backend changes - purely frontend. Verified live: recorded a real assessment on a previously-unassessable governance control, retested it, approved a real exception, and confirmed recompute surfaced real not-tested placeholders from real evidence. 152 frontend tests passing (was 125), `tsc` clean. |
 | 2026-07-23 | **Removed Run Scan's "Network Discovery" section** — see §0 for the full breakdown. It required selecting a device before it would even appear, despite the scan itself never using that device's host/port (it always swept the whole subnet) - a leftover overlap with the standalone "Discover devices" panel on the Devices page, which is now the only real entry point (no device selection needed). Added a pointer link from Run Scan to it. Backend catalog/dispatch untouched. 125 frontend tests passing (was 124), `tsc` clean. |
 | 2026-07-23 | **Discovery panel persistence + a gentler, more accurate scan** — see §0 for the full breakdown. Registering a discovered host no longer hides the discovery panel or discards its scan results, so multiple hosts from one scan can be registered without rescanning; each one flips to "Already registered" inline as soon as the device list refreshes. The scan command itself is now deliberately gentle for an IoT environment (`-T3` instead of `-T4`, `--max-rate 50`, `--version-intensity 2`) with a per-test 90s timeout override (`SCAN_CATALOG`'s new `timeout_seconds` key, read by `job_runner.py`) since the gentler settings trade a little more time for going easier on constrained devices - verified live this costs no real time in this lab. One real, unrelated accuracy bug caught during that same live-tuning pass (`docs/errors/029`): `--open` was silently omitting every live host with no signature port open (the subnet gateway, infra containers), making the `"unknown"` classification unreachable from real output despite being unit-tested - fixed by dropping `--open`, re-verified live that those hosts now correctly appear and classify as `"unknown"`. 4 new backend tests, 1 new frontend test (124 total), `tsc` clean. |

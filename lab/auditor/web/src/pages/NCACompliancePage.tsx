@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { StatTile } from "@/components/ui/stat-tile";
-import { NCAStatusBadge } from "@/components/ui/severity-badge";
+import { NCAReadinessBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
 import { Tabs } from "@/components/ui/tabs";
 import { ComplianceGauge } from "@/components/charts/ComplianceGauge";
 import { NCADomainBarChart } from "@/components/charts/NCADomainBarChart";
@@ -27,7 +27,10 @@ import { applicableDomains } from "@/lib/nca";
 import { useToast } from "@/lib/useToast";
 import type { NCADeviceComplianceRow, NCAStatus } from "@/lib/types";
 
-const ATTENTION_ORDER: Record<NCAStatus, number> = { fail: 0, partial: 1, not_tested: 2, pass: 3 };
+// review_required never actually appears as an overall_status (device_overall_status folds it
+// into "partial" - see policies/nca/evaluator.py) but NCAStatus is shared with per-control
+// assessment.status, so this Record must still cover it for TS exhaustiveness.
+const ATTENTION_ORDER: Record<NCAStatus, number> = { fail: 0, partial: 1, not_tested: 2, review_required: 2, pass: 3 };
 
 type StatusFilter = NCAStatus | "all";
 
@@ -88,7 +91,7 @@ export function NCACompliancePage() {
   }, [devices.data, statusFilter, tierFilter, vendorFilter]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<NCAStatus, number> = { pass: 0, partial: 0, fail: 0, not_tested: 0 };
+    const counts: Record<NCAStatus, number> = { pass: 0, partial: 0, fail: 0, not_tested: 0, review_required: 0 };
     for (const row of devices.data ?? []) {
       counts[row.overall_status] += 1;
     }
@@ -249,6 +252,7 @@ export function NCACompliancePage() {
                     <span className="text-[var(--color-medium)]">{counts.partial} partial</span>
                     <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
                     <span className="text-[var(--color-text-muted)]">{counts.not_tested} not tested</span>
+                    <span className="text-[var(--color-brand)]">{counts.review_required} review</span>
                   </div>
                 </div>
               ))}
@@ -397,6 +401,7 @@ export function NCACompliancePage() {
                         <th className="py-2 pr-4">Manufacturer</th>
                         <th className="py-2 pr-4">Status</th>
                         <th className="py-2 pr-4">Score</th>
+                        <th className="py-2 pr-4">Readiness</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--color-border)]">
@@ -421,6 +426,9 @@ export function NCACompliancePage() {
                           </td>
                           <td className="font-mono-tabular py-2.5 pr-4 text-[var(--color-text-secondary)]">
                             {row.score === null ? "—" : `${row.score}%`}
+                          </td>
+                          <td className="py-2.5 pr-4">
+                            <NCAReadinessBadge classification={row.readiness_classification} />
                           </td>
                         </tr>
                       ))}

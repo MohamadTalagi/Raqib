@@ -35,9 +35,15 @@ from policies.nca.compliance_text import (
     DISCLAIMER,
     METHODOLOGY_TEXT,
     PRODUCT_LABEL,
+    READINESS_DEFINITIONS,
     STATUS_DEFINITIONS,
 )
-from policies.nca.evaluator import device_overall_status, device_score, domain_summary
+from policies.nca.evaluator import (
+    device_overall_status,
+    device_score,
+    domain_summary,
+    overall_classification,
+)
 from upload_utils import read_capped
 
 router = APIRouter(prefix="/nca", tags=["nca"])
@@ -48,7 +54,7 @@ DEFAULT_ORG_SCOPE_ID = "default"  # single fixed organizational scope - see docs
 CONTROL_COLUMNS = (
     "id, framework, framework_version, domain_id, domain_name, subdomain_id, "
     "subdomain_name, guideline_id, canonical_requirement, implementation_summary, "
-    "source_page, scope_type, assessment_type, required, severity, "
+    "source_page, scope_type, assessment_type, required, severity, blocking, "
     "evidence_requirements, remediation_guidance, enabled"
 )
 
@@ -81,7 +87,7 @@ def _document_store_dir() -> Path:
 def _row_to_control(row) -> dict:
     (id_, framework, framework_version, domain_id, domain_name, subdomain_id,
      subdomain_name, guideline_id, canonical_requirement, implementation_summary,
-     source_page, scope_type, assessment_type, required, severity,
+     source_page, scope_type, assessment_type, required, severity, blocking,
      evidence_requirements, remediation_guidance, enabled) = row
     return {
         "id": id_, "framework": framework, "framework_version": framework_version,
@@ -90,7 +96,7 @@ def _row_to_control(row) -> dict:
         "guideline_id": guideline_id, "canonical_requirement": canonical_requirement,
         "implementation_summary": implementation_summary, "source_page": source_page,
         "scope_type": scope_type, "assessment_type": assessment_type,
-        "required": required, "severity": severity,
+        "required": required, "severity": severity, "blocking": blocking,
         "evidence_requirements": evidence_requirements,
         "remediation_guidance": remediation_guidance, "enabled": enabled,
     }
@@ -197,7 +203,7 @@ def _evaluator_rows_for_scope(conn, *, device_id: str | None = None, organizatio
 
     rows = conn.execute(
         f"""
-        SELECT c.id, c.domain_id, c.required, a.id, a.status, a.applicability
+        SELECT c.id, c.domain_id, c.required, c.severity, c.blocking, a.id, a.status, a.applicability
         FROM compliance_controls c
         LEFT JOIN LATERAL (
             SELECT id, status, applicability
@@ -211,7 +217,7 @@ def _evaluator_rows_for_scope(conn, *, device_id: str | None = None, organizatio
         (scope_value, list(scope_types)),
     ).fetchall()
 
-    assessment_ids = [r[3] for r in rows if r[3] is not None]
+    assessment_ids = [r[5] for r in rows if r[5] is not None]
     expired_ids = _expired_assessment_ids(conn, assessment_ids)
     exception_control_ids = _active_exception_control_ids(
         conn, device_id=device_id, organizational_scope_id=organizational_scope_id
@@ -222,12 +228,14 @@ def _evaluator_rows_for_scope(conn, *, device_id: str | None = None, organizatio
             "control_id": control_id,
             "domain_id": domain_id,
             "required": required,
+            "severity": severity,
+            "blocking": blocking,
             "status": status or "not_tested",
             "applicability": applicability or "applicable",
             "evidence_expired": assessment_id in expired_ids,
             "exception_active": control_id in exception_control_ids,
         }
-        for control_id, domain_id, required, assessment_id, status, applicability in rows
+        for control_id, domain_id, required, severity, blocking, assessment_id, status, applicability in rows
     ]
 
 
@@ -266,6 +274,8 @@ def get_nca_summary():
         "overall_pass_percentage": overall_percentage,
         "total_controls": total_controls,
         "last_assessment_at": last_assessment.isoformat() if last_assessment else None,
+        "status_definitions": STATUS_DEFINITIONS,
+        "readiness_definitions": READINESS_DEFINITIONS,
     }
 
 
@@ -392,6 +402,7 @@ def list_nca_devices(status: str | None = None):
                     "overall_status": overall,
                     "score": device_score(rows),
                     "domain_summary": domain_summary(rows),
+                    "readiness_classification": overall_classification(rows)["classification"],
                 }
             )
     finally:
@@ -446,6 +457,7 @@ def get_nca_device_detail(device_id: str):
         "overall_status": device_overall_status(evaluator_rows),
         "score": device_score(evaluator_rows),
         "domain_summary": domain_summary(evaluator_rows),
+        "readiness": overall_classification(evaluator_rows),
         "controls": [
             {"control": control, "assessment": latest_by_control.get(control["id"])}
             for control in controls
@@ -482,8 +494,10 @@ def _validate_assessment_payload(payload: dict) -> dict:
         )
 
     status = payload.get("status")
-    if status not in ("pass", "partial", "fail", "not_tested"):
-        raise ValidationError("status", "status must be one of pass, partial, fail, not_tested")
+    if status not in ("pass", "partial", "fail", "not_tested", "review_required"):
+        raise ValidationError(
+            "status", "status must be one of pass, partial, fail, not_tested, review_required"
+        )
 
     severity = payload.get("severity")
     if severity not in ("low", "medium", "high", "critical"):
@@ -686,6 +700,72 @@ def retest_assessment(assessment_id: str, payload: dict):
         data["retest_status"] = "passed" if data["status"] == "pass" else "failed"
         data["retested_at"] = datetime.now(timezone.utc)
         return _insert_assessment(conn, data, event_type="assessment_retested", reason=payload.get("reason", "retest"))
+    finally:
+        conn.close()
+
+
+@router.post("/assessments/{assessment_id}/override", status_code=201)
+def override_assessment(assessment_id: str, payload: dict):
+    """Lets an authorized auditor override a control's automated or
+    previously-recorded result. Never overwrites history: this inserts a new
+    assessment row (the same supersede-and-audit-trail mechanism
+    _insert_assessment already uses for retest) with a mandatory written
+    justification and reviewer identity, both also carried into the
+    compliance_audit_events.reason field so the original automated/manual
+    result and the override are both permanently visible in the audit trail
+    - never a silent overwrite."""
+    justification = payload.get("justification")
+    if not justification or not isinstance(justification, str) or not justification.strip():
+        raise ValidationError("justification", "justification is required to override an assessment result")
+    overridden_by = payload.get("overridden_by")
+    if not overridden_by or not isinstance(overridden_by, str) or not overridden_by.strip():
+        raise ValidationError("overridden_by", "overridden_by (auditor identity) is required")
+    new_status = payload.get("status")
+    if new_status not in ("pass", "partial", "fail", "not_tested", "review_required"):
+        raise ValidationError(
+            "status", "status must be one of pass, partial, fail, not_tested, review_required"
+        )
+
+    conn = get_connection()
+    try:
+        prior_row = conn.execute(
+            f"SELECT {ASSESSMENT_COLUMNS} FROM compliance_assessments WHERE id = %s", (assessment_id,)
+        ).fetchone()
+        if prior_row is None:
+            raise HTTPException(status_code=404, detail="assessment not found")
+        prior = _row_to_assessment(prior_row)
+
+        original_status = payload.get("original_status")
+        if original_status is not None and original_status != prior["status"]:
+            raise ValidationError(
+                "original_status",
+                f"original_status ({original_status}) no longer matches this assessment's current "
+                f"status ({prior['status']}) - it may have changed since you loaded it; reload and retry",
+            )
+
+        merged = {
+            "control_id": prior["control_id"],
+            "device_id": prior["device_id"],
+            "organizational_scope_id": prior["organizational_scope_id"],
+            "applicability": prior["applicability"],
+            "applicability_reason": prior["applicability_reason"],
+            "severity": prior["severity"],
+            "test_method": prior["test_method"],
+            "finding": prior["finding"],
+            "test_identifier": prior["test_identifier"],
+            "evidence_ids": prior["evidence_ids"],
+            "status": new_status,
+            "remediation": payload.get("remediation", prior["remediation"]),
+            "assessed_by": overridden_by,
+        }
+        data = _validate_assessment_payload(merged)
+        reason = f"Auditor override by {overridden_by.strip()}: {justification.strip()}"
+        new_assessment = _insert_assessment(conn, data, event_type="assessment_overridden", reason=reason)
+        return {
+            **new_assessment,
+            "original_status": prior["status"],
+            "override_justification": justification.strip(),
+        }
     finally:
         conn.close()
 
@@ -999,6 +1079,7 @@ def get_organization_compliance():
         "overall_status": device_overall_status(evaluator_rows),
         "score": device_score(evaluator_rows),
         "domain_summary": domain_summary(evaluator_rows),
+        "readiness": overall_classification(evaluator_rows),
         "controls": [
             {"control": control, "assessment": latest_by_control.get(control["id"])}
             for control in controls

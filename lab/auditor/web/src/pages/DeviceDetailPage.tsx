@@ -8,6 +8,7 @@ import { ErrorState, EmptyState } from "@/components/ui/state";
 import {
   ComplianceBadge,
   ConfidenceLabel,
+  NCAReadinessBadge,
   NCAStatusBadge,
   SeverityBadge,
   StatusBadge,
@@ -433,6 +434,31 @@ export function DeviceDetailPage() {
 
                   <Card>
                     <CardHeader>
+                      <CardTitle>Compliance readiness</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 pt-2">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <NCAReadinessBadge classification={ncaDetail.data.readiness.classification} />
+                        <span className="font-mono-tabular text-xs text-[var(--color-text-muted)]">
+                          pass ≥{ncaDetail.data.readiness.pass_threshold}% &middot; fail &lt;
+                          {ncaDetail.data.readiness.partial_threshold}%
+                        </span>
+                      </div>
+                      <ul className="space-y-1 text-xs text-[var(--color-text-secondary)]">
+                        {ncaDetail.data.readiness.reasons.map((reason, i) => (
+                          <li key={i}>{reason}</li>
+                        ))}
+                      </ul>
+                      {ncaDetail.data.readiness.blocking_control_ids.length > 0 && (
+                        <p className="text-xs text-[var(--color-critical)]">
+                          Blocking control(s): {ncaDetail.data.readiness.blocking_control_ids.join(", ")}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
                       <CardTitle>Domain summary</CardTitle>
                     </CardHeader>
                     <CardContent className="pt-2">
@@ -448,6 +474,7 @@ export function DeviceDetailPage() {
                                 <span className="text-[var(--color-medium)]">{counts.partial} partial</span>
                                 <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
                                 <span className="text-[var(--color-text-muted)]">{counts.not_tested} not tested</span>
+                                <span className="text-[var(--color-brand)]">{counts.review_required} review</span>
                               </div>
                             </div>
                           ))}

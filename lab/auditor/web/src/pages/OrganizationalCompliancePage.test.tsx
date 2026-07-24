@@ -12,10 +12,21 @@ const ORG: NCAOrganizationalCompliance = {
   overall_status: "partial",
   score: 40,
   domain_summary: {
-    "Cybersecurity Governance": { pass: 2, partial: 1, fail: 0, not_tested: 6 },
-    "Cybersecurity Defense": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
-    "Cybersecurity Resilience": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
-    "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 11 },
+    "Cybersecurity Governance": { pass: 2, partial: 1, fail: 0, not_tested: 6, review_required: 0 },
+    "Cybersecurity Defense": { pass: 0, partial: 0, fail: 0, not_tested: 0, review_required: 0 },
+    "Cybersecurity Resilience": { pass: 0, partial: 0, fail: 0, not_tested: 0, review_required: 0 },
+    "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 11, review_required: 0 },
+  },
+  readiness: {
+    classification: "failed",
+    score: 40,
+    reasons: ["Score 40% is below the failing threshold of 50%."],
+    blocking_control_ids: [],
+    critical_failure_control_ids: [],
+    not_tested_control_ids: [],
+    review_required_control_ids: [],
+    pass_threshold: 85,
+    partial_threshold: 50,
   },
   controls: [
     {
@@ -35,6 +46,7 @@ const ORG: NCAOrganizationalCompliance = {
         assessment_type: "manual",
         required: true,
         severity: "medium",
+        blocking: false,
         evidence_requirements: [],
         remediation_guidance: "",
         enabled: true,

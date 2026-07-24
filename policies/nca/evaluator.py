@@ -13,19 +13,47 @@ NULL) - see nca_routes.py's query layer for how rows are assembled:
         "control_id": str,
         "domain_id": str,               # "1".."4"
         "required": bool,
-        "status": "pass"|"partial"|"fail"|"not_tested",
+        "status": "pass"|"partial"|"fail"|"not_tested"|"review_required",
         "applicability": "applicable"|"not_applicable",
         "evidence_expired": bool,       # linked evidence's retention_expires_at is in the past
         "exception_active": bool,       # an APPROVED, unexpired exception exists for this (control, scope)
+        "severity": "low"|"medium"|"high"|"critical",  # the CONTROL's severity, only used by overall_classification
+        "blocking": bool,               # the CONTROL's blocking flag, only used by overall_classification/has_blocking_failure
     }
+
+REVIEW_REQUIRED is distinct from NOT_TESTED: it means an assessment WAS
+recorded but something about it (most commonly conflicting evidence, per
+policies/engine/conflict.py's SA-IOT-* precedent) means it needs a human to
+look at it again before it can count as a real pass or fail. It rolls up
+into device_overall_status's existing PARTIAL bucket (a device with a
+review-required control isn't "not yet assessed", it has a real, if
+unresolved, result) but is tracked separately by overall_classification
+below, since the brief requires it to visibly block a "Passed" verdict on
+its own, distinct from a plain NOT_TESTED gap.
 """
 
-from typing import Literal
+from typing import Literal, TypedDict
 
-Status = Literal["pass", "partial", "fail", "not_tested"]
+Status = Literal["pass", "partial", "fail", "not_tested", "review_required"]
 DeviceOverallStatus = Literal["pass", "partial", "fail", "not_tested"]
+Classification = Literal["passed", "partially_passed", "failed"]
 
-STATUSES: tuple[Status, ...] = ("pass", "partial", "fail", "not_tested")
+STATUSES: tuple[Status, ...] = ("pass", "partial", "fail", "not_tested", "review_required")
+
+DEFAULT_PASS_THRESHOLD = 85
+DEFAULT_PARTIAL_THRESHOLD = 50
+
+
+class OverallClassification(TypedDict):
+    classification: Classification
+    score: int | None
+    reasons: list[str]
+    blocking_control_ids: list[str]
+    critical_failure_control_ids: list[str]
+    not_tested_control_ids: list[str]
+    review_required_control_ids: list[str]
+    pass_threshold: int
+    partial_threshold: int
 
 # The 4 UI-facing domain groups the brief names, keyed by the standard's own
 # top-level domain_id.
@@ -101,7 +129,7 @@ def device_overall_status(rows: list[dict]) -> DeviceOverallStatus:
         return "not_tested"
     if any(s == "fail" for s in statuses):
         return "fail"
-    if any(s in ("partial", "not_tested") for s in statuses):
+    if any(s in ("partial", "not_tested", "review_required") for s in statuses):
         return "partial"
     return "pass"
 
@@ -140,3 +168,118 @@ def domain_summary(rows: list[dict]) -> dict[str, dict[str, int]]:
         buckets.setdefault(domain_name, {status: 0 for status in STATUSES})
         buckets[domain_name][effective_status(row)] += 1
     return buckets
+
+
+def has_blocking_failure(rows: list[dict]) -> list[dict]:
+    """Applicable+required rows whose current effective status is FAIL and
+    whose control is flagged `blocking=True` (see build_catalog.py's
+    BLOCKING_GUIDELINES: default/hard-coded credentials, unencrypted
+    sensitive data, unnecessary/insecure exposed services) - severe enough
+    that a good score elsewhere must not offset them. Returns the offending
+    rows (empty list = no blocking failure) rather than a bare bool so a
+    caller can report *which* control(s) triggered it."""
+    return [
+        r for r in _applicable_required(rows)
+        if r.get("blocking") and effective_status(r) == "fail"
+    ]
+
+
+def overall_classification(
+    rows: list[dict],
+    *,
+    pass_threshold: int = DEFAULT_PASS_THRESHOLD,
+    partial_threshold: int = DEFAULT_PARTIAL_THRESHOLD,
+) -> OverallClassification:
+    """The Passed / Partially Passed / Failed compliance-readiness
+    classification: additive alongside (never replacing) device_overall_status
+    and device_score above, which the existing dashboard keeps using
+    unchanged. Exact rules, thresholds configurable:
+
+      - Failed: a blocking-flagged control failed, OR no applicable required
+        control has ever produced a pass/partial/fail/review_required result,
+        OR score < partial_threshold (50%).
+      - Partially Passed: score >= partial_threshold but < pass_threshold
+        (50-84.99%); OR score >= pass_threshold but a critical-severity
+        control failed; OR a mandatory control is still NOT_TESTED; OR a
+        mandatory control is REVIEW_REQUIRED.
+      - Passed: score >= pass_threshold (85%), no critical-severity failure,
+        no blocking condition, no mandatory control NOT_TESTED or
+        REVIEW_REQUIRED.
+
+    Deliberately does not rely on the percentage alone - a blocking condition
+    or a critical failure overrides a high score, per the brief's own
+    "Do not rely only on the percentage" requirement.
+    """
+    applicable_required = _applicable_required(rows)
+    blocking_rows = has_blocking_failure(rows)
+
+    if not applicable_required:
+        return {
+            "classification": "failed",
+            "score": None,
+            "reasons": [
+                "No applicable required controls exist for this scope - "
+                "readiness cannot be demonstrated without at least one assessed control."
+            ],
+            "blocking_control_ids": [],
+            "critical_failure_control_ids": [],
+            "not_tested_control_ids": [],
+            "review_required_control_ids": [],
+            "pass_threshold": pass_threshold,
+            "partial_threshold": partial_threshold,
+        }
+
+    score = device_score(rows)
+    critical_failure_rows = [
+        r for r in applicable_required
+        if effective_status(r) == "fail" and r.get("severity") == "critical"
+    ]
+    not_tested_rows = [r for r in applicable_required if effective_status(r) == "not_tested"]
+    review_required_rows = [r for r in applicable_required if effective_status(r) == "review_required"]
+
+    reasons: list[str] = []
+    if blocking_rows:
+        classification: Classification = "failed"
+        reasons.append(
+            f"{len(blocking_rows)} control(s) flagged as a blocking risk failed: "
+            + ", ".join(r["control_id"] for r in blocking_rows)
+        )
+    elif score is None:
+        classification = "failed"
+        reasons.append("No applicable required control has produced a pass/partial/fail result yet.")
+    elif score < partial_threshold:
+        classification = "failed"
+        reasons.append(f"Score {score}% is below the failing threshold of {partial_threshold}%.")
+    elif critical_failure_rows:
+        classification = "partially_passed"
+        reasons.append(
+            f"{len(critical_failure_rows)} critical-severity control(s) failed: "
+            + ", ".join(r["control_id"] for r in critical_failure_rows)
+        )
+    elif not_tested_rows:
+        classification = "partially_passed"
+        reasons.append(f"{len(not_tested_rows)} mandatory control(s) have not been tested.")
+    elif review_required_rows:
+        classification = "partially_passed"
+        reasons.append(f"{len(review_required_rows)} mandatory control(s) require review.")
+    elif score < pass_threshold:
+        classification = "partially_passed"
+        reasons.append(f"Score {score}% is below the passing threshold of {pass_threshold}%.")
+    else:
+        classification = "passed"
+        reasons.append(
+            f"Score {score}% meets the passing threshold with no critical failures, "
+            "blocking conditions, or outstanding mandatory items."
+        )
+
+    return {
+        "classification": classification,
+        "score": score,
+        "reasons": reasons,
+        "blocking_control_ids": [r["control_id"] for r in blocking_rows],
+        "critical_failure_control_ids": [r["control_id"] for r in critical_failure_rows],
+        "not_tested_control_ids": [r["control_id"] for r in not_tested_rows],
+        "review_required_control_ids": [r["control_id"] for r in review_required_rows],
+        "pass_threshold": pass_threshold,
+        "partial_threshold": partial_threshold,
+    }

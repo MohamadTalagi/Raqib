@@ -98,7 +98,13 @@ Beyond the Day-1/2/3 core, the lab now includes:
   device- or organization-scope automatically) and **Request/Approve/Reject exceptions**, and
   the main NCA Compliance page has a **Recompute from evidence** button that surfaces automated
   scan findings relevant to a control as a not-tested placeholder for a human to review — this is
-  a real, usable workflow now, not just seeded demo data viewed read-only. See `docs/nca-compliance.md`.
+  a real, usable workflow now, not just seeded demo data viewed read-only. A device/organization
+  also gets a **Passed / Partially Passed / Failed readiness classification** (never from
+  percentage alone — a blocking-flagged control failing, a critical-severity failure, or a
+  mandatory control left `not_tested`/`review_required` all override a high score), and any
+  recorded result can be **overridden** by an auditor with a mandatory written justification
+  (never edits the original — it's superseded, same as a retest, so both stay in the audit trail).
+  See `docs/nca-compliance.md`.
 - **Device reports** — `GET /devices/{id}/report.pdf` (WeasyPrint), `.html`, and `.json` — same
   underlying `build_report_model()`, covering device profile, scope, methodology, control results
   (with policy version and conflict flags), controls not yet assessed, evidence provenance, and a
@@ -148,6 +154,7 @@ docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab
 docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/003-nca-compliance.sql
 docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/004-assessments-and-evidence-fields.sql
 docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/005-network-scans.sql
+docker exec -i kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor < lab/auditor/db/migrations/006-nca-blocking-and-review-required.sql
 ```
 
 All are idempotent — safe to re-run.

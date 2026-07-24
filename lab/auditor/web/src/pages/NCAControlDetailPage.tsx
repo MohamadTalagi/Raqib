@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowUpRight, Plus, RefreshCw, ShieldOff } from "lucide-react";
+import { ArrowUpRight, Ban, Plus, RefreshCw, ShieldOff, Stamp } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,6 +8,7 @@ import { ErrorState, EmptyState } from "@/components/ui/state";
 import { SeverityBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
 import { RecordAssessmentDialog } from "@/components/nca/RecordAssessmentDialog";
 import { RequestExceptionDialog } from "@/components/nca/RequestExceptionDialog";
+import { OverrideAssessmentDialog } from "@/components/nca/OverrideAssessmentDialog";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
@@ -38,6 +39,7 @@ export function NCAControlDetailPage() {
     open: boolean;
     existing: NCAAssessment | null;
   }>({ open: false, existing: null });
+  const [overrideAssessment, setOverrideAssessment] = useState<NCAAssessment | null>(null);
   const [exceptionDialogOpen, setExceptionDialogOpen] = useState(false);
   const [reviewerName, setReviewerName] = useState("");
   const [exceptionActionError, setExceptionActionError] = useState<string | null>(null);
@@ -111,6 +113,15 @@ export function NCAControlDetailPage() {
               {!control.required && (
                 <span className="rounded-md bg-[var(--color-surface-hover)] px-2 py-0.5 font-mono text-xs text-[var(--color-text-muted)]">
                   optional
+                </span>
+              )}
+              {control.blocking && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] px-2 py-0.5 font-mono text-xs text-[var(--color-critical)]"
+                  title="A failure of this control alone forces the device's overall readiness classification to Failed, regardless of score."
+                >
+                  <Ban className="h-3 w-3" />
+                  blocking condition
                 </span>
               )}
               <div className="ml-auto flex gap-2">
@@ -192,14 +203,24 @@ export function NCAControlDetailPage() {
                         superseded
                       </span>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => setAssessmentDialog({ open: true, existing: assessment })}
-                        className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
-                      >
-                        <RefreshCw className="h-3 w-3" />
-                        Retest
-                      </button>
+                      <span className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAssessmentDialog({ open: true, existing: assessment })}
+                          className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Retest
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOverrideAssessment(assessment)}
+                          className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+                        >
+                          <Stamp className="h-3 w-3" />
+                          Override
+                        </button>
+                      </span>
                     )}
                   </li>
                 ))}
@@ -329,6 +350,19 @@ export function NCAControlDetailPage() {
           refresh();
         }}
       />
+
+      {overrideAssessment && (
+        <OverrideAssessmentDialog
+          open={Boolean(overrideAssessment)}
+          assessment={overrideAssessment}
+          onCancel={() => setOverrideAssessment(null)}
+          onSaved={(saved) => {
+            setOverrideAssessment(null);
+            showToast(`Assessment overridden to ${saved.status}.`, "success");
+            refresh();
+          }}
+        />
+      )}
     </Shell>
   );
 }

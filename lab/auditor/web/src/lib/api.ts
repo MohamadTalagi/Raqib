@@ -5,6 +5,7 @@ import type {
   CreateAssessmentResult,
   CreateNCAAssessmentPayload,
   CreateNCAExceptionPayload,
+  OverrideNCAAssessmentPayload,
   Device,
   DeviceDetail,
   DeviceMutationResult,
@@ -248,6 +249,11 @@ export const api = {
     payload: Partial<CreateNCAAssessmentPayload>,
   ): Promise<NCAAssessment> =>
     postJson<NCAAssessment>(`/nca/assessments/${encodeURIComponent(assessmentId)}/retest`, payload),
+  overrideNcaAssessment: (
+    assessmentId: string,
+    payload: OverrideNCAAssessmentPayload,
+  ): Promise<NCAAssessment & { original_status: NCAStatus; override_justification: string }> =>
+    postJson(`/nca/assessments/${encodeURIComponent(assessmentId)}/override`, payload),
 
   ncaExceptions: (filters?: { status?: string; controlId?: string; deviceId?: string }): Promise<NCAException[]> => {
     const params = new URLSearchParams();

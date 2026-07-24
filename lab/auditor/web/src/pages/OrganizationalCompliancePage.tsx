@@ -4,7 +4,7 @@ import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
-import { NCAStatusBadge } from "@/components/ui/severity-badge";
+import { NCAReadinessBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 
@@ -45,6 +45,30 @@ export function OrganizationalCompliancePage() {
 
           <Card>
             <CardHeader>
+              <CardTitle>Compliance readiness</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <NCAReadinessBadge classification={org.data.readiness.classification} />
+                <span className="font-mono-tabular text-xs text-[var(--color-text-muted)]">
+                  pass ≥{org.data.readiness.pass_threshold}% &middot; fail &lt;{org.data.readiness.partial_threshold}%
+                </span>
+              </div>
+              <ul className="space-y-1 text-xs text-[var(--color-text-secondary)]">
+                {org.data.readiness.reasons.map((reason, i) => (
+                  <li key={i}>{reason}</li>
+                ))}
+              </ul>
+              {org.data.readiness.blocking_control_ids.length > 0 && (
+                <p className="text-xs text-[var(--color-critical)]">
+                  Blocking control(s): {org.data.readiness.blocking_control_ids.join(", ")}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Domain summary</CardTitle>
             </CardHeader>
             <CardContent className="pt-2">
@@ -57,6 +81,7 @@ export function OrganizationalCompliancePage() {
                       <span className="text-[var(--color-medium)]">{counts.partial} partial</span>
                       <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
                       <span className="text-[var(--color-text-muted)]">{counts.not_tested} not tested</span>
+                      <span className="text-[var(--color-brand)]">{counts.review_required} review</span>
                     </div>
                   </div>
                 ))}

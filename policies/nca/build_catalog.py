@@ -76,6 +76,22 @@ HIGH_SEVERITY_GUIDELINES = {
     "2-2-2", "2-4-3", "2-7-1", "2-7-2", "2-9-1", "2-9-2", "2-15-1", "2-15-2",
 }
 
+# Guidelines whose FAILURE alone forces the overall device readiness
+# classification to FAILED regardless of score (see
+# policies/nca/evaluator.py::overall_classification and
+# docs/nca-compliance.md's "blocking conditions" section) - IoTGuard's own
+# judgment call about which of these represent a severe enough real-world
+# exposure that a good score elsewhere shouldn't offset it, not something
+# the NCA standard itself flags. Deliberately small and limited to
+# guidelines with a concrete, well-known device weakness at stake (matches
+# the project's own worked examples: default credentials, unencrypted
+# sensitive data in transit, unnecessary/insecure exposed services).
+BLOCKING_GUIDELINES = {
+    "2-2-2",   # default or hard-coded credentials remain enabled
+    "2-4-3",   # sensitive data transmitted without encryption/authentication
+    "2-15-2",  # unnecessary/insecure exposed services (e.g. Telnet)
+}
+
 MANUFACTURER_PRINCIPLE_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*(.+?)\s*\|$", re.MULTILINE)
 
 
@@ -208,6 +224,7 @@ def build_catalog() -> list[dict]:
                     "assessment_type": assessment_type,
                     "required": True,
                     "severity": _severity(guideline_id),
+                    "blocking": guideline_id in BLOCKING_GUIDELINES,
                     "evidence_requirements": [],
                     "remediation_guidance": "",
                     "enabled": True,

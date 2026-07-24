@@ -23,6 +23,7 @@ const DEVICE_CONTROL: NCAControl = {
   assessment_type: "automated",
   required: true,
   severity: "high",
+  blocking: true,
   evidence_requirements: [],
   remediation_guidance: "",
   enabled: true,

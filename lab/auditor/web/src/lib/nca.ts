@@ -14,6 +14,7 @@ import type { NCADomainCounts, NCADomainSummary } from "./types";
  */
 export function applicableDomains(domains: NCADomainSummary): Array<[string, NCADomainCounts]> {
   return Object.entries(domains).filter(
-    ([, counts]) => counts.pass + counts.partial + counts.fail + counts.not_tested > 0,
+    ([, counts]) =>
+      counts.pass + counts.partial + counts.fail + counts.not_tested + counts.review_required > 0,
   );
 }

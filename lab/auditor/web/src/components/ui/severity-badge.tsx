@@ -1,6 +1,6 @@
-import { CheckCircle2, AlertTriangle, XCircle, CircleDashed } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Severity, VerdictStatus, Confidence, NCAStatus } from "@/lib/types";
+import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification } from "@/lib/types";
 
 const SEVERITY_STYLES: Record<Severity, string> = {
   critical: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
@@ -70,6 +70,7 @@ const NCA_STATUS_STYLES: Record<NCAStatus, string> = {
   fail: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
   partial: "bg-[color-mix(in_oklab,var(--color-medium)_16%,transparent)] text-[var(--color-medium)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-medium)_35%,transparent)]",
   not_tested: "bg-[color-mix(in_oklab,var(--color-inconclusive)_16%,transparent)] text-[var(--color-inconclusive)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-inconclusive)_35%,transparent)]",
+  review_required: "bg-[color-mix(in_oklab,var(--color-brand)_16%,transparent)] text-[var(--color-brand)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-brand)_35%,transparent)]",
 };
 
 const NCA_STATUS_ICON: Record<NCAStatus, typeof CheckCircle2> = {
@@ -77,6 +78,7 @@ const NCA_STATUS_ICON: Record<NCAStatus, typeof CheckCircle2> = {
   fail: XCircle,
   partial: AlertTriangle,
   not_tested: CircleDashed,
+  review_required: Eye,
 };
 
 const NCA_STATUS_LABEL: Record<NCAStatus, string> = {
@@ -84,7 +86,47 @@ const NCA_STATUS_LABEL: Record<NCAStatus, string> = {
   fail: "Fail",
   partial: "Partial",
   not_tested: "Not Assessed",
+  review_required: "Review Required",
 };
+
+const READINESS_STYLES: Record<NCAReadinessClassification, string> = {
+  passed: "bg-[color-mix(in_oklab,var(--color-pass)_16%,transparent)] text-[var(--color-pass)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-pass)_35%,transparent)]",
+  partially_passed: "bg-[color-mix(in_oklab,var(--color-medium)_16%,transparent)] text-[var(--color-medium)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-medium)_35%,transparent)]",
+  failed: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
+};
+
+const READINESS_ICON: Record<NCAReadinessClassification, typeof CheckCircle2> = {
+  passed: CheckCircle2,
+  partially_passed: AlertTriangle,
+  failed: XCircle,
+};
+
+const READINESS_LABEL: Record<NCAReadinessClassification, string> = {
+  passed: "Passed",
+  partially_passed: "Partially Passed",
+  failed: "Failed",
+};
+
+/**
+ * The Passed/Partially Passed/Failed compliance-readiness verdict (icon +
+ * text, same colorblind/greyscale-safe rule as NCAStatusBadge) - distinct
+ * from NCAStatusBadge, which renders a single control's status rather than
+ * the whole-scope classification.
+ */
+export function NCAReadinessBadge({ classification }: { classification: NCAReadinessClassification }) {
+  const Icon = READINESS_ICON[classification];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-semibold tracking-wide",
+        READINESS_STYLES[classification],
+      )}
+    >
+      <Icon className="h-4 w-4" strokeWidth={2} />
+      {READINESS_LABEL[classification]}
+    </span>
+  );
+}
 
 /**
  * Icon + text always together, never color alone - the compliance brief is

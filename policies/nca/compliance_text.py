@@ -34,7 +34,14 @@ METHODOLOGY_TEXT = (
 
 STATUS_DEFINITIONS = {
     "pass": "Every applicable required control passed, with evidence that has not expired.",
-    "partial": "No applicable required control failed, but at least one is partial, not yet tested, or its evidence has expired.",
+    "partial": "No applicable required control failed, but at least one is partial, not yet tested, requires review, or its evidence has expired.",
     "fail": "At least one applicable required control failed.",
     "not_tested": "No applicable required control has been assessed yet.",
+    "review_required": "An assessment was recorded, but something about it (most often conflicting evidence) means a human must review it before it can count as a pass or fail.",
+}
+
+READINESS_DEFINITIONS = {
+    "passed": "Score meets the passing threshold, with no critical-severity failure, no blocking condition, and no mandatory control left NOT_TESTED or REVIEW_REQUIRED.",
+    "partially_passed": "Score is in the partial range, or a high score is offset by a critical-severity failure, an untested mandatory control, or one awaiting review.",
+    "failed": "Score is below the failing threshold, or a control flagged as a blocking risk (e.g. default credentials, unencrypted sensitive data, an unnecessary exposed service) failed.",
 }

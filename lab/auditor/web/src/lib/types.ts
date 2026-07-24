@@ -303,7 +303,8 @@ export interface ApiFieldError {
 // NCA CGIoT-1:2024 compliance module
 // ---------------------------------------------------------------------------
 
-export type NCAStatus = "pass" | "partial" | "fail" | "not_tested";
+export type NCAStatus = "pass" | "partial" | "fail" | "not_tested" | "review_required";
+export type NCAReadinessClassification = "passed" | "partially_passed" | "failed";
 export type NCAScopeType = "organization" | "device" | "mobile" | "supplier" | "cloud";
 export type NCAAssessmentType = "automated" | "manual" | "hybrid";
 export type NCAApplicability = "applicable" | "not_applicable";
@@ -325,6 +326,7 @@ export interface NCAControl {
   assessment_type: NCAAssessmentType;
   required: boolean;
   severity: Severity;
+  blocking: boolean;
   evidence_requirements: unknown[];
   remediation_guidance: string;
   enabled: boolean;
@@ -377,6 +379,7 @@ export interface NCADomainCounts {
   partial: number;
   fail: number;
   not_tested: number;
+  review_required: number;
 }
 
 export type NCADomainSummary = Record<string, NCADomainCounts>;
@@ -391,6 +394,8 @@ export interface NCASummary {
   overall_pass_percentage: number | null;
   total_controls: number;
   last_assessment_at: string | null;
+  status_definitions?: Record<string, string>;
+  readiness_definitions?: Record<NCAReadinessClassification, string>;
 }
 
 export interface NCADeviceComplianceRow {
@@ -402,6 +407,27 @@ export interface NCADeviceComplianceRow {
   overall_status: NCAStatus;
   score: number | null;
   domain_summary: NCADomainSummary;
+  readiness_classification: NCAReadinessClassification;
+}
+
+/**
+ * The Passed/Partially Passed/Failed compliance-readiness verdict computed
+ * by policies/nca/evaluator.py::overall_classification - additive to (never
+ * replacing) overall_status/score above. Never rely on `score` alone to
+ * render this: `reasons` explains exactly why, and a blocking condition or
+ * critical failure can force `failed`/`partially_passed` even at a high
+ * score.
+ */
+export interface NCAReadiness {
+  classification: NCAReadinessClassification;
+  score: number | null;
+  reasons: string[];
+  blocking_control_ids: string[];
+  critical_failure_control_ids: string[];
+  not_tested_control_ids: string[];
+  review_required_control_ids: string[];
+  pass_threshold: number;
+  partial_threshold: number;
 }
 
 export interface NCADeviceControlRow {
@@ -416,6 +442,7 @@ export interface NCADeviceDetail {
   overall_status: NCAStatus;
   score: number | null;
   domain_summary: NCADomainSummary;
+  readiness: NCAReadiness;
   controls: NCADeviceControlRow[];
   exceptions: NCAException[];
 }
@@ -441,6 +468,7 @@ export interface NCAOrganizationalCompliance {
   overall_status: NCAStatus;
   score: number | null;
   domain_summary: NCADomainSummary;
+  readiness: NCAReadiness;
   controls: NCADeviceControlRow[];
 }
 
@@ -464,6 +492,14 @@ export interface CreateNCAAssessmentPayload {
   remediation?: string | null;
   remediation_due_date?: string | null;
   reason?: string;
+}
+
+export interface OverrideNCAAssessmentPayload {
+  status: NCAStatus;
+  justification: string;
+  overridden_by: string;
+  original_status?: NCAStatus;
+  remediation?: string | null;
 }
 
 export interface CreateNCAExceptionPayload {

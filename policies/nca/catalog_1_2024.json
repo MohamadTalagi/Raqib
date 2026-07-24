@@ -20,6 +20,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -40,6 +41,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -60,6 +62,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -80,6 +83,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -100,6 +104,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -120,6 +125,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -140,6 +146,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -160,6 +167,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -180,6 +188,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -200,6 +209,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -220,6 +230,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -240,6 +251,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -260,6 +272,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -280,6 +293,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -300,6 +314,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -320,6 +335,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -340,6 +356,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -360,6 +377,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -380,6 +398,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -400,6 +419,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -420,6 +440,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -440,6 +461,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -460,6 +482,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -480,6 +503,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -500,6 +524,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -520,6 +545,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -540,6 +566,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -560,6 +587,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -580,6 +608,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -600,6 +629,7 @@
       "assessment_type": "hybrid",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -620,6 +650,7 @@
       "assessment_type": "automated",
       "required": true,
       "severity": "high",
+      "blocking": true,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -640,6 +671,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -660,6 +692,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -680,6 +713,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -700,6 +734,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -720,6 +755,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -740,6 +776,7 @@
       "assessment_type": "automated",
       "required": true,
       "severity": "high",
+      "blocking": true,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -760,6 +797,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -780,6 +818,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -800,6 +839,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -820,6 +860,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -840,6 +881,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -860,6 +902,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -880,6 +923,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -900,6 +944,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "high",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -920,6 +965,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "high",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -940,6 +986,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -960,6 +1007,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -980,6 +1028,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1000,6 +1049,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "high",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1020,6 +1070,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "high",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1040,6 +1091,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1060,6 +1112,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1080,6 +1133,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1100,6 +1154,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1120,6 +1175,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1140,6 +1196,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1160,6 +1217,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1180,6 +1238,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1200,6 +1259,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1220,6 +1280,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1240,6 +1301,7 @@
       "assessment_type": "hybrid",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1260,6 +1322,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1280,6 +1343,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1300,6 +1364,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1320,6 +1385,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "high",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1340,6 +1406,7 @@
       "assessment_type": "hybrid",
       "required": true,
       "severity": "high",
+      "blocking": true,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1360,6 +1427,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1380,6 +1448,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1400,6 +1469,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1420,6 +1490,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1440,6 +1511,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1460,6 +1532,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1480,6 +1553,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1500,6 +1574,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1520,6 +1595,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1540,6 +1616,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1560,6 +1637,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1580,6 +1658,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1600,6 +1679,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true
@@ -1620,6 +1700,7 @@
       "assessment_type": "manual",
       "required": true,
       "severity": "medium",
+      "blocking": false,
       "evidence_requirements": [],
       "remediation_guidance": "",
       "enabled": true

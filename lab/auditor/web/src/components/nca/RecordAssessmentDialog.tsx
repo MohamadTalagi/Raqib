@@ -12,7 +12,7 @@ import type {
   Severity,
 } from "@/lib/types";
 
-const STATUS_OPTIONS: NCAStatus[] = ["pass", "partial", "fail", "not_tested"];
+const STATUS_OPTIONS: NCAStatus[] = ["pass", "partial", "fail", "not_tested", "review_required"];
 const SEVERITY_OPTIONS: Severity[] = ["low", "medium", "high", "critical"];
 const TEST_METHOD_OPTIONS: NCAAssessmentType[] = ["manual", "automated", "hybrid"];
 

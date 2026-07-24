@@ -20,7 +20,9 @@ def conn(postgres_url):
     connection.close()
 
 
-def _seed_control(conn, control_id, *, domain_id="2", scope_type="device", required=True, severity="high"):
+def _seed_control(
+    conn, control_id, *, domain_id="2", scope_type="device", required=True, severity="high", blocking=False
+):
     guideline_id = "-".join(control_id.rsplit("-", 3)[-3:])
     subdomain_id = "-".join(guideline_id.split("-")[:2])
     conn.execute(
@@ -28,12 +30,12 @@ def _seed_control(conn, control_id, *, domain_id="2", scope_type="device", requi
         INSERT INTO compliance_controls (
             id, domain_id, domain_name, subdomain_id, subdomain_name, guideline_id,
             canonical_requirement, implementation_summary, scope_type, assessment_type,
-            required, severity
+            required, severity, blocking
         ) VALUES (%s, %s, 'Cybersecurity Defense', %s, 'Access and Permission Restriction',
                   %s, 'Do not use default or hard-coded passwords.', 'No default creds.',
-                  %s, 'automated', %s, %s)
+                  %s, 'automated', %s, %s, %s)
         """,
-        (control_id, domain_id, subdomain_id, guideline_id, scope_type, required, severity),
+        (control_id, domain_id, subdomain_id, guideline_id, scope_type, required, severity, blocking),
     )
     conn.commit()
 
@@ -349,3 +351,203 @@ def test_executive_pdf_report_renders(client, conn):
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF-")
+
+
+# ---------------------------------------------------------------------------
+# Readiness classification (Passed / Partially Passed / Failed)
+# ---------------------------------------------------------------------------
+
+
+def test_device_detail_includes_readiness_classification(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    body = client.get("/nca/devices/cam-1").json()
+    assert body["readiness"]["classification"] == "failed"  # nothing tested yet
+    assert body["readiness"]["score"] is None
+
+
+def test_device_readiness_failed_when_blocking_control_fails(client, conn):
+    _seed_control(conn, CONTROL_ID, blocking=True)
+    _register_device(conn)
+    client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+        },
+    )
+    body = client.get("/nca/devices/cam-1").json()
+    assert body["readiness"]["classification"] == "failed"
+    assert body["readiness"]["blocking_control_ids"] == [CONTROL_ID]
+
+
+def test_organization_detail_includes_readiness_classification(client, conn):
+    _seed_control(conn, "NCA-CGIoT-1_2024-1-1-1", domain_id="1", scope_type="organization")
+    body = client.get("/nca/organization").json()
+    assert body["readiness"]["classification"] == "failed"
+
+
+def test_devices_list_includes_readiness_classification(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    body = client.get("/nca/devices").json()
+    assert body[0]["readiness_classification"] == "failed"
+
+
+def test_control_accepts_blocking_field(client, conn):
+    _seed_control(conn, CONTROL_ID, blocking=True)
+    body = client.get(f"/nca/controls/{CONTROL_ID}").json()["control"]
+    assert body["blocking"] is True
+
+
+# ---------------------------------------------------------------------------
+# review_required status
+# ---------------------------------------------------------------------------
+
+
+def test_create_assessment_accepts_review_required_status(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    response = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "review_required",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "finding": "conflicting evidence - needs a second look",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["status"] == "review_required"
+
+    detail = client.get("/nca/devices/cam-1").json()
+    assert detail["overall_status"] == "partial"
+
+
+def test_create_assessment_rejects_unknown_status(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    response = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "bogus",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "status"
+
+
+# ---------------------------------------------------------------------------
+# Auditor override
+# ---------------------------------------------------------------------------
+
+
+def test_override_requires_justification(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    first = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+        },
+    ).json()
+    response = client.post(
+        f"/nca/assessments/{first['id']}/override",
+        json={"status": "pass", "overridden_by": "auditor-1"},
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "justification"
+
+
+def test_override_requires_auditor_identity(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    first = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+        },
+    ).json()
+    response = client.post(
+        f"/nca/assessments/{first['id']}/override",
+        json={"status": "pass", "justification": "risk accepted after compensating control review"},
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "overridden_by"
+
+
+def test_override_unknown_assessment_is_404(client):
+    response = client.post(
+        "/nca/assessments/no-such-id/override",
+        json={"status": "pass", "justification": "reason", "overridden_by": "auditor-1"},
+    )
+    assert response.status_code == 404
+
+
+def test_override_supersedes_original_and_writes_audit_trail(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    first = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+        },
+    ).json()
+
+    response = client.post(
+        f"/nca/assessments/{first['id']}/override",
+        json={
+            "status": "pass",
+            "justification": "compensating network segmentation verified on-site",
+            "overridden_by": "auditor-1",
+            "original_status": "fail",
+        },
+    )
+    assert response.status_code == 201
+    overridden = response.json()
+    assert overridden["status"] == "pass"
+    assert overridden["original_status"] == "fail"
+    assert "compensating network segmentation" in overridden["override_justification"]
+
+    # The original result is never mutated, and both the original and the
+    # override remain permanently visible in the control's audit trail.
+    control_detail = client.get(f"/nca/controls/{CONTROL_ID}").json()
+    original = next(a for a in control_detail["assessments"] if a["id"] == first["id"])
+    assert original["status"] == "fail"
+    assert original["superseded_by"] == overridden["id"]
+
+    events = control_detail["audit_events"]
+    assert any(e["event_type"] == "assessment_overridden" and e["actor"] == "auditor-1" for e in events)
+    override_event = next(e for e in events if e["event_type"] == "assessment_overridden")
+    assert "compensating network segmentation" in override_event["reason"]
+
+    # The device now reflects the overridden (passing) result, not the original.
+    detail = client.get("/nca/devices/cam-1").json()
+    assert detail["overall_status"] == "pass"
+
+
+def test_override_rejects_stale_original_status(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    first = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+        },
+    ).json()
+
+    response = client.post(
+        f"/nca/assessments/{first['id']}/override",
+        json={
+            "status": "pass",
+            "justification": "reason",
+            "overridden_by": "auditor-1",
+            "original_status": "pass",  # doesn't match the assessment's real current status ("fail")
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "original_status"

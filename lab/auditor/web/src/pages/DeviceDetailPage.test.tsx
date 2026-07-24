@@ -16,10 +16,21 @@ const NCA_DETAIL: NCADeviceDetail = {
   overall_status: "fail",
   score: 20,
   domain_summary: {
-    "Cybersecurity Governance": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
-    "Cybersecurity Defense": { pass: 1, partial: 0, fail: 1, not_tested: 0 },
-    "Cybersecurity Resilience": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
-    "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
+    "Cybersecurity Governance": { pass: 0, partial: 0, fail: 0, not_tested: 0, review_required: 0 },
+    "Cybersecurity Defense": { pass: 1, partial: 0, fail: 1, not_tested: 0, review_required: 0 },
+    "Cybersecurity Resilience": { pass: 0, partial: 0, fail: 0, not_tested: 0, review_required: 0 },
+    "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 0, review_required: 0 },
+  },
+  readiness: {
+    classification: "failed",
+    score: 20,
+    reasons: ["Score 20% is below the failing threshold of 50%."],
+    blocking_control_ids: [],
+    critical_failure_control_ids: [],
+    not_tested_control_ids: [],
+    review_required_control_ids: [],
+    pass_threshold: 85,
+    partial_threshold: 50,
   },
   controls: [
     {
@@ -39,6 +50,7 @@ const NCA_DETAIL: NCADeviceDetail = {
         assessment_type: "automated",
         required: true,
         severity: "high",
+        blocking: true,
         evidence_requirements: [],
         remediation_guidance: "",
         enabled: true,

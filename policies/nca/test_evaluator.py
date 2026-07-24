@@ -3,7 +3,9 @@ from policies.nca.evaluator import (
     device_score,
     domain_summary,
     effective_status,
+    has_blocking_failure,
     is_effectively_applicable,
+    overall_classification,
 )
 
 
@@ -15,6 +17,8 @@ def _row(
     applicability="applicable",
     evidence_expired=False,
     exception_active=False,
+    severity="medium",
+    blocking=False,
 ):
     return {
         "control_id": control_id,
@@ -24,6 +28,8 @@ def _row(
         "applicability": applicability,
         "evidence_expired": evidence_expired,
         "exception_active": exception_active,
+        "severity": severity,
+        "blocking": blocking,
     }
 
 
@@ -283,4 +289,141 @@ def test_domain_summary_returns_all_four_groups_even_when_empty():
         "Third-Party and Cloud Computing Cybersecurity",
     }
     for bucket in summary.values():
-        assert bucket == {"pass": 0, "partial": 0, "fail": 0, "not_tested": 0}
+        assert bucket == {"pass": 0, "partial": 0, "fail": 0, "not_tested": 0, "review_required": 0}
+
+
+# ---------------------------------------------------------------------------
+# review_required status
+# ---------------------------------------------------------------------------
+
+
+def test_overall_status_partial_when_a_control_is_review_required():
+    rows = [_row(control_id="a", status="pass"), _row(control_id="b", status="review_required")]
+    assert device_overall_status(rows) == "partial"
+
+
+def test_score_treats_review_required_as_not_passed():
+    rows = [_row(control_id="a", status="review_required")]
+    assert device_score(rows) == 0
+
+
+def test_domain_summary_counts_review_required_in_its_own_bucket():
+    rows = [_row(control_id="a", domain_id="1", status="review_required")]
+    summary = domain_summary(rows)
+    assert summary["Cybersecurity Governance"]["review_required"] == 1
+    assert summary["Cybersecurity Governance"]["partial"] == 0
+
+
+# ---------------------------------------------------------------------------
+# has_blocking_failure
+# ---------------------------------------------------------------------------
+
+
+def test_has_blocking_failure_empty_when_no_blocking_control_fails():
+    rows = [_row(control_id="a", status="fail", blocking=False)]
+    assert has_blocking_failure(rows) == []
+
+
+def test_has_blocking_failure_returns_the_offending_row_when_blocking_control_fails():
+    rows = [_row(control_id="a", status="fail", blocking=True)]
+    result = has_blocking_failure(rows)
+    assert [r["control_id"] for r in result] == ["a"]
+
+
+def test_has_blocking_failure_ignores_a_blocking_control_that_passed():
+    rows = [_row(control_id="a", status="pass", blocking=True)]
+    assert has_blocking_failure(rows) == []
+
+
+def test_has_blocking_failure_ignores_not_applicable_blocking_control():
+    rows = [_row(control_id="a", status="fail", blocking=True, applicability="not_applicable")]
+    assert has_blocking_failure(rows) == []
+
+
+def test_has_blocking_failure_ignores_excepted_blocking_control():
+    rows = [_row(control_id="a", status="fail", blocking=True, exception_active=True)]
+    assert has_blocking_failure(rows) == []
+
+
+# ---------------------------------------------------------------------------
+# overall_classification
+# ---------------------------------------------------------------------------
+
+
+def test_classification_passed_at_high_score_with_no_issues():
+    rows = [_row(control_id=f"c{i}", status="pass") for i in range(10)]
+    result = overall_classification(rows)
+    assert result["classification"] == "passed"
+    assert result["score"] == 100
+
+
+def test_classification_failed_when_blocking_control_fails_even_at_high_score():
+    rows = [_row(control_id=f"c{i}", status="pass") for i in range(9)]
+    rows.append(_row(control_id="blocker", status="fail", blocking=True))
+    result = overall_classification(rows)
+    assert result["classification"] == "failed"
+    assert result["blocking_control_ids"] == ["blocker"]
+
+
+def test_classification_partially_passed_when_high_score_but_critical_failure():
+    rows = [_row(control_id=f"c{i}", status="pass") for i in range(9)]
+    rows.append(_row(control_id="crit", status="fail", severity="critical"))
+    result = overall_classification(rows)
+    assert result["classification"] == "partially_passed"
+    assert result["critical_failure_control_ids"] == ["crit"]
+
+
+def test_classification_failed_when_score_below_partial_threshold():
+    rows = [_row(control_id="a", status="pass"), _row(control_id="b", status="fail")]
+    result = overall_classification(rows)  # 50% score, but partial_threshold default is 50 -> not below
+    assert result["classification"] == "partially_passed"
+
+    rows = [_row(control_id="a", status="fail"), _row(control_id="b", status="fail")]
+    result = overall_classification(rows)  # 0%
+    assert result["classification"] == "failed"
+
+
+def test_classification_partially_passed_in_the_score_band_between_thresholds():
+    rows = [
+        _row(control_id="a", status="pass"),
+        _row(control_id="b", status="pass"),
+        _row(control_id="c", status="fail"),
+    ]
+    result = overall_classification(rows)  # 67%
+    assert result["classification"] == "partially_passed"
+
+
+def test_classification_failed_when_all_controls_not_applicable():
+    rows = [_row(control_id="a", status="fail", applicability="not_applicable")]
+    result = overall_classification(rows)
+    assert result["classification"] == "failed"
+    assert result["score"] is None
+
+
+def test_classification_failed_when_nothing_has_ever_been_tested():
+    rows = [_row(control_id="a", status="not_tested"), _row(control_id="b", status="not_tested")]
+    result = overall_classification(rows)
+    assert result["classification"] == "failed"
+    assert result["score"] is None
+
+
+def test_classification_partially_passed_when_mandatory_control_not_tested():
+    rows = [_row(control_id=f"c{i}", status="pass") for i in range(9)]
+    rows.append(_row(control_id="untested", status="not_tested"))
+    result = overall_classification(rows)
+    assert result["classification"] == "partially_passed"
+    assert result["not_tested_control_ids"] == ["untested"]
+
+
+def test_classification_partially_passed_when_mandatory_control_review_required():
+    rows = [_row(control_id=f"c{i}", status="pass") for i in range(9)]
+    rows.append(_row(control_id="review", status="review_required"))
+    result = overall_classification(rows)
+    assert result["classification"] == "partially_passed"
+    assert result["review_required_control_ids"] == ["review"]
+
+
+def test_classification_thresholds_are_configurable():
+    rows = [_row(control_id="a", status="pass"), _row(control_id="b", status="fail")]  # 50%
+    assert overall_classification(rows, partial_threshold=60)["classification"] == "failed"
+    assert overall_classification(rows, partial_threshold=40)["classification"] == "partially_passed"

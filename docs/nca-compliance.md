@@ -205,6 +205,73 @@ event), requested and approved a real exception, and clicked "Recompute from evi
 and confirmed it surfaced real not-tested placeholders from real scan evidence already
 in the database.
 
+## Compliance readiness classification (Passed / Partially Passed / Failed)
+
+Additive alongside `device_overall_status`/`device_score` above, which the existing
+dashboard keeps using unchanged: **`overall_classification(rows)`** in
+`policies/nca/evaluator.py` computes a single Passed/Partially Passed/Failed verdict
+per device or organizational scope, returned as `readiness` on
+`GET /nca/devices/{id}` and `GET /nca/organization` (and a `readiness_classification`
+summary field on each `GET /nca/devices` row). Exact rules, thresholds configurable
+(`pass_threshold=85`, `partial_threshold=50` by default):
+
+- **Failed** — a control flagged `blocking=true` failed, **or** no applicable required
+  control has ever produced a result, **or** score < `partial_threshold`.
+- **Partially Passed** — score is in the `partial_threshold`–`pass_threshold` band; **or**
+  score ≥ `pass_threshold` but a critical-severity control failed; **or** a mandatory
+  control is still `NOT_TESTED`; **or** a mandatory control is `REVIEW_REQUIRED`.
+- **Passed** — score ≥ `pass_threshold`, no critical-severity failure, no blocking
+  condition, no mandatory control left `NOT_TESTED`/`REVIEW_REQUIRED`.
+
+Deliberately does not rely on the percentage alone, per the brief's own "do not rely
+only on the percentage" requirement — a blocking condition or critical failure
+overrides a high score. The response includes `reasons` (plain-language, e.g. "Score
+40% is below the failing threshold of 50%.") and the exact `*_control_ids` that drove
+the result, so the UI never has to re-derive an explanation. Rendered as a new
+**`NCAReadinessBadge`** (icon+text, same colorblind/greyscale-safe rule as
+`NCAStatusBadge`) on `DeviceDetailPage`'s Compliance tab, `OrganizationalCompliancePage`,
+and a new "Readiness" column on `NCACompliancePage`'s device table.
+
+**Blocking controls** are a new `compliance_controls.blocking` boolean — like
+`scope_type`/`severity`, this is **IoTGuard's own judgment call**, authored in
+`policies/nca/build_catalog.py`'s `BLOCKING_GUIDELINES` set, not NCA's own
+classification (real CGIoT-1:2024 guideline text is organizational/high-level and
+doesn't contain literal technical trigger phrases like "Telnet" or "default
+password" — confirmed by searching the live catalog text before deciding this had
+to be authored, the same way `HIGH_SEVERITY_GUIDELINES` already is). Deliberately
+small, limited to guidelines with a concrete, well-known device weakness at stake
+that matches the project's own worked examples: `2-2-2` (default/hard-coded
+credentials), `2-4-3` (sensitive data transmitted without encryption), `2-15-2`
+(unnecessary/insecure exposed services, e.g. Telnet). Shown as a "blocking condition"
+badge on the control detail page and the controls catalog.
+
+**`review_required`** is a new, sixth status alongside pass/partial/fail/not_tested —
+distinct from `not_tested`: an assessment *was* recorded, but something about it
+(most commonly conflicting evidence, mirroring `policies/engine/conflict.py`'s
+SA-IOT-* precedent) means a human needs to look at it again before it counts as a
+real pass or fail. It rolls into the existing `device_overall_status`'s PARTIAL
+bucket but is tracked as its own thing by `overall_classification`, since a
+Passed verdict must not be reachable while any mandatory control is still awaiting
+review. Selectable in `RecordAssessmentDialog`'s status dropdown and the new
+`OverrideAssessmentDialog`'s.
+
+## Auditor override
+
+**`POST /nca/assessments/{id}/override`** lets an authorized auditor override a
+previously-recorded (automated or manual) result — required fields: `status`,
+`justification` (mandatory written reason), `overridden_by` (auditor identity), and
+an optional `original_status` the API rejects with `400` if it no longer matches the
+assessment's real current status (stale-read protection: the assessment may have
+changed since the auditor loaded it). Like retest, this **never mutates the original
+row** — it inserts a new, superseding assessment via the same
+supersede-and-audit-trail mechanism `_insert_assessment` already uses, with
+`event_type="assessment_overridden"` and a `reason` combining the auditor's identity
+and justification, so both the original result and the override remain permanently
+visible in the control's audit trail. The response includes `original_status` and
+`override_justification` for the UI to display immediately without a second fetch.
+Wired into `NCAControlDetailPage` as an "Override" button next to "Retest" on each
+current assessment, opening `components/nca/OverrideAssessmentDialog.tsx`.
+
 ## Reports
 
 `GET /nca/reports/devices.csv`, `/controls.csv`, `/controls.json`, `/evidence.csv`,

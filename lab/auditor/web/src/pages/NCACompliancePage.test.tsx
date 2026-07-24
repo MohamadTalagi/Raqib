@@ -15,17 +15,17 @@ const SUMMARY: NCASummary = {
   framework_version: "1:2024",
   disclaimer: "This reflects an assessment of alignment with NCA CGIoT-1:2024 guidance. It is not an NCA certification.",
   total_devices: 2,
-  device_counts: { pass: 1, partial: 0, fail: 1, not_tested: 0 },
+  device_counts: { pass: 1, partial: 0, fail: 1, not_tested: 0, review_required: 0 },
   overall_pass_percentage: 50,
   total_controls: 81,
   last_assessment_at: "2026-07-20T00:00:00Z",
 };
 
 const DOMAINS: NCADomainSummary = {
-  "Cybersecurity Governance": { pass: 0, partial: 0, fail: 0, not_tested: 9 },
-  "Cybersecurity Defense": { pass: 10, partial: 2, fail: 4, not_tested: 0 },
-  "Cybersecurity Resilience": { pass: 1, partial: 0, fail: 0, not_tested: 1 },
-  "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 11 },
+  "Cybersecurity Governance": { pass: 0, partial: 0, fail: 0, not_tested: 9, review_required: 0 },
+  "Cybersecurity Defense": { pass: 10, partial: 2, fail: 4, not_tested: 0, review_required: 0 },
+  "Cybersecurity Resilience": { pass: 1, partial: 0, fail: 0, not_tested: 1, review_required: 0 },
+  "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 11, review_required: 0 },
 };
 
 const DEVICES: NCADeviceComplianceRow[] = [
@@ -38,6 +38,7 @@ const DEVICES: NCADeviceComplianceRow[] = [
     overall_status: "pass",
     score: 100,
     domain_summary: DOMAINS,
+    readiness_classification: "passed",
   },
   {
     device_id: "device-insecure",
@@ -48,6 +49,7 @@ const DEVICES: NCADeviceComplianceRow[] = [
     overall_status: "fail",
     score: 20,
     domain_summary: DOMAINS,
+    readiness_classification: "failed",
   },
 ];
 
@@ -103,10 +105,10 @@ describe("NCACompliancePage", () => {
     // is a genuinely different case and must still show.
     vi.spyOn(api, "ncaSummary").mockResolvedValue(SUMMARY);
     vi.spyOn(api, "ncaDomains").mockResolvedValue({
-      "Cybersecurity Governance": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
-      "Cybersecurity Defense": { pass: 10, partial: 2, fail: 4, not_tested: 0 },
-      "Cybersecurity Resilience": { pass: 1, partial: 0, fail: 0, not_tested: 1 },
-      "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 0 },
+      "Cybersecurity Governance": { pass: 0, partial: 0, fail: 0, not_tested: 0, review_required: 0 },
+      "Cybersecurity Defense": { pass: 10, partial: 2, fail: 4, not_tested: 0, review_required: 0 },
+      "Cybersecurity Resilience": { pass: 1, partial: 0, fail: 0, not_tested: 1, review_required: 0 },
+      "Third-Party and Cloud Computing Cybersecurity": { pass: 0, partial: 0, fail: 0, not_tested: 0, review_required: 0 },
     });
     vi.spyOn(api, "ncaDevices").mockResolvedValue(DEVICES);
     renderPage();

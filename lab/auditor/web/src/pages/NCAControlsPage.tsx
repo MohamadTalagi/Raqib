@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Ban } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -103,6 +103,15 @@ export function NCAControlsPage() {
                 <SeverityBadge severity={control.severity} />
                 {!control.required && (
                   <span className="font-mono text-[10px] text-[var(--color-text-muted)] uppercase">optional</span>
+                )}
+                {control.blocking && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-critical)]"
+                    title="A failure of this control alone forces the device's overall readiness classification to Failed."
+                  >
+                    <Ban className="h-3 w-3" />
+                    blocking
+                  </span>
                 )}
                 <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
               </Card>
