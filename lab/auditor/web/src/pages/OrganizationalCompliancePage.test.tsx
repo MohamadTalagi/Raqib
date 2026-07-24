@@ -53,6 +53,30 @@ const ORG: NCAOrganizationalCompliance = {
       },
       assessment: null,
     },
+    {
+      control: {
+        id: "NCA-CGIoT-1_2024-2-4-3",
+        framework: "NCA-CGIoT",
+        framework_version: "1:2024",
+        domain_id: "2",
+        domain_name: "Cybersecurity Defense",
+        subdomain_id: "2-4",
+        subdomain_name: "Secure Communications",
+        guideline_id: "2-4-3",
+        canonical_requirement: "Encrypt sensitive data in transit.",
+        implementation_summary: "Sensitive data is encrypted in transit.",
+        source_page: "18",
+        scope_type: "organization",
+        assessment_type: "manual",
+        required: true,
+        severity: "high",
+        blocking: true,
+        evidence_requirements: [],
+        remediation_guidance: "",
+        enabled: true,
+      },
+      assessment: null,
+    },
   ],
 };
 
@@ -78,7 +102,15 @@ describe("OrganizationalCompliancePage", () => {
     renderPage();
 
     expect(await screen.findByText("Have a strategy document.")).toBeInTheDocument();
-    expect(screen.getByText("Not Assessed")).toBeInTheDocument();
+    expect(screen.getAllByText("Not Assessed").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("flags a blocking control in the controls list", async () => {
+    vi.spyOn(api, "ncaOrganization").mockResolvedValue(ORG);
+    renderPage();
+
+    expect(await screen.findByText("Sensitive data is encrypted in transit.")).toBeInTheDocument();
+    expect(screen.getByText("blocking")).toBeInTheDocument();
   });
 
   it("renders an error state when organizational data fails to load", async () => {

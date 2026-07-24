@@ -7,7 +7,7 @@ function scoreColor(score: number): string {
   return CHART_COLORS.critical;
 }
 
-export function ComplianceGauge({ score }: { score: number }) {
+export function ComplianceGauge({ score, sourceLabel }: { score: number; sourceLabel?: string }) {
   const color = scoreColor(score);
   const data = [{ name: "score", value: score, fill: color }];
 
@@ -30,7 +30,9 @@ export function ComplianceGauge({ score }: { score: number }) {
       </RadialBarChart>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-mono-tabular text-3xl font-bold text-[var(--color-text)]">{score}</span>
-        <span className="text-[10px] tracking-wide text-[var(--color-text-muted)] uppercase">/ 100</span>
+        <span className="text-[10px] tracking-wide text-[var(--color-text-muted)] uppercase">
+          {sourceLabel ?? "/ 100"}
+        </span>
       </div>
     </div>
   );

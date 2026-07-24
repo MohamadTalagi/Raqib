@@ -33,7 +33,7 @@ describe("VerdictsPage", () => {
 
     await screen.findByText("Disable unnecessary network services");
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "PASS" }));
+    await user.click(screen.getByRole("tab", { name: /^PASS/ }));
 
     expect(screen.queryByText(/SA-IOT-002/)).not.toBeInTheDocument();
   });
@@ -57,7 +57,7 @@ describe("VerdictsPage", () => {
 
     await screen.findByText("Disable unnecessary network services");
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "NOT_APPLICABLE" }));
+    await user.click(screen.getByRole("tab", { name: /^NOT_APPLICABLE/ }));
 
     const [heading] = screen.getAllByText(/SA-IOT-004/);
     await user.click(heading.closest("button") as HTMLButtonElement);

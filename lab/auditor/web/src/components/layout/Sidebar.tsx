@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   ClipboardCheck,
   ListChecks,
+  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +42,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/nca-compliance", label: "NCA Compliance", icon: ClipboardCheck, end: true },
       { to: "/nca-compliance/controls", label: "NCA Controls", icon: ListChecks, end: false },
+      { to: "/nca-compliance/organization", label: "Organizational Compliance", icon: Building2, end: true },
     ],
   },
 ];

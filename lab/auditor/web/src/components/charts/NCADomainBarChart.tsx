@@ -16,6 +16,7 @@ export function NCADomainBarChart({ domains }: NCADomainBarChartProps) {
     partial: counts.partial,
     fail: counts.fail,
     not_tested: counts.not_tested,
+    review_required: counts.review_required,
   }));
 
   if (data.length === 0) {
@@ -62,13 +63,15 @@ export function NCADomainBarChart({ domains }: NCADomainBarChartProps) {
           <Bar dataKey="pass" name="Pass" stackId="s" fill={CHART_COLORS.pass} />
           <Bar dataKey="partial" name="Partial" stackId="s" fill={CHART_COLORS.medium} />
           <Bar dataKey="fail" name="Fail" stackId="s" fill={CHART_COLORS.critical} />
-          <Bar
-            dataKey="not_tested"
-            name="Not tested"
-            stackId="s"
-            fill={CHART_COLORS.inconclusive}
-            radius={[4, 4, 0, 0]}
-          />
+          <Bar dataKey="not_tested" name="Not tested" stackId="s" fill={CHART_COLORS.inconclusive} />
+          {/* CHART_COLORS.low, not .brand/.medium - those two are byte-identical
+              hex values, which would visually fuse this segment into "partial".
+              No corner radius on this stack (dropped from the old top segment
+              too): whichever segment ends up on top varies per domain now that
+              there are 5 possible segments, and a zero-height review_required
+              segment (the common case today) would otherwise leave the real
+              top segment looking un-rounded. */}
+          <Bar dataKey="review_required" name="Review required" stackId="s" fill={CHART_COLORS.low} />
         </BarChart>
       </ResponsiveContainer>
     </div>

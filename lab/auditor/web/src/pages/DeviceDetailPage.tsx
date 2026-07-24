@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import {
+  BlockingBadge,
   ComplianceBadge,
   ConfidenceLabel,
   NCAReadinessBadge,
@@ -15,6 +16,8 @@ import {
 } from "@/components/ui/severity-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tabs, TabPanel } from "@/components/ui/tabs";
+import { Tooltip } from "@/components/ui/tooltip";
+import { DomainSummaryGrid } from "@/components/nca/DomainSummaryGrid";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
@@ -169,13 +172,16 @@ export function DeviceDetailPage() {
       <div className="space-y-6">
         <Card>
           <CardContent className="flex flex-wrap items-center gap-3 pt-5">
-            <span
-              className="flex items-center gap-1.5"
-              title={`${compliance.tested_controls} of the NCA ${compliance.framework} controls this lab automates have been assessed for this device; ${compliance.passing_controls} pass.`}
-            >
-              <span className="text-xs text-[var(--color-text-muted)]">{compliance.framework}:</span>
-              <ComplianceBadge percentage={compliance.percentage} />
-            </span>
+            {activeTab === "overview" && (
+              <Tooltip
+                content={`${compliance.tested_controls} of the ${compliance.framework} controls this lab automates have been assessed for this device; ${compliance.passing_controls} pass. This is a separate, older metric from the NCA readiness assessment on the Compliance tab.`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="text-xs text-[var(--color-text-muted)]">Automated scan coverage:</span>
+                  <ComplianceBadge percentage={compliance.percentage} />
+                </span>
+              </Tooltip>
+            )}
             <span className="font-mono text-xs text-[var(--color-text-secondary)]">
               {device.host ?? <span className="text-[var(--color-text-muted)]">No host configured</span>}
             </span>
@@ -465,20 +471,7 @@ export function DeviceDetailPage() {
                       {applicableDomains(ncaDetail.data.domain_summary).length === 0 ? (
                         <EmptyState message="No device-scope domains loaded." />
                       ) : (
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                          {applicableDomains(ncaDetail.data.domain_summary).map(([domainName, counts]) => (
-                            <div key={domainName} className="rounded-md border border-[var(--color-border)] p-4">
-                              <p className="text-xs font-medium text-[var(--color-text-secondary)]">{domainName}</p>
-                              <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                                <span className="text-[var(--color-pass)]">{counts.pass} pass</span>
-                                <span className="text-[var(--color-medium)]">{counts.partial} partial</span>
-                                <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
-                                <span className="text-[var(--color-text-muted)]">{counts.not_tested} not tested</span>
-                                <span className="text-[var(--color-brand)]">{counts.review_required} review</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                        <DomainSummaryGrid domains={applicableDomains(ncaDetail.data.domain_summary)} />
                       )}
                     </CardContent>
                   </Card>
@@ -508,6 +501,7 @@ export function DeviceDetailPage() {
                                   {assessment.remediation}
                                 </span>
                               )}
+                              {control.blocking && <BlockingBadge size="xs" />}
                               <NCAStatusBadge status={assessment?.status ?? "not_tested"} />
                               <Link
                                 to={`/nca-compliance/controls/${encodeURIComponent(control.id)}?device_id=${encodeURIComponent(device.device_id)}`}

@@ -19,8 +19,10 @@ import { ErrorState, EmptyState } from "@/components/ui/state";
 import { StatTile } from "@/components/ui/stat-tile";
 import { NCAReadinessBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
 import { Tabs } from "@/components/ui/tabs";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ComplianceGauge } from "@/components/charts/ComplianceGauge";
 import { NCADomainBarChart } from "@/components/charts/NCADomainBarChart";
+import { DomainSummaryGrid } from "@/components/nca/DomainSummaryGrid";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { applicableDomains } from "@/lib/nca";
@@ -153,20 +155,24 @@ export function NCACompliancePage() {
                     >
                       Browse all {summary.data.total_controls} controls <ArrowUpRight className="h-3.5 w-3.5" />
                     </Link>
-                    <button
-                      type="button"
-                      onClick={handleRecompute}
-                      disabled={recomputing}
-                      title="Scans relevant evidence for controls with no assessment yet and surfaces them as not-tested — a human still records the actual finding."
-                      className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                    <Tooltip
+                      content="Scans relevant evidence for controls with no assessment yet and surfaces them as not-tested — a human still records the actual finding."
+                      className="ml-auto"
                     >
-                      {recomputing ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      )}
-                      Recompute from evidence
-                    </button>
+                      <button
+                        type="button"
+                        onClick={handleRecompute}
+                        disabled={recomputing}
+                        className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {recomputing ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        Recompute from evidence
+                      </button>
+                    </Tooltip>
                   </div>
                 </>
               )}
@@ -208,7 +214,7 @@ export function NCACompliancePage() {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <Card className="xl:col-span-1">
               <CardHeader>
-                <CardTitle>Overall pass rate</CardTitle>
+                <CardTitle>NCA Control Pass Rate</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center gap-3 pb-6">
                 {loading || !summary.data ? (
@@ -218,7 +224,7 @@ export function NCACompliancePage() {
                     <Gauge className="h-8 w-8 text-[var(--color-text-muted)]" />
                   </div>
                 ) : (
-                  <ComplianceGauge score={summary.data.overall_pass_percentage} />
+                  <ComplianceGauge score={summary.data.overall_pass_percentage} sourceLabel="NCA CONTROLS" />
                 )}
                 <p className="text-center text-xs text-[var(--color-text-muted)]">
                   Informational only, never the strict per-control status
@@ -243,24 +249,11 @@ export function NCACompliancePage() {
           </div>
 
           {!loading && deviceApplicableDomains.length > 0 ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {deviceApplicableDomains.map(([domainName, counts]) => (
-                <div key={domainName} className="rounded-md border border-[var(--color-border)] p-4">
-                  <p className="text-xs font-medium text-[var(--color-text-secondary)]">{domainName}</p>
-                  <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                    <span className="text-[var(--color-pass)]">{counts.pass} pass</span>
-                    <span className="text-[var(--color-medium)]">{counts.partial} partial</span>
-                    <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
-                    <span className="text-[var(--color-text-muted)]">{counts.not_tested} not tested</span>
-                    <span className="text-[var(--color-brand)]">{counts.review_required} review</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <DomainSummaryGrid domains={deviceApplicableDomains} />
           ) : null}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <Card>
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <Card className="xl:col-span-2">
               <CardHeader>
                 <CardTitle>Devices needing attention</CardTitle>
               </CardHeader>
@@ -292,7 +285,7 @@ export function NCACompliancePage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="xl:col-span-1">
               <CardHeader>
                 <CardTitle>Reports</CardTitle>
               </CardHeader>
@@ -400,7 +393,6 @@ export function NCACompliancePage() {
                         <th className="py-2 pr-4">Type</th>
                         <th className="py-2 pr-4">Manufacturer</th>
                         <th className="py-2 pr-4">Status</th>
-                        <th className="py-2 pr-4">Score</th>
                         <th className="py-2 pr-4">Readiness</th>
                       </tr>
                     </thead>
@@ -424,11 +416,13 @@ export function NCACompliancePage() {
                           <td className="py-2.5 pr-4">
                             <NCAStatusBadge status={row.overall_status} />
                           </td>
-                          <td className="font-mono-tabular py-2.5 pr-4 text-[var(--color-text-secondary)]">
-                            {row.score === null ? "—" : `${row.score}%`}
-                          </td>
                           <td className="py-2.5 pr-4">
-                            <NCAReadinessBadge classification={row.readiness_classification} />
+                            <div className="flex items-center gap-2">
+                              <NCAReadinessBadge classification={row.readiness_classification} size="sm" />
+                              <span className="font-mono-tabular text-xs text-[var(--color-text-muted)]">
+                                {row.score === null ? "—" : `${row.score}%`}
+                              </span>
+                            </div>
                           </td>
                         </tr>
                       ))}

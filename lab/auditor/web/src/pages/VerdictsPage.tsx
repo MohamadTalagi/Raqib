@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
+import { Tabs } from "@/components/ui/tabs";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -35,28 +36,32 @@ export function VerdictsPage() {
     return verdicts.data.filter((v) => v.status === filter);
   }, [verdicts.data, filter]);
 
+  const filterCounts = useMemo(() => {
+    const counts: Record<VerdictStatus | "ALL", number> = {
+      ALL: verdicts.data?.length ?? 0,
+      PASS: 0,
+      FAIL: 0,
+      PARTIAL: 0,
+      INCONCLUSIVE: 0,
+      NOT_APPLICABLE: 0,
+    };
+    for (const v of verdicts.data ?? []) {
+      counts[v.status] += 1;
+    }
+    return counts;
+  }, [verdicts.data]);
+
   const loading = verdicts.loading || controls.loading;
   const error = verdicts.error ?? controls.error;
 
   return (
     <Shell title="Verdicts" subtitle="Deterministic policy-engine results mapped to CGIoT-1:2024">
-      <div className="mb-4 flex flex-wrap gap-2">
-        {FILTERS.map((status) => (
-          <button
-            key={status}
-            type="button"
-            onClick={() => setFilter(status)}
-            className={cn(
-              "cursor-pointer rounded-md border px-3 py-1.5 text-xs font-medium tracking-wide transition-colors",
-              filter === status
-                ? "border-[var(--color-brand)] bg-[color-mix(in_oklab,var(--color-brand)_14%,transparent)] text-[var(--color-brand)]"
-                : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]",
-            )}
-          >
-            {status}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        className="mb-4"
+        items={FILTERS.map((status) => ({ value: status, label: status, count: filterCounts[status] }))}
+        value={filter}
+        onChange={(v) => setFilter(v as VerdictStatus | "ALL")}
+      />
 
       {error ? (
         <ErrorState message={error} />

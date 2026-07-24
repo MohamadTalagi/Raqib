@@ -150,7 +150,18 @@ describe("DeviceDetailPage", () => {
     renderPage();
 
     expect(await screen.findByText("0%")).toBeInTheDocument();
-    expect(screen.getByText(/CGIoT-1:2024:/)).toBeInTheDocument();
+    expect(screen.getByText(/Automated scan coverage:/)).toBeInTheDocument();
+  });
+
+  it("hides the legacy automated-scan-coverage chip on the Compliance tab, since it sits above the real NCA readiness card there", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText(/Automated scan coverage:/);
+    await user.click(screen.getByRole("tab", { name: "NCA Compliance" }));
+
+    expect(screen.queryByText(/Automated scan coverage:/)).not.toBeInTheDocument();
   });
 
   it("shows 'not assessed' when no controls have been tested for this device", async () => {
@@ -365,5 +376,8 @@ describe("DeviceDetailPage", () => {
     expect(await screen.findByText("No default creds.")).toBeInTheDocument();
     expect(screen.getAllByText("Fail").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Force a unique password on first boot.")).toBeInTheDocument();
+    // NCA_DETAIL's one control has blocking: true - its failure alone forces
+    // the device's readiness to Failed, so the Controls list must flag it.
+    expect(screen.getByText("blocking")).toBeInTheDocument();
   });
 });

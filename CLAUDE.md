@@ -12,7 +12,87 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **NCA compliance-assessment robustness pass — COMPLETE** (2026-07-24).
+**Phase:** **NCA Compliance dashboard + overall UI/UX consistency pass — COMPLETE**
+(2026-07-24). The owner asked to "improve the dashboard of the NCA Compliance
+and the overall UI/UX." A fresh audit (not a repeat of the 2026-07-22
+"Dashboard UX/UI improvement pass" below, which already shipped the NCA
+dashboard's gauge/chart/attention-panel/reports and the site-wide toast/404/
+responsive-sidebar baseline) found a different, newer class of problem: UI
+elements added incrementally across several sessions (the readiness
+classification, the `blocking` flag, `review_required`, the legacy per-device
+compliance chip, the org-scope page) now showed **the same underlying
+information inconsistently across pages** — two different-looking
+"compliance %" gauges that read as the same metric, badges of mismatched
+size for the same signal, a chart silently dropping a status category its
+own sibling view still counted, and identical domain-summary markup
+copy-pasted three times (exactly how the chart/card mismatch went
+unnoticed). Fixed as a scoped, incremental pass — dark theme + amber accent
+unchanged, the two legitimately-different compliance formulas (SA-IOT-*
+verdict math vs. NCA CGIoT-1:2024 control math) deliberately **not** merged,
+only made visually distinguishable:
+- **`components/nca/DomainSummaryGrid.tsx`** (new) — the domain-summary count
+  grid extracted from 3 near-verbatim copies (`NCACompliancePage.tsx`,
+  `OrganizationalCompliancePage.tsx`, `DeviceDetailPage.tsx`'s Compliance
+  tab), so all 5 statuses (including `review_required`) can no longer drift
+  out of sync between pages the way they had.
+- **`NCADomainBarChart.tsx`** now plots `review_required` as a 5th stacked
+  segment (`CHART_COLORS.low`, not `.brand`/`.medium` — confirmed those two
+  are byte-identical hex values, which would have visually fused it into the
+  `partial` segment).
+- **`ComplianceGauge.tsx`** gained an optional `sourceLabel` prop and both
+  gauge cards were renamed to be self-explanatory ("Verdict Pass Rate" on
+  Overview vs. "NCA Control Pass Rate" on NCA Compliance) instead of relying
+  on a small caption to differentiate two identical-looking gauges measuring
+  different things.
+- **`severity-badge.tsx`**: `NCAReadinessBadge` gained a `size` prop (`sm`
+  now matches `NCAStatusBadge`'s own dimensions exactly, used in
+  `NCACompliancePage.tsx`'s device table so Readiness no longer visually
+  dwarfs Status in the same row — Score is now folded inline into that same
+  cell instead of a separate column); new `BlockingBadge` component
+  (replacing two near-duplicate inline chips) explains itself via the new
+  `Tooltip` primitive instead of a native `title` attribute, and now appears
+  on `DeviceDetailPage.tsx`'s and `OrganizationalCompliancePage.tsx`'s
+  per-control rows too — the `blocking` signal previously only reached
+  `NCAControlsPage.tsx`/`NCAControlDetailPage.tsx`, not the device/org views
+  where a Failed readiness's *cause* actually needs to be visible.
+- **`components/ui/tooltip.tsx`** (new) — this app's first tooltip
+  component; every prior non-trivial explanation relied on a native `title`.
+  Built with both a visible border and a shadow (not border alone), since
+  `--color-surface-raised` and `--color-surface` are the identical `#ffffff`
+  in the light theme.
+- **`DeviceDetailPage.tsx`**'s header previously showed a legacy
+  `ComplianceBadge` (the older SA-IOT-*-verdict-based metric, labeled with
+  the dynamic `compliance.framework` string, which happens to read
+  "NCA-CGIoT") on *every* tab, including the Compliance tab, sitting directly
+  above the real NCA readiness card. Now hidden on the Compliance tab and
+  relabeled from `{compliance.framework}:` to static "Automated scan
+  coverage" text, explained via `Tooltip` as a separate, older metric.
+- **`VerdictsPage.tsx`** migrated its hand-rolled status-filter pill row to
+  the shared `Tabs` primitive (now shows per-status counts, matching the
+  pattern `NCACompliancePage.tsx`/`DeviceDetailPage.tsx` already used for
+  the identical UX goal).
+- **`OrganizationalCompliancePage.tsx`** finally has a real sidebar nav entry
+  (`Sidebar.tsx`'s Compliance group) — previously reachable only via an
+  inline text link inside `NCACompliancePage.tsx`'s disclaimer banner.
+- **Not done this pass** (deferred, documented rather than silently
+  skipped): a device-table/attention-panel blocking indicator on
+  `NCACompliancePage.tsx` itself needs a small backend addition
+  (`GET /nca/devices` only returns `readiness_classification`, not the
+  `blocking_control_ids` `overall_classification()` already computes) — out
+  of scope for a frontend-only pass; wider adoption of
+  `--color-surface-raised` on every `Card` (cosmetic-only); merging the two
+  compliance formulas (deliberately out of scope — they measure different
+  things).
+- **Verified**: `tsc --noEmit` clean, `oxlint` clean (no new warnings), full
+  Vitest suite green (2 unrelated pre-existing environment flakes confirmed
+  independent of this work by re-running in isolation — `RunScanPage.test.tsx`'s
+  known timing-dependent test, and a `severity-badge.test.tsx` worker-pool
+  timeout under this host's parallel-runner load, both 100% green alone).
+  Rebuilt and redeployed `auditor-web` live; confirmed the deployed JS bundle
+  contains every new UI string and confirmed live `/nca/controls` data has
+  real `blocking: true` rows for the new badges to render against.
+
+Before that: **NCA compliance-assessment robustness pass — COMPLETE** (2026-07-24).
 The owner asked (as a senior full-stack/IoT-security/compliance-architect brief) to
 inspect the existing project and add a "robust automated compliance-assessment
 feature" — not a rebuild: an earlier, much larger scope-conflicting prompt asking
@@ -941,6 +1021,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-24 | **NCA Compliance dashboard + overall UI/UX consistency pass** — see §0 for the full breakdown. Fixed the same compliance information being shown inconsistently across pages: extracted a shared `DomainSummaryGrid` component (was copy-pasted 3x, which is how a status category went missing from `NCADomainBarChart` unnoticed); gave the two legitimately-different compliance gauges (SA-IOT-* verdicts vs. NCA controls) self-explanatory titles instead of relying on a small caption; added a `size` prop to `NCAReadinessBadge` so it stops visually dwarfing `NCAStatusBadge` in the same table row; added a new `BlockingBadge` (explained via a new `Tooltip` primitive, this app's first) and propagated it to device/org control-list rows, not just the controls catalog; hid the legacy per-device `ComplianceBadge` chip on the Compliance tab where it previously sat confusingly above the real NCA readiness card; migrated `VerdictsPage`'s hand-rolled filter pills to the shared `Tabs` primitive; added `OrganizationalCompliancePage` to the sidebar nav (previously only reachable via an inline link). Frontend-only, no backend changes. `tsc`/`oxlint` clean, full Vitest suite green, rebuilt and redeployed `auditor-web`. |
 | 2026-07-24 | **NCA compliance-assessment robustness pass** — see §0 for the full breakdown. Added a Passed/Partially Passed/Failed readiness classification (`overall_classification()` in `policies/nca/evaluator.py`, additive alongside the existing `device_overall_status`/`device_score`) that explicitly does not rely on percentage alone; a new `compliance_controls.blocking` flag (IoTGuard's own judgment call, authored the same way `severity` already is, limited to 3 guidelines — default credentials, unencrypted sensitive data, unnecessary exposed services) that forces Failed regardless of score; a real sixth `review_required` assessment status distinct from `not_tested`; and `POST /nca/assessments/{id}/override` (mandatory justification + auditor identity, never mutates the original row, same supersede-and-audit-trail mechanism as retest). New migration `006-nca-blocking-and-review-required.sql`. 82 `policies/nca` + 205 `lab/auditor/api` (2 pre-existing WeasyPrint gaps, unrelated) + 158 frontend tests passing. |
 | 2026-07-23 | **Made the NCA Compliance module real** — see §0 for the full breakdown. Every write endpoint (record/retest an assessment, request/approve/reject an exception, recompute from evidence) already existed and was already tested at the API layer, but had zero UI wired to it - the module was a read-only viewer for script-seeded data, and 60+ organization-scope guidelines had no path to ever being assessed through the product at all. Added `RecordAssessmentDialog`/`RequestExceptionDialog` (scope-adaptive: device picker vs. fixed organizational scope), an Exceptions card + Record/Retest actions on `NCAControlDetailPage` and per-control-row links from the device Compliance tab and organizational page, a new full-catalog `NCAControlsPage` (all 81, filterable), and a "Recompute from evidence" button. Zero backend changes - purely frontend. Verified live: recorded a real assessment on a previously-unassessable governance control, retested it, approved a real exception, and confirmed recompute surfaced real not-tested placeholders from real evidence. 152 frontend tests passing (was 125), `tsc` clean. |
 | 2026-07-23 | **Removed Run Scan's "Network Discovery" section** — see §0 for the full breakdown. It required selecting a device before it would even appear, despite the scan itself never using that device's host/port (it always swept the whole subnet) - a leftover overlap with the standalone "Discover devices" panel on the Devices page, which is now the only real entry point (no device selection needed). Added a pointer link from Run Scan to it. Backend catalog/dispatch untouched. 125 frontend tests passing (was 124), `tsc` clean. |

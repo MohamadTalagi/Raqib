@@ -35,4 +35,17 @@ describe("Sidebar active state", () => {
     expect(activeLinks).toHaveLength(1);
     expect(activeLinks[0]).toHaveAccessibleName(/nca controls/i);
   });
+
+  it("links to Organizational Compliance, and highlights only that link there", () => {
+    // Previously only reachable via an inline text link inside the NCA
+    // Compliance page's disclaimer banner - no sidebar entry at all.
+    renderAt("/nca-compliance/organization");
+    expect(screen.getByRole("link", { name: /organizational compliance/i })).toHaveAttribute(
+      "href",
+      "/nca-compliance/organization",
+    );
+    const activeLinks = screen.getAllByRole("link", { current: "page" });
+    expect(activeLinks).toHaveLength(1);
+    expect(activeLinks[0]).toHaveAccessibleName(/organizational compliance/i);
+  });
 });

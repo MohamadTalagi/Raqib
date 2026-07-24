@@ -1,5 +1,6 @@
-import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification } from "@/lib/types";
 
 const SEVERITY_STYLES: Record<Severity, string> = {
@@ -107,22 +108,43 @@ const READINESS_LABEL: Record<NCAReadinessClassification, string> = {
   failed: "Failed",
 };
 
+const READINESS_SIZE_STYLES: Record<"sm" | "md", string> = {
+  md: "gap-1.5 px-2.5 py-1 text-sm",
+  sm: "gap-1.5 px-2 py-0.5 text-xs",
+};
+
+const READINESS_ICON_SIZE: Record<"sm" | "md", string> = {
+  md: "h-4 w-4",
+  sm: "h-3.5 w-3.5",
+};
+
 /**
  * The Passed/Partially Passed/Failed compliance-readiness verdict (icon +
  * text, same colorblind/greyscale-safe rule as NCAStatusBadge) - distinct
  * from NCAStatusBadge, which renders a single control's status rather than
- * the whole-scope classification.
+ * the whole-scope classification. `size="md"` (default) is the hero-badge
+ * treatment used on device/organization compliance headers; `size="sm"`
+ * matches NCAStatusBadge's own dimensions exactly, for dense table rows
+ * where the two badges sit side by side and must read as the same visual
+ * weight rather than one dwarfing the other.
  */
-export function NCAReadinessBadge({ classification }: { classification: NCAReadinessClassification }) {
+export function NCAReadinessBadge({
+  classification,
+  size = "md",
+}: {
+  classification: NCAReadinessClassification;
+  size?: "sm" | "md";
+}) {
   const Icon = READINESS_ICON[classification];
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-semibold tracking-wide",
+        "inline-flex items-center rounded-md font-semibold tracking-wide",
+        READINESS_SIZE_STYLES[size],
         READINESS_STYLES[classification],
       )}
     >
-      <Icon className="h-4 w-4" strokeWidth={2} />
+      <Icon className={READINESS_ICON_SIZE[size]} strokeWidth={2} />
       {READINESS_LABEL[classification]}
     </span>
   );
@@ -145,6 +167,45 @@ export function NCAStatusBadge({ status }: { status: NCAStatus }) {
       <Icon className="h-3.5 w-3.5" strokeWidth={2} />
       {NCA_STATUS_LABEL[status]}
     </span>
+  );
+}
+
+export const BLOCKING_EXPLANATION =
+  "A failure of this control alone forces the overall readiness classification to Failed, regardless of score.";
+
+const BLOCKING_SIZE_STYLES: Record<"xs" | "sm", string> = {
+  xs: "gap-1 px-1.5 py-0.5 text-[10px]",
+  sm: "gap-1 px-2 py-0.5 text-xs",
+};
+
+const BLOCKING_ICON_SIZE: Record<"xs" | "sm", string> = {
+  xs: "h-3 w-3",
+  sm: "h-3.5 w-3.5",
+};
+
+/**
+ * Marks a control whose failure alone forces a Failed readiness
+ * classification (see policies/nca/build_catalog.py's BLOCKING_GUIDELINES) -
+ * the single most consequential piece of information in the compliance
+ * flow, so it always carries its own explanation rather than relying on a
+ * native `title` attribute (this app has no other tooltip anywhere, so this
+ * was previously the least discoverable explanation in the UI).
+ */
+export function BlockingBadge({ size = "sm" }: { size?: "xs" | "sm" }) {
+  return (
+    <Tooltip content={BLOCKING_EXPLANATION}>
+      <span
+        tabIndex={0}
+        className={cn(
+          "inline-flex items-center rounded-md font-mono font-medium uppercase tracking-wide",
+          "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)]",
+          BLOCKING_SIZE_STYLES[size],
+        )}
+      >
+        <Ban className={BLOCKING_ICON_SIZE[size]} strokeWidth={2} />
+        blocking
+      </span>
+    </Tooltip>
   );
 }
 

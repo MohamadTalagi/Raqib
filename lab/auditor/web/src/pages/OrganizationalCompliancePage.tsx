@@ -4,7 +4,8 @@ import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
-import { NCAReadinessBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
+import { BlockingBadge, NCAReadinessBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
+import { DomainSummaryGrid } from "@/components/nca/DomainSummaryGrid";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 
@@ -72,20 +73,7 @@ export function OrganizationalCompliancePage() {
               <CardTitle>Domain summary</CardTitle>
             </CardHeader>
             <CardContent className="pt-2">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {Object.entries(org.data.domain_summary).map(([domainName, counts]) => (
-                  <div key={domainName} className="rounded-md border border-[var(--color-border)] p-4">
-                    <p className="text-xs font-medium text-[var(--color-text-secondary)]">{domainName}</p>
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                      <span className="text-[var(--color-pass)]">{counts.pass} pass</span>
-                      <span className="text-[var(--color-medium)]">{counts.partial} partial</span>
-                      <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
-                      <span className="text-[var(--color-text-muted)]">{counts.not_tested} not tested</span>
-                      <span className="text-[var(--color-brand)]">{counts.review_required} review</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <DomainSummaryGrid domains={Object.entries(org.data.domain_summary)} />
             </CardContent>
           </Card>
 
@@ -110,6 +98,7 @@ export function OrganizationalCompliancePage() {
                       <span className="min-w-0 flex-1 truncate text-[var(--color-text-secondary)]">
                         {control.implementation_summary}
                       </span>
+                      {control.blocking && <BlockingBadge size="xs" />}
                       <NCAStatusBadge status={assessment?.status ?? "not_tested"} />
                       <Link
                         to={`/nca-compliance/controls/${encodeURIComponent(control.id)}`}

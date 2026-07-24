@@ -112,13 +112,13 @@ export function OverviewPage() {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <Card className="xl:col-span-1">
               <CardHeader>
-                <CardTitle>Compliance score</CardTitle>
+                <CardTitle>Verdict Pass Rate</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center gap-3 pb-6">
                 {complianceScore === null ? (
                   <Skeleton className="h-40 w-40 rounded-full" />
                 ) : (
-                  <ComplianceGauge score={complianceScore} />
+                  <ComplianceGauge score={complianceScore} sourceLabel="SA-IOT VERDICTS" />
                 )}
                 <p className="text-center text-xs text-[var(--color-text-muted)]">
                   PASS + ½·PARTIAL over decided verdicts

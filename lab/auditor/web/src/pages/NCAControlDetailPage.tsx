@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowUpRight, Ban, Plus, RefreshCw, ShieldOff, Stamp } from "lucide-react";
+import { ArrowUpRight, Plus, RefreshCw, ShieldOff, Stamp } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
-import { SeverityBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
+import { BlockingBadge, SeverityBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
 import { RecordAssessmentDialog } from "@/components/nca/RecordAssessmentDialog";
 import { RequestExceptionDialog } from "@/components/nca/RequestExceptionDialog";
 import { OverrideAssessmentDialog } from "@/components/nca/OverrideAssessmentDialog";
@@ -101,6 +101,7 @@ export function NCAControlDetailPage() {
           <CardContent className="space-y-3 pt-5">
             <div className="flex flex-wrap items-center gap-3">
               <SeverityBadge severity={control.severity} />
+              {control.blocking && <BlockingBadge />}
               <span className="font-mono text-xs text-[var(--color-text-secondary)]">
                 {control.domain_name} &middot; {control.subdomain_name}
               </span>
@@ -113,15 +114,6 @@ export function NCAControlDetailPage() {
               {!control.required && (
                 <span className="rounded-md bg-[var(--color-surface-hover)] px-2 py-0.5 font-mono text-xs text-[var(--color-text-muted)]">
                   optional
-                </span>
-              )}
-              {control.blocking && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-md bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] px-2 py-0.5 font-mono text-xs text-[var(--color-critical)]"
-                  title="A failure of this control alone forces the device's overall readiness classification to Failed, regardless of score."
-                >
-                  <Ban className="h-3 w-3" />
-                  blocking condition
                 </span>
               )}
               <div className="ml-auto flex gap-2">
