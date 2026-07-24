@@ -39,7 +39,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Compliance",
     items: [
-      { to: "/nca-compliance", label: "NCA Compliance", icon: ClipboardCheck, end: false },
+      { to: "/nca-compliance", label: "NCA Compliance", icon: ClipboardCheck, end: true },
       { to: "/nca-compliance/controls", label: "NCA Controls", icon: ListChecks, end: false },
     ],
   },

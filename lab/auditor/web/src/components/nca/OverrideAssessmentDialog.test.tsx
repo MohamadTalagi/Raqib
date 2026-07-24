@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OverrideAssessmentDialog } from "./OverrideAssessmentDialog";
 import { api } from "@/lib/api";
-import type { NCAAssessment } from "@/lib/types";
+import type { NCAAssessment, NCAStatus } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -34,7 +34,7 @@ const ASSESSMENT: NCAAssessment = {
   created_at: "2026-07-20T00:00:00Z",
 };
 
-const OVERRIDDEN: NCAAssessment & { original_status: string; override_justification: string } = {
+const OVERRIDDEN: NCAAssessment & { original_status: NCAStatus; override_justification: string } = {
   ...ASSESSMENT,
   id: "ASM-2",
   status: "pass",
