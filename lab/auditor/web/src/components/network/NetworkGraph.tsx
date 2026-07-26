@@ -90,30 +90,55 @@ interface ScatterPoint {
 }
 
 const VIEW_W = 1000;
-const VIEW_H = 560;
+const BASE_VIEW_H = 560;
 const PAD = 70;
-const MIN_DIST = 130;
+// The minimum amount of space (in viewBox units) any single node is
+// guaranteed to have to itself. Grid dimensions grow (more rows) to fit
+// however many ids are given rather than packing more nodes into a
+// fixed-size area - so unlike rejection-sampling a random position, this
+// can never fail to find room and can never place two nodes on top of
+// each other, regardless of how many devices get registered.
+const CELL_SIZE = 140;
 const ZONE_GAP = 40;
 const ZONE_TOP_MARGIN = 56;
 const AUDIT_ZONE_END = 640;
 const BACKEND_ZONE_START = AUDIT_ZONE_END + ZONE_GAP;
 
-/** Scatters points inside [xMin,xMax] x [yMin,yMax] with deterministic jitter,
- * rejecting placements that land too close to an already-placed node. */
-function scatter(ids: string[], xMin: number, xMax: number, yMin: number, yMax: number): ScatterPoint[] {
-  const points: ScatterPoint[] = [];
-  for (const id of ids) {
-    let x = 0;
-    let y = 0;
-    for (let attempt = 0; attempt < 40; attempt++) {
-      x = xMin + hashUnit(`${id}:x:${attempt}`) * (xMax - xMin);
-      y = yMin + hashUnit(`${id}:y:${attempt}`) * (yMax - yMin);
-      const tooClose = points.some((p) => Math.hypot(p.x - x, p.y - y) < MIN_DIST);
-      if (!tooClose) break;
-    }
-    points.push({ id, x, y });
-  }
-  return points;
+interface GridPlacement {
+  points: ScatterPoint[];
+  rows: number;
+}
+
+/** Tiles [xMin,xMax] starting at yMin into a grid sized to give every id its
+ * own cell (cols chosen to fit the zone's width at CELL_SIZE, rows however
+ * many that requires), then jitters each id within its own cell - bounded
+ * well inside the cell's margins so neighboring cells' jitter can never
+ * overlap. This guarantees zero collisions by construction: growing the
+ * node count grows the grid, not the crowding, so every device keeps its
+ * own space no matter how many get added. */
+function gridPlacement(ids: string[], xMin: number, xMax: number, yMin: number): GridPlacement {
+  if (ids.length === 0) return { points: [], rows: 0 };
+  const width = xMax - xMin;
+  const cols = Math.max(1, Math.floor(width / CELL_SIZE));
+  const rows = Math.ceil(ids.length / cols);
+  const cellW = width / cols;
+  const jitterFrac = 0.3;
+
+  // Ordered by hash rather than input order, so the layout still reads as
+  // semi-random rather than a literal left-to-right/top-to-bottom list.
+  const ordered = [...ids].sort((a, b) => hashUnit(`order:${a}`) - hashUnit(`order:${b}`));
+
+  const points = ordered.map((id, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const cx = xMin + cellW * (col + 0.5);
+    const cy = yMin + CELL_SIZE * (row + 0.5);
+    const jx = (hashUnit(`${id}:x`) - 0.5) * cellW * jitterFrac;
+    const jy = (hashUnit(`${id}:y`) - 0.5) * CELL_SIZE * jitterFrac;
+    return { id, x: cx + jx, y: cy + jy };
+  });
+
+  return { points, rows };
 }
 
 /** Prim's algorithm: connects every node in the group with the shortest
@@ -169,14 +194,17 @@ export function NetworkGraph({ devices, selectedId, onSelect }: NetworkGraphProp
   const backendInfra = INFRA_NODES.filter((n) => n.zone === "backend");
 
   const auditIds = [...devices.map((d) => d.device_id), ...auditInfra.map((n) => n.id)];
-  const auditPoints = scatter(auditIds, PAD, AUDIT_ZONE_END, PAD, VIEW_H - PAD);
-  const backendPoints = scatter(
-    backendInfra.map((n) => n.id),
-    BACKEND_ZONE_START,
-    VIEW_W - PAD,
-    PAD,
-    VIEW_H - PAD,
-  );
+  const auditGrid = gridPlacement(auditIds, PAD, AUDIT_ZONE_END, PAD);
+  const backendGrid = gridPlacement(backendInfra.map((n) => n.id), BACKEND_ZONE_START, VIEW_W - PAD, PAD);
+  const auditPoints = auditGrid.points;
+  const backendPoints = backendGrid.points;
+
+  // The canvas grows to fit whichever zone needs more rows, rather than
+  // clipping node placement to a fixed height - see gridPlacement's own
+  // comment for why this is what actually prevents overlap as devices are
+  // added, not just a cosmetic choice.
+  const contentRows = Math.max(auditGrid.rows, backendGrid.rows, 1);
+  const VIEW_H = Math.max(BASE_VIEW_H, contentRows * CELL_SIZE + 2 * PAD);
 
   const allPoints = [...auditPoints, ...backendPoints];
   const pointById = new Map(allPoints.map((p) => [p.id, p]));
@@ -191,7 +219,10 @@ export function NetworkGraph({ devices, selectedId, onSelect }: NetworkGraphProp
   }
 
   return (
-    <div className="relative aspect-square w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] sm:aspect-[16/10] xl:aspect-[16/9]">
+    <div
+      className="relative w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]"
+      style={{ aspectRatio: `${VIEW_W} / ${VIEW_H}` }}
+    >
       <svg
         className="absolute inset-0 h-full w-full"
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}

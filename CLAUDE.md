@@ -12,7 +12,51 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Network Map page added — COMPLETE** (2026-07-26). The owner supplied
+**Phase:** **Network Map topology made collision-proof at any device count —
+COMPLETE** (2026-07-26). The owner flagged that the Network Map's node layout
+(built the same day, see the phase below) needed to guarantee "each device
+should have its own space without conflict" as more devices get registered,
+not just look fine for the current 6-device fleet. The original `scatter()`
+placed each node via up to 40 attempts of deterministic-hashed jitter within
+a **fixed-size** zone, rejecting a candidate spot only if it landed within
+`MIN_DIST` of an already-placed node — a real, if unlikely-in-practice,
+failure mode: once enough nodes are packed into that fixed area, all 40
+attempts can land too close to something, and the code fell back to using
+that too-close position anyway, visually overlapping two nodes.
+- **`components/network/NetworkGraph.tsx`'s `scatter()` replaced with
+  `gridPlacement()`** — deterministically tiles each zone's width into a
+  grid sized to give every id its own cell (`cols` chosen from the zone's
+  fixed width and a `CELL_SIZE` floor; `rows = ceil(count / cols)`, so the
+  grid always has enough cells for however many ids it's given), then
+  jitters each id within its own cell, bounded well inside the cell's
+  margins so adjacent cells' jitter ranges can never overlap. This is a
+  structural guarantee (like the existing MST-based edge algorithm it sits
+  alongside, kept unchanged), not a tuning knob — verified with a standalone
+  script across device counts from 1 to 150 that minimum pairwise node
+  distance never drops meaningfully as the fleet grows (stays ≈100+ units
+  throughout, vs. the old algorithm's unbounded worst case of ~0).
+- **The canvas grows to fit, instead of cramming more nodes into a fixed
+  box**: `VIEW_H` is now computed per render from whichever zone needs more
+  grid rows (`Math.max(auditGrid.rows, backendGrid.rows)`), and the
+  container's aspect ratio is set via an inline `style={{ aspectRatio }}`
+  matching that computed height instead of the previous fixed
+  `aspect-square sm:aspect-[16/10] xl:aspect-[16/9]` Tailwind breakpoints —
+  otherwise a taller SVG viewBox squeezed into a fixed-aspect-ratio box would
+  just visually squash the new rows rather than actually showing them with
+  room to breathe. For the current real 6-device/4-infra fleet this
+  computes to the exact same 560-unit height as before — verified by hand,
+  so there's no visual regression for the fleet size the page ships with
+  today; the growth path only engages once there are enough nodes to need it.
+- **Verified**: `tsc --noEmit` and `oxlint` clean (same 2 pre-existing
+  `only-export-components` warnings as before, nothing new); full Vitest
+  suite green (no test files exist for this feature, per the original
+  handoff document's explicit, stated gap); rebuilt and redeployed
+  `auditor-web`, confirmed via a content-hash/size diff against the previous
+  build that the new bundle was actually served (browser-based visual
+  verification wasn't possible — Claude-in-Chrome still not connected this
+  session).
+
+Before that: **Network Map page added — COMPLETE** (2026-07-26). The owner supplied
 a self-contained handoff document (`HANDOFF-NETWORK-MAP-FEATURE.md`, delivered via
 Telegram from a separate session/laptop where the feature had already been
 designed and iterated on three times, on a branch never merged/pushed) and asked
@@ -1087,6 +1131,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-26 | **Made the Network Map's node layout collision-proof at any device count** — see §0 for the full breakdown. The original `scatter()` (built the same day) placed nodes via rejection-sampled random jitter within a fixed-size zone, which had a real failure mode once enough nodes were packed in: after 40 failed attempts it placed the node anyway, overlapping another. Replaced with `gridPlacement()` — a deterministic grid sized to give every id its own cell, growing rows (and the canvas height, via a computed inline `aspectRatio` replacing the old fixed Tailwind aspect classes) to fit however many nodes there are, rather than cramming more into the same space. Verified with a standalone script that minimum pairwise node distance stays ≈100+ units from 1 to 150 devices, vs. the old algorithm's unbounded worst case. No visual change for the current 6-device fleet (computes to the identical height). `tsc`/`oxlint` clean, full Vitest suite green, rebuilt and redeployed `auditor-web` (confirmed via a bundle hash/size diff that the new build was actually served). |
 | 2026-07-26 | **Added the Network Map page (`/network-map`)** — see §0 for the full breakdown. Executed from a self-contained handoff document delivered via Telegram from a separate session where the feature had already been designed, iterated on three times, and finalized on an unmerged branch. Every Step 1 precondition (shared types/components the feature depends on) was verified against this repo's real files before writing anything — all matched exactly, so the spec's code was used unmodified. New `components/network/NetworkGraph.tsx` renders the real two-Docker-network topology (`audit-network`/`internal-network` from `lab/docker-compose.yml`, `auditor-worker` as the one cross-zone bridge) using deterministic scatter + a per-zone Minimum Spanning Tree (Prim's algorithm) rather than a hub-and-spoke layout — the MST approach is a structural guarantee against the star-shaped layout the owner explicitly rejected twice in the design history this document preserved. New `pages/NetworkMapPage.tsx`, one small additive `CardDescription` export on `card.tsx`, a new route, a new sidebar entry, and a CSS dash-flow animation. No new tests (an explicit, stated gap in the handoff document itself, respected as-is). `tsc`/`oxlint` clean, full Vitest suite green (2 unrelated pre-existing environment flakes, confirmed independent in isolation), rebuilt and redeployed `auditor-web`, confirmed live via curl (bundle strings, SPA route, real 6-device fleet data) since the Claude-in-Chrome extension wasn't connected for a visual check. |
 | 2026-07-24 | **NCA Compliance dashboard + overall UI/UX consistency pass** — see §0 for the full breakdown. Fixed the same compliance information being shown inconsistently across pages: extracted a shared `DomainSummaryGrid` component (was copy-pasted 3x, which is how a status category went missing from `NCADomainBarChart` unnoticed); gave the two legitimately-different compliance gauges (SA-IOT-* verdicts vs. NCA controls) self-explanatory titles instead of relying on a small caption; added a `size` prop to `NCAReadinessBadge` so it stops visually dwarfing `NCAStatusBadge` in the same table row; added a new `BlockingBadge` (explained via a new `Tooltip` primitive, this app's first) and propagated it to device/org control-list rows, not just the controls catalog; hid the legacy per-device `ComplianceBadge` chip on the Compliance tab where it previously sat confusingly above the real NCA readiness card; migrated `VerdictsPage`'s hand-rolled filter pills to the shared `Tabs` primitive; added `OrganizationalCompliancePage` to the sidebar nav (previously only reachable via an inline link). Frontend-only, no backend changes. `tsc`/`oxlint` clean, full Vitest suite green, rebuilt and redeployed `auditor-web`. |
 | 2026-07-24 | **NCA compliance-assessment robustness pass** — see §0 for the full breakdown. Added a Passed/Partially Passed/Failed readiness classification (`overall_classification()` in `policies/nca/evaluator.py`, additive alongside the existing `device_overall_status`/`device_score`) that explicitly does not rely on percentage alone; a new `compliance_controls.blocking` flag (IoTGuard's own judgment call, authored the same way `severity` already is, limited to 3 guidelines — default credentials, unencrypted sensitive data, unnecessary exposed services) that forces Failed regardless of score; a real sixth `review_required` assessment status distinct from `not_tested`; and `POST /nca/assessments/{id}/override` (mandatory justification + auditor identity, never mutates the original row, same supersede-and-audit-trail mechanism as retest). New migration `006-nca-blocking-and-review-required.sql`. 82 `policies/nca` + 205 `lab/auditor/api` (2 pre-existing WeasyPrint gaps, unrelated) + 158 frontend tests passing. |
