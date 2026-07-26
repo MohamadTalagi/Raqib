@@ -65,6 +65,14 @@ Beyond the Day-1/2/3 core, the lab now includes:
 
 ### Application features (dashboard)
 
+- **Network Map** (`/network-map`) — a live topology view of the real lab: two zone boxes
+  mirroring `lab/docker-compose.yml`'s actual two Docker networks (audit-network, where every
+  device plus `auditor-worker`/`traffic-capture` sit, and internal-network, `internal: true`/no
+  route out, where `auditor-api`/`auditor-database` sit), with `auditor-worker` drawn as the one
+  explicit bridge edge — the only service with a leg in both. Node layout is a deterministic
+  scatter plus a per-zone Minimum Spanning Tree, not a hub-and-spoke diagram, so no single node
+  ever has universally high degree. Click any node to inspect it (device posture/host/evidence/
+  verdict counts/services, or an infra node's role) in the side panel.
 - **Devices** — register/deregister a device and its exposed services, upload/remove a firmware
   archive. A standalone **Discover devices** panel (no device selection needed — this is the
   network-scan entry point) sweeps the audit-network subnet (`POST /network-scans`, reusing

@@ -117,4 +117,18 @@
   .font-mono-tabular {
     font-variant-numeric: tabular-nums;
   }
+
+  @keyframes network-dash {
+    to {
+      stroke-dashoffset: -24;
+    }
+  }
+  .animate-network-dash {
+    animation: network-dash 1.4s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-network-dash {
+      animation: none;
+    }
+  }
 }

@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-24
+> **Last updated:** 2026-07-26
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,73 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **NCA Compliance dashboard + overall UI/UX consistency pass — COMPLETE**
+**Phase:** **Network Map page added — COMPLETE** (2026-07-26). The owner supplied
+a self-contained handoff document (`HANDOFF-NETWORK-MAP-FEATURE.md`, delivered via
+Telegram from a separate session/laptop where the feature had already been
+designed and iterated on three times, on a branch never merged/pushed) and asked
+to execute it verbatim in this clone. Verified the handoff's every claimed
+precondition against this repo's real files before writing anything (`Device`/
+`DeviceTier`/`VerdictRecord`/`ServiceType` shapes, `api.devices`/`api.verdicts`,
+`useFetch`, `serviceIcon`, `Shell`, `ErrorState`/`EmptyState`, `Skeleton`,
+`StatTile`, `Card`/`CardHeader`/`CardTitle`/`CardContent`, the `NAV_GROUPS` sidebar
+structure, the `App.tsx` route list, `index.css`'s `@layer utilities` block) —
+everything matched exactly, so the spec's exact code was used unmodified rather
+than adapted.
+- **New `/network-map` page** — a live topology view of the real lab, not a
+  decorative diagram: two zone boxes (`AUDIT NETWORK`/`BACKEND`) mirroring
+  `lab/docker-compose.yml`'s actual two Docker networks (`audit-network`, where
+  every device plus `auditor-worker`/`traffic-capture` sit, and `internal-network`,
+  `internal: true`/no route out, where `auditor-api`/`auditor-database` sit),
+  with `auditor-worker` as the one explicit cross-zone bridge edge — the only
+  service with a leg in both networks.
+- **`components/network/NetworkGraph.tsx`** (new) — deliberately **not**
+  hub-and-spoke. The handoff document's own history explains why: a first
+  attempt (every device wired to one central "Gateway" node) was rejected by the
+  owner outright ("the design actually bad, it is not like a network, like a
+  star"), and a second attempt that kept the same shape but added jitter/curves
+  to disguise it still read as a star, since the problem was structural (one
+  node touching every other node), not cosmetic. The shipped version scatters
+  each zone's nodes semi-randomly (deterministic hash-based jitter, stable across
+  re-renders) and connects them with a **Minimum Spanning Tree** (Prim's
+  algorithm) computed per zone, which structurally guarantees no node can have
+  universally high degree — not a tuning knob, an inherent property of the
+  algorithm. Clicking a device or infra node dims every non-adjacent edge and
+  swaps the side panel between fleet overview / device detail (posture, host,
+  evidence/verdict counts including live FAIL counts from `/verdicts`, exposed
+  services) / infra detail.
+- **`components/ui/card.tsx`** gained a small, additive `CardDescription` export
+  (the one existing piece of shared infrastructure the feature needed that
+  wasn't already there) — every other file the feature depends on already
+  existed with a matching shape, confirmed by reading each one before writing
+  any new code, not assumed from the handoff doc's own table.
+- Route (`/network-map`), sidebar entry (Monitoring group, right after
+  "Devices"), and the `animate-network-dash` scrolling-dash keyframe (nested into
+  `index.css`'s existing `@layer utilities` block, respecting
+  `prefers-reduced-motion`) added exactly as specified.
+- **No new automated tests** — an explicit, stated gap in the handoff document
+  itself ("a known gap, not an oversight to silently fix by inventing test
+  content beyond what's asked"), respected as-is rather than overridden with
+  this project's usual per-page test convention, since the document's author
+  had already made and documented that call.
+- **Verified**: every Step 1 precondition confirmed against real files first;
+  `tsc --noEmit` clean; `oxlint` clean (2 new `only-export-components` warnings
+  in `NetworkGraph.tsx` for exporting `TIER_LABEL`/`INFRA_NODES` alongside the
+  component - the same pre-existing, already-tolerated warning class this
+  codebase already has in `useToast.tsx`/`NetworkDiscoveryPanel.tsx`, not a new
+  problem); full Vitest suite green (2 unrelated pre-existing environment flakes
+  - `RunScanPage.test.tsx`'s known timing-dependent test and a
+  `RecordAssessmentDialog.test.tsx` worker-pool timeout under this host's
+  parallel-runner load - both confirmed passing 100% in isolation, and neither
+  touches anything this feature added, since it has no test files of its own).
+  Rebuilt and redeployed `auditor-web` live; confirmed via curl that the
+  deployed bundle contains the new page's strings, `GET /network-map` resolves
+  via the SPA fallback, and the live `/devices` endpoint returns the real
+  6-device fleet the graph renders against. Browser-based visual verification
+  (zone boxes, click-to-inspect, dimming) was **not** performed this session -
+  the Claude-in-Chrome extension was not connected - noted here rather than
+  claimed.
+
+Before that: **NCA Compliance dashboard + overall UI/UX consistency pass — COMPLETE**
 (2026-07-24). The owner asked to "improve the dashboard of the NCA Compliance
 and the overall UI/UX." A fresh audit (not a repeat of the 2026-07-22
 "Dashboard UX/UI improvement pass" below, which already shipped the NCA
@@ -1021,6 +1087,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-26 | **Added the Network Map page (`/network-map`)** — see §0 for the full breakdown. Executed from a self-contained handoff document delivered via Telegram from a separate session where the feature had already been designed, iterated on three times, and finalized on an unmerged branch. Every Step 1 precondition (shared types/components the feature depends on) was verified against this repo's real files before writing anything — all matched exactly, so the spec's code was used unmodified. New `components/network/NetworkGraph.tsx` renders the real two-Docker-network topology (`audit-network`/`internal-network` from `lab/docker-compose.yml`, `auditor-worker` as the one cross-zone bridge) using deterministic scatter + a per-zone Minimum Spanning Tree (Prim's algorithm) rather than a hub-and-spoke layout — the MST approach is a structural guarantee against the star-shaped layout the owner explicitly rejected twice in the design history this document preserved. New `pages/NetworkMapPage.tsx`, one small additive `CardDescription` export on `card.tsx`, a new route, a new sidebar entry, and a CSS dash-flow animation. No new tests (an explicit, stated gap in the handoff document itself, respected as-is). `tsc`/`oxlint` clean, full Vitest suite green (2 unrelated pre-existing environment flakes, confirmed independent in isolation), rebuilt and redeployed `auditor-web`, confirmed live via curl (bundle strings, SPA route, real 6-device fleet data) since the Claude-in-Chrome extension wasn't connected for a visual check. |
 | 2026-07-24 | **NCA Compliance dashboard + overall UI/UX consistency pass** — see §0 for the full breakdown. Fixed the same compliance information being shown inconsistently across pages: extracted a shared `DomainSummaryGrid` component (was copy-pasted 3x, which is how a status category went missing from `NCADomainBarChart` unnoticed); gave the two legitimately-different compliance gauges (SA-IOT-* verdicts vs. NCA controls) self-explanatory titles instead of relying on a small caption; added a `size` prop to `NCAReadinessBadge` so it stops visually dwarfing `NCAStatusBadge` in the same table row; added a new `BlockingBadge` (explained via a new `Tooltip` primitive, this app's first) and propagated it to device/org control-list rows, not just the controls catalog; hid the legacy per-device `ComplianceBadge` chip on the Compliance tab where it previously sat confusingly above the real NCA readiness card; migrated `VerdictsPage`'s hand-rolled filter pills to the shared `Tabs` primitive; added `OrganizationalCompliancePage` to the sidebar nav (previously only reachable via an inline link). Frontend-only, no backend changes. `tsc`/`oxlint` clean, full Vitest suite green, rebuilt and redeployed `auditor-web`. |
 | 2026-07-24 | **NCA compliance-assessment robustness pass** — see §0 for the full breakdown. Added a Passed/Partially Passed/Failed readiness classification (`overall_classification()` in `policies/nca/evaluator.py`, additive alongside the existing `device_overall_status`/`device_score`) that explicitly does not rely on percentage alone; a new `compliance_controls.blocking` flag (IoTGuard's own judgment call, authored the same way `severity` already is, limited to 3 guidelines — default credentials, unencrypted sensitive data, unnecessary exposed services) that forces Failed regardless of score; a real sixth `review_required` assessment status distinct from `not_tested`; and `POST /nca/assessments/{id}/override` (mandatory justification + auditor identity, never mutates the original row, same supersede-and-audit-trail mechanism as retest). New migration `006-nca-blocking-and-review-required.sql`. 82 `policies/nca` + 205 `lab/auditor/api` (2 pre-existing WeasyPrint gaps, unrelated) + 158 frontend tests passing. |
 | 2026-07-23 | **Made the NCA Compliance module real** — see §0 for the full breakdown. Every write endpoint (record/retest an assessment, request/approve/reject an exception, recompute from evidence) already existed and was already tested at the API layer, but had zero UI wired to it - the module was a read-only viewer for script-seeded data, and 60+ organization-scope guidelines had no path to ever being assessed through the product at all. Added `RecordAssessmentDialog`/`RequestExceptionDialog` (scope-adaptive: device picker vs. fixed organizational scope), an Exceptions card + Record/Retest actions on `NCAControlDetailPage` and per-control-row links from the device Compliance tab and organizational page, a new full-catalog `NCAControlsPage` (all 81, filterable), and a "Recompute from evidence" button. Zero backend changes - purely frontend. Verified live: recorded a real assessment on a previously-unassessable governance control, retested it, approved a real exception, and confirmed recompute surfaced real not-tested placeholders from real evidence. 152 frontend tests passing (was 125), `tsc` clean. |

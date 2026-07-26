@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   ListChecks,
   Building2,
+  Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/", label: "Overview", icon: LayoutGrid, end: true },
       { to: "/devices", label: "Devices", icon: HardDrive, end: false },
+      { to: "/network-map", label: "Network Map", icon: Network, end: false },
       { to: "/evidence", label: "Evidence", icon: FileSearch, end: false },
       { to: "/verdicts", label: "Verdicts", icon: Gavel, end: false },
       { to: "/controls", label: "Controls", icon: ShieldCheck, end: false },

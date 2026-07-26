@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { DevicesPage } from "@/pages/DevicesPage";
+import { NetworkMapPage } from "@/pages/NetworkMapPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { EvidencePage } from "@/pages/EvidencePage";
 import { VerdictsPage } from "@/pages/VerdictsPage";
@@ -24,6 +25,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<OverviewPage />} />
             <Route path="/devices" element={<DevicesPage />} />
+            <Route path="/network-map" element={<NetworkMapPage />} />
             <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
             <Route path="/evidence" element={<EvidencePage />} />
             <Route path="/verdicts" element={<VerdictsPage />} />
