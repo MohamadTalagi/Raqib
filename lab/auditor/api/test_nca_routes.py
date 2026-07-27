@@ -551,3 +551,113 @@ def test_override_rejects_stale_original_status(client, conn):
     )
     assert response.status_code == 400
     assert response.json()["field"] == "original_status"
+
+
+# ---------------------------------------------------------------------------
+# Auto-verdict suggestions (per-device assessment workspace)
+# ---------------------------------------------------------------------------
+
+
+def _seed_mapping(conn, control_id, finding_key, match_rule, *, verdict_hint="fail", description="m"):
+    conn.execute(
+        """
+        INSERT INTO compliance_finding_mappings
+            (finding_key, description, control_id, match_rule, verdict_hint)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (finding_key, description, control_id, match_rule, verdict_hint),
+    )
+    conn.commit()
+
+
+def _seed_evidence(conn, evidence_id, device_id, observations, *, test_id="TEST-X"):
+    conn.execute(
+        """
+        INSERT INTO evidence (
+            evidence_id, device_id, test_id, tool, tool_version, command, timestamp,
+            finding, observations, raw_output_path, confidence, sha256
+        ) VALUES (%s, %s, %s, 'curl', '8.5.0', 'curl ...', now(), 'finding',
+                  %s, 'document-store/raw/x.txt', 'high', 'abc123')
+        """,
+        (evidence_id, device_id, test_id, observations),
+    )
+    conn.commit()
+
+
+def test_suggestions_404_for_unknown_device(client):
+    assert client.get("/nca/devices/nope/suggestions").status_code == 404
+
+
+def test_suggestions_empty_when_no_matching_evidence(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "device-insecure")
+    body = client.get("/nca/devices/device-insecure/suggestions").json()
+    assert body["device_id"] == "device-insecure"
+    assert body["suggestions"] == {}
+
+
+def test_suggestions_fail_from_matching_insecure_evidence(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "device-insecure")
+    _seed_mapping(
+        conn, CONTROL_ID, "default-creds-accepted",
+        '{"field": "observations.default_creds", "op": "equals", "value": true}',
+        description="Default credential accepted.",
+    )
+    _seed_evidence(conn, "EV-SUG-0001", "device-insecure", '{"default_creds": true}',
+                   test_id="TEST-AUTH-DEFAULT-CREDS")
+
+    body = client.get("/nca/devices/device-insecure/suggestions").json()
+    suggestion = body["suggestions"][CONTROL_ID]
+    assert suggestion["suggested_status"] == "fail"
+    assert "EV-SUG-0001" in suggestion["evidence_ids"]
+    assert "TEST-AUTH-DEFAULT-CREDS" in suggestion["test_ids"]
+    assert any("EV-SUG-0001" in reason for reason in suggestion["reasons"])
+
+
+def test_suggestions_review_required_when_only_review_hint_matches(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "device-insecure")
+    _seed_mapping(
+        conn, CONTROL_ID, "firmware-manifest-present",
+        '{"field": "observations.manifest_present", "op": "equals", "value": true}',
+        verdict_hint="review_required",
+    )
+    _seed_evidence(conn, "EV-SUG-0002", "device-insecure", '{"manifest_present": true}')
+
+    suggestion = client.get("/nca/devices/device-insecure/suggestions").json()["suggestions"][CONTROL_ID]
+    assert suggestion["suggested_status"] == "review_required"
+
+
+def test_suggestions_fail_dominates_review_for_same_control(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "device-insecure")
+    _seed_mapping(
+        conn, CONTROL_ID, "review-one",
+        '{"field": "observations.manifest_present", "op": "equals", "value": true}',
+        verdict_hint="review_required",
+    )
+    _seed_mapping(
+        conn, CONTROL_ID, "fail-one",
+        '{"field": "observations.default_creds", "op": "equals", "value": true}',
+        verdict_hint="fail",
+    )
+    _seed_evidence(conn, "EV-SUG-0003", "device-insecure",
+                   '{"manifest_present": true, "default_creds": true}')
+
+    suggestion = client.get("/nca/devices/device-insecure/suggestions").json()["suggestions"][CONTROL_ID]
+    assert suggestion["suggested_status"] == "fail"
+
+
+def test_suggestions_ignore_other_devices_evidence(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "device-insecure")
+    _register_device(conn, "device-hardened")
+    _seed_mapping(
+        conn, CONTROL_ID, "default-creds-accepted",
+        '{"field": "observations.default_creds", "op": "equals", "value": true}',
+    )
+    _seed_evidence(conn, "EV-SUG-0004", "device-hardened", '{"default_creds": true}')
+
+    body = client.get("/nca/devices/device-insecure/suggestions").json()
+    assert body["suggestions"] == {}

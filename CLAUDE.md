@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-26
+> **Last updated:** 2026-07-27
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,72 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Network Map topology made collision-proof at any device count —
+**Phase:** **NCA Compliance reorganized into an auditor-usable assessment
+workspace, with auto-verdict suggestions — COMPLETE** (2026-07-27). The owner
+asked to "improve and modify the NCA Compliance section and make it like a
+real assessment and organized so any auditor can use it." A scoping question
+settled the direction: **reorganize the existing (already feature-rich)
+module** for a clearer auditor flow — not a rebuild — and **auto-verdict where
+possible** (mapped automated evidence pre-fills a suggested verdict the
+auditor confirms in one click). The real gap found on inspection: assessing
+was *scattered* — the per-device control checklist existed (device detail →
+Compliance tab), but every "Assess" link navigated **away** to a control
+page, so an auditor bounced back and forth and lost their place; there was no
+single workpaper.
+- **New per-device assessment workspace** (`pages/DeviceAssessmentPage.tsx`,
+  route `/nca-compliance/devices/:deviceId`) — the workpaper. Device header +
+  overall status + readiness badge + a **progress bar** (X of N controls
+  assessed, where a `not_tested` placeholder still counts as *not* assessed),
+  every applicable device-scope control **grouped by domain**, and an inline
+  **Record/Retest button per row that opens `RecordAssessmentDialog` in place**
+  (no navigation — the auditor works straight down the list). Filter tabs:
+  All / Unassessed / Failing / Has suggestion, each with a live count.
+- **Auto-verdict** (`GET /nca/devices/{id}/suggestions`, new endpoint in
+  `nca_routes.py`): for each device-scope control that this device's real
+  automated scan evidence maps to, a suggested status. Rows show a
+  "suggests FAIL" chip; clicking Record pre-fills the dialog's status,
+  evidence ids, and test method (a new `suggestion` prop on
+  `RecordAssessmentDialog`, shown behind a "Suggested from automated
+  evidence" banner) — the auditor still confirms or overrides and records the
+  finding. **Verdict polarity is honest**: every existing finding mapping
+  fires precisely on an *insecure* condition, so a match cleanly implies a
+  suggested `fail`; the 3 mappings that only surface "relevant evidence for
+  manual review" (update-script/manifest present, banner discloses framework)
+  suggest `review_required` instead. Absence of a matching mapping is **never**
+  reported as a pass (a test may simply not have run) — the project's
+  "AI-assisted, not AI-decided" rule, preserved.
+- **`verdict_hint` column** on `compliance_finding_mappings` (migration
+  `007-nca-finding-mapping-verdict-hint.sql`, added to `init.sql` for fresh
+  volumes, seeded in `seed_finding_mappings.py`) makes that polarity explicit
+  and **configurable in the same table** rather than hardcoded in the API.
+  A new `map_evidence_to_mappings()` in `policies/nca/finding_mappings.py`
+  returns the full matched mappings (not just control_ids), with the existing
+  `map_evidence_to_controls()` kept as a thin wrapper so there's exactly one
+  evidence-matching path.
+- **Entry points wired in** (the reorg): the NCA Compliance device table
+  gained a prominent **"Assess"** button per row into the workspace, and the
+  device detail Compliance tab gained an **"Open assessment workspace"**
+  button. Nothing removed — the control-detail and org pages still work
+  exactly as before.
+- **Verified**: `tsc --noEmit` clean; `oxlint` clean (no new warnings — the
+  new page's two initial exhaustive-deps hints were fixed by memoizing
+  `controls`/`suggestions`); 6 new backend suggestions tests +
+  finding-mapping/evaluator suites green (37/38 NCA API tests pass — the 1
+  failure is the pre-existing WeasyPrint/libgobject native-library gap on this
+  Windows host, unrelated; 82/82 `policies/nca`); 15 new/updated frontend
+  tests green (6 `DeviceAssessmentPage` + 2 new `RecordAssessmentDialog`
+  suggestion cases). Full frontend suite showed 10 failures under the host's
+  parallel-runner load — all confirmed **flakes**, not regressions, by
+  re-running the touched + failing files with `--no-file-parallelism` (64/64
+  pass in isolation). Applied migration 007 to the live DB, rebuilt and
+  redeployed `auditor-api`/`auditor-web`; confirmed the live suggestions
+  endpoint returns real auto-verdict data for `device-insecure` (Telnet-open →
+  2-15-2, default-creds/api-key → 2-2-2, etc., each with real evidence ids),
+  the SPA route resolves, and the new UI strings are in the served bundle.
+  Browser-based visual verification was **not** performed (Claude-in-Chrome
+  not connected this session) — noted rather than claimed.
+
+Before that: **Network Map topology made collision-proof at any device count —
 COMPLETE** (2026-07-26). The owner flagged that the Network Map's node layout
 (built the same day, see the phase below) needed to guarantee "each device
 should have its own space without conflict" as more devices get registered,
@@ -1131,6 +1196,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-27 | **Reorganized NCA Compliance into an auditor-usable assessment workspace with auto-verdict suggestions** — see §0 for the full breakdown. Owner asked to make the section "like a real assessment, organized so any auditor can use it"; a scoping question chose *reorganize the existing module* (not rebuild) + *auto-verdict where possible*. The gap: assessing was scattered — the per-device checklist existed but every "Assess" link navigated away, so there was no single workpaper. New per-device workspace (`DeviceAssessmentPage.tsx`, `/nca-compliance/devices/:deviceId`): progress bar, controls grouped by domain, inline Record/Retest opening the dialog in place, filter tabs. New `GET /nca/devices/{id}/suggestions` endpoint pre-fills a suggested verdict from mapped automated evidence (honest polarity — a mapping match implies FAIL since every mapping fires on an insecure condition; 3 informational mappings suggest review_required; absence never implies pass). New `verdict_hint` column on `compliance_finding_mappings` (migration 007 + init.sql + seed) makes that configurable, not hardcoded; new `map_evidence_to_mappings()` returns full matched mappings with `map_evidence_to_controls()` kept as a thin wrapper. `RecordAssessmentDialog` gained a `suggestion` prop (banner + pre-fill; ignored on retest). Entry points added to the NCA device table ("Assess") and device Compliance tab ("Open assessment workspace"); nothing removed. `tsc`/`oxlint` clean, 6 new backend + 15 new/updated frontend tests green (full frontend suite's 10 failures confirmed as host parallel-runner flakes — 64/64 pass in isolation; 1 NCA API failure is the pre-existing WeasyPrint gap). Applied migration 007 to the live DB, rebuilt/redeployed `auditor-api`/`auditor-web`, confirmed the live endpoint returns real auto-verdict data and the new page is served. |
 | 2026-07-26 | **Made the Network Map's node layout collision-proof at any device count** — see §0 for the full breakdown. The original `scatter()` (built the same day) placed nodes via rejection-sampled random jitter within a fixed-size zone, which had a real failure mode once enough nodes were packed in: after 40 failed attempts it placed the node anyway, overlapping another. Replaced with `gridPlacement()` — a deterministic grid sized to give every id its own cell, growing rows (and the canvas height, via a computed inline `aspectRatio` replacing the old fixed Tailwind aspect classes) to fit however many nodes there are, rather than cramming more into the same space. Verified with a standalone script that minimum pairwise node distance stays ≈100+ units from 1 to 150 devices, vs. the old algorithm's unbounded worst case. No visual change for the current 6-device fleet (computes to the identical height). `tsc`/`oxlint` clean, full Vitest suite green, rebuilt and redeployed `auditor-web` (confirmed via a bundle hash/size diff that the new build was actually served). |
 | 2026-07-26 | **Added the Network Map page (`/network-map`)** — see §0 for the full breakdown. Executed from a self-contained handoff document delivered via Telegram from a separate session where the feature had already been designed, iterated on three times, and finalized on an unmerged branch. Every Step 1 precondition (shared types/components the feature depends on) was verified against this repo's real files before writing anything — all matched exactly, so the spec's code was used unmodified. New `components/network/NetworkGraph.tsx` renders the real two-Docker-network topology (`audit-network`/`internal-network` from `lab/docker-compose.yml`, `auditor-worker` as the one cross-zone bridge) using deterministic scatter + a per-zone Minimum Spanning Tree (Prim's algorithm) rather than a hub-and-spoke layout — the MST approach is a structural guarantee against the star-shaped layout the owner explicitly rejected twice in the design history this document preserved. New `pages/NetworkMapPage.tsx`, one small additive `CardDescription` export on `card.tsx`, a new route, a new sidebar entry, and a CSS dash-flow animation. No new tests (an explicit, stated gap in the handoff document itself, respected as-is). `tsc`/`oxlint` clean, full Vitest suite green (2 unrelated pre-existing environment flakes, confirmed independent in isolation), rebuilt and redeployed `auditor-web`, confirmed live via curl (bundle strings, SPA route, real 6-device fleet data) since the Claude-in-Chrome extension wasn't connected for a visual check. |
 | 2026-07-24 | **NCA Compliance dashboard + overall UI/UX consistency pass** — see §0 for the full breakdown. Fixed the same compliance information being shown inconsistently across pages: extracted a shared `DomainSummaryGrid` component (was copy-pasted 3x, which is how a status category went missing from `NCADomainBarChart` unnoticed); gave the two legitimately-different compliance gauges (SA-IOT-* verdicts vs. NCA controls) self-explanatory titles instead of relying on a small caption; added a `size` prop to `NCAReadinessBadge` so it stops visually dwarfing `NCAStatusBadge` in the same table row; added a new `BlockingBadge` (explained via a new `Tooltip` primitive, this app's first) and propagated it to device/org control-list rows, not just the controls catalog; hid the legacy per-device `ComplianceBadge` chip on the Compliance tab where it previously sat confusingly above the real NCA readiness card; migrated `VerdictsPage`'s hand-rolled filter pills to the shared `Tabs` primitive; added `OrganizationalCompliancePage` to the sidebar nav (previously only reachable via an inline link). Frontend-only, no backend changes. `tsc`/`oxlint` clean, full Vitest suite green, rebuilt and redeployed `auditor-web`. |

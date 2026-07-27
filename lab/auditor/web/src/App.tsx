@@ -10,6 +10,7 @@ import { DeviceConsolePage } from "@/pages/DeviceConsolePage";
 import { ControlsPage } from "@/pages/ControlsPage";
 import { ControlDetailPage } from "@/pages/ControlDetailPage";
 import { NCACompliancePage } from "@/pages/NCACompliancePage";
+import { DeviceAssessmentPage } from "@/pages/DeviceAssessmentPage";
 import { NCAControlsPage } from "@/pages/NCAControlsPage";
 import { NCAControlDetailPage } from "@/pages/NCAControlDetailPage";
 import { OrganizationalCompliancePage } from "@/pages/OrganizationalCompliancePage";
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/controls" element={<ControlsPage />} />
             <Route path="/controls/:controlId" element={<ControlDetailPage />} />
             <Route path="/nca-compliance" element={<NCACompliancePage />} />
+            <Route path="/nca-compliance/devices/:deviceId" element={<DeviceAssessmentPage />} />
             <Route path="/nca-compliance/organization" element={<OrganizationalCompliancePage />} />
             <Route path="/nca-compliance/controls" element={<NCAControlsPage />} />
             <Route path="/nca-compliance/controls/:controlId" element={<NCAControlDetailPage />} />

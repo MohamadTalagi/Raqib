@@ -10,6 +10,14 @@ Idempotent via the table's UNIQUE(finding_key, control_id). Requires
 compliance_controls to already be seeded (see seed_catalog.py) since
 control_id is a foreign key.
 
+Each mapping carries a `verdict_hint` (default "fail"): every rule below
+fires precisely when an insecure condition is present, so a match suggests
+a FAIL. The handful that only surface "relevant evidence for a manual
+review" (update script / component manifest present, Server banner
+discloses a framework) are marked "review_required" instead - they cannot
+imply a pass or a fail on their own. The per-device assessment workspace
+reads this to pre-fill a suggested status the auditor still confirms.
+
 Deliberately absent: any mapping into domain 1 (governance), or the
 supplier/cloud guideline groups - those describe policy approval, personnel
 training, audits, and supplier/cloud contracts, none of which a network or
@@ -136,6 +144,7 @@ MAPPINGS = [
         "control_id": control_id("2-4-6"),
         "match_rule": {"field": "observations.update_script_present", "op": "equals", "value": True},
         "manufacturer_principle": None,
+        "verdict_hint": "review_required",
     },
     {
         "finding_key": "firmware-manifest-present",
@@ -143,6 +152,7 @@ MAPPINGS = [
         "control_id": control_id("2-9-1"),
         "match_rule": {"field": "observations.manifest_present", "op": "equals", "value": True},
         "manufacturer_principle": None,
+        "verdict_hint": "review_required",
     },
     {
         "finding_key": "http-banner-discloses-framework",
@@ -150,6 +160,7 @@ MAPPINGS = [
         "control_id": control_id("2-9-1"),
         "match_rule": {"field": "observations.banner_discloses_framework", "op": "equals", "value": True},
         "manufacturer_principle": None,
+        "verdict_hint": "review_required",
     },
     {
         "finding_key": "firmware-cert-or-key-embedded",
@@ -174,12 +185,18 @@ def seed(conn) -> int:
         result = conn.execute(
             """
             INSERT INTO compliance_finding_mappings (
-                finding_key, description, control_id, match_rule, manufacturer_principle
+                finding_key, description, control_id, match_rule, manufacturer_principle,
+                verdict_hint
             )
-            VALUES (%(finding_key)s, %(description)s, %(control_id)s, %(match_rule)s, %(manufacturer_principle)s)
+            VALUES (%(finding_key)s, %(description)s, %(control_id)s, %(match_rule)s,
+                    %(manufacturer_principle)s, %(verdict_hint)s)
             ON CONFLICT (finding_key, control_id) DO NOTHING
             """,
-            {**mapping, "match_rule": json.dumps(mapping["match_rule"])},
+            {
+                **mapping,
+                "match_rule": json.dumps(mapping["match_rule"]),
+                "verdict_hint": mapping.get("verdict_hint", "fail"),
+            },
         )
         if result.rowcount != 0:
             inserted += 1

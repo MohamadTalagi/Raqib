@@ -172,6 +172,12 @@ CREATE TABLE compliance_finding_mappings (
     match_rule              JSONB NOT NULL,
     manufacturer_principle  TEXT,
     enabled                 BOOLEAN NOT NULL DEFAULT true,
+    -- Suggested verdict when this mapping matches. Every mapping fires on an
+    -- insecure condition ('fail'), except a few that only surface evidence
+    -- for a manual review ('review_required'). Read by the per-device
+    -- assessment workspace's auto-verdict suggestions; see migration 007.
+    verdict_hint            TEXT NOT NULL DEFAULT 'fail'
+                            CHECK (verdict_hint IN ('fail', 'review_required')),
     UNIQUE (finding_key, control_id)
 );
 

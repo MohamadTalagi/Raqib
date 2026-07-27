@@ -1,4 +1,4 @@
-import { FileDown, Trash2, Upload } from "lucide-react";
+import { ClipboardCheck, FileDown, Trash2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Shell } from "@/components/layout/Shell";
@@ -435,6 +435,13 @@ export function DeviceDetailPage() {
                       <span className="font-mono-tabular text-sm text-[var(--color-text-secondary)]">
                         {ncaDetail.data.score === null ? "not assessed" : `${ncaDetail.data.score}% informational score`}
                       </span>
+                      <Link
+                        to={`/nca-compliance/devices/${encodeURIComponent(device.device_id)}`}
+                        className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-[var(--color-brand)] px-3 py-1.5 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
+                      >
+                        <ClipboardCheck className="h-4 w-4" />
+                        Open assessment workspace
+                      </Link>
                     </CardContent>
                   </Card>
 

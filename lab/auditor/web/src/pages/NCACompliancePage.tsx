@@ -394,6 +394,7 @@ export function NCACompliancePage() {
                         <th className="py-2 pr-4">Manufacturer</th>
                         <th className="py-2 pr-4">Status</th>
                         <th className="py-2 pr-4">Readiness</th>
+                        <th className="py-2 pr-4 text-right">Assess</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--color-border)]">
@@ -423,6 +424,15 @@ export function NCACompliancePage() {
                                 {row.score === null ? "—" : `${row.score}%`}
                               </span>
                             </div>
+                          </td>
+                          <td className="py-2.5 pr-4 text-right">
+                            <Link
+                              to={`/nca-compliance/devices/${encodeURIComponent(row.device_id)}`}
+                              className="inline-flex items-center gap-1 rounded-md bg-[var(--color-brand)] px-2.5 py-1 text-xs font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
+                            >
+                              <ClipboardCheck className="h-3.5 w-3.5" />
+                              Assess
+                            </Link>
                           </td>
                         </tr>
                       ))}

@@ -226,6 +226,74 @@ describe("RecordAssessmentDialog", () => {
     );
   });
 
+  it("pre-fills a suggested status, evidence ids, and automated method from an auto-verdict suggestion", async () => {
+    const createSpy = vi.spyOn(api, "createNcaAssessment").mockResolvedValue({ ...EXISTING, id: "ASM-9" });
+    const user = userEvent.setup();
+
+    render(
+      <RecordAssessmentDialog
+        open
+        control={DEVICE_CONTROL}
+        devices={DEVICES}
+        initialDeviceId="device-insecure"
+        suggestion={{
+          control_id: DEVICE_CONTROL.id,
+          suggested_status: "fail",
+          evidence_ids: ["EV-SUG-1"],
+          test_ids: ["TEST-AUTH-DEFAULT-CREDS"],
+          reasons: ["Default credential accepted. (evidence EV-SUG-1)"],
+        }}
+        onSaved={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    // Banner is shown and fields are pre-filled from the suggestion.
+    expect(screen.getByText(/suggested from automated evidence/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Status")).toHaveValue("fail");
+    expect(screen.getByLabelText("Test method")).toHaveValue("automated");
+    expect(screen.getByLabelText("Linked evidence ids")).toHaveValue("EV-SUG-1");
+
+    // Auditor still records the finding + their name, then confirms.
+    await user.type(screen.getByLabelText("Finding"), "Confirmed: admin:admin accepted.");
+    await user.type(screen.getByLabelText("Your name"), "auditor-1");
+    await user.click(screen.getByRole("button", { name: /save assessment/i }));
+
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        control_id: DEVICE_CONTROL.id,
+        device_id: "device-insecure",
+        status: "fail",
+        test_method: "automated",
+        evidence_ids: ["EV-SUG-1"],
+      }),
+    );
+  });
+
+  it("ignores a suggestion when retesting an existing assessment", () => {
+    render(
+      <RecordAssessmentDialog
+        open
+        control={DEVICE_CONTROL}
+        devices={DEVICES}
+        existingAssessment={EXISTING}
+        suggestion={{
+          control_id: DEVICE_CONTROL.id,
+          suggested_status: "review_required",
+          evidence_ids: ["EV-OTHER"],
+          test_ids: [],
+          reasons: ["should be ignored on retest"],
+        }}
+        onSaved={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText(/suggested from automated evidence/i)).not.toBeInTheDocument();
+    // Retest keeps the prior assessment's own recorded values, not the suggestion's.
+    expect(screen.getByLabelText("Status")).toHaveValue("fail");
+  });
+
   it("surfaces the API error message on failure", async () => {
     vi.spyOn(api, "createNcaAssessment").mockRejectedValue(new Error("network down"));
     const user = userEvent.setup();

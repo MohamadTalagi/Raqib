@@ -8,6 +8,7 @@ import type {
   NCAAssessment,
   NCAAssessmentType,
   NCAControl,
+  NCADeviceSuggestion,
   NCAStatus,
   Severity,
 } from "@/lib/types";
@@ -28,6 +29,12 @@ interface RecordAssessmentDialogProps {
    * brand-new one - fields are pre-filled from it and the submit goes
    * through POST /nca/assessments/{id}/retest instead of a plain create. */
   existingAssessment?: NCAAssessment | null;
+  /** Auto-verdict hint from mapped automated evidence for this (device,
+   * control). When present on a brand-new assessment, the status, evidence
+   * ids, and test method are pre-filled from it - the auditor still confirms
+   * or overrides before saving. Ignored on a retest (that reuses the prior
+   * assessment's own values). */
+  suggestion?: NCADeviceSuggestion | null;
   onSaved: (assessment: NCAAssessment) => void;
   onCancel: () => void;
 }
@@ -49,11 +56,15 @@ export function RecordAssessmentDialog({
   devices,
   initialDeviceId,
   existingAssessment,
+  suggestion,
   onSaved,
   onCancel,
 }: RecordAssessmentDialogProps) {
   const isDeviceScoped = control.scope_type === "device";
   const isRetest = Boolean(existingAssessment);
+  // A suggestion only pre-fills a brand-new assessment; a retest reuses the
+  // prior assessment's own recorded values instead.
+  const activeSuggestion = isRetest ? null : suggestion ?? null;
 
   const [deviceId, setDeviceId] = useState("");
   const [applicability, setApplicability] = useState<NCAApplicability>("applicable");
@@ -78,12 +89,12 @@ export function RecordAssessmentDialog({
     setDeviceId(source?.device_id ?? initialDeviceId ?? "");
     setApplicability(source?.applicability ?? "applicable");
     setApplicabilityReason(source?.applicability_reason ?? "");
-    setStatus(source?.status ?? "");
+    setStatus(source?.status ?? activeSuggestion?.suggested_status ?? "");
     setSeverity(source?.severity ?? control.severity);
     setFinding(source?.finding ?? "");
-    setTestMethod(source?.test_method ?? "manual");
-    setTestIdentifier(source?.test_identifier ?? "");
-    setEvidenceIdsText((source?.evidence_ids ?? []).join(", "));
+    setTestMethod(source?.test_method ?? (activeSuggestion ? "automated" : "manual"));
+    setTestIdentifier(source?.test_identifier ?? activeSuggestion?.test_ids[0] ?? "");
+    setEvidenceIdsText((source?.evidence_ids ?? activeSuggestion?.evidence_ids ?? []).join(", "));
     setRemediation(source?.remediation ?? "");
     setRemediationDueDate(source?.remediation_due_date ?? "");
     setAssessedBy("");
@@ -95,7 +106,7 @@ export function RecordAssessmentDialog({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, control.id, existingAssessment?.id]);
+  }, [open, control.id, existingAssessment?.id, activeSuggestion?.control_id]);
 
   if (!open) return null;
 
@@ -166,6 +177,23 @@ export function RecordAssessmentDialog({
           {control.guideline_id} &middot; {control.domain_name}
         </p>
         <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{control.canonical_requirement}</p>
+
+        {activeSuggestion && (
+          <div className="mt-3 rounded-md border border-[var(--color-brand)]/40 bg-[color-mix(in_oklab,var(--color-brand)_8%,var(--color-surface))] p-3">
+            <p className="text-xs font-semibold tracking-wide text-[var(--color-brand)] uppercase">
+              Suggested from automated evidence: {activeSuggestion.suggested_status.replace("_", " ")}
+            </p>
+            <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs text-[var(--color-text-secondary)]">
+              {activeSuggestion.reasons.map((reason, i) => (
+                <li key={i}>{reason}</li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[11px] text-[var(--color-text-muted)]">
+              Pre-filled below — confirm or change the status, add your finding, then save. The
+              verdict is always yours to record.
+            </p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {isDeviceScoped ? (

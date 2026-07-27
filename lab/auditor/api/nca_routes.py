@@ -466,6 +466,79 @@ def get_nca_device_detail(device_id: str):
     }
 
 
+@router.get("/devices/{device_id}/suggestions")
+def get_nca_device_suggestions(device_id: str):
+    """Auto-verdict hints for the per-device assessment workspace: for each
+    device-scope control that this device's automated scan evidence maps to,
+    a suggested status the auditor confirms or overrides in one click.
+
+    Only ever *suggests* - never records an assessment (that stays a human's
+    call, "AI-assisted, not AI-decided"). A suggestion is emitted only when a
+    finding mapping actually matches real evidence for this device; the
+    absence of a matching mapping is never reported as a pass, because a test
+    may simply not have been run. verdict_hint (from the mapping) decides
+    fail vs review_required."""
+    from policies.nca.finding_mappings import map_evidence_to_mappings
+
+    conn = get_connection()
+    try:
+        device_row = conn.execute(
+            "SELECT device_id FROM devices WHERE device_id = %s", (device_id,)
+        ).fetchone()
+        if device_row is None:
+            raise HTTPException(status_code=404, detail="device not found")
+
+        mapping_rows = conn.execute(
+            "SELECT finding_key, description, control_id, match_rule, "
+            "manufacturer_principle, enabled, verdict_hint FROM compliance_finding_mappings"
+        ).fetchall()
+        mappings = [
+            {
+                "finding_key": r[0], "description": r[1], "control_id": r[2],
+                "match_rule": r[3], "manufacturer_principle": r[4],
+                "enabled": r[5], "verdict_hint": r[6],
+            }
+            for r in mapping_rows
+        ]
+
+        evidence_rows = conn.execute(
+            "SELECT evidence_id, test_id, observations FROM evidence "
+            "WHERE device_id = %s ORDER BY evidence_id",
+            (device_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    # Accumulate per control_id across every matching (evidence, mapping) pair.
+    by_control: dict[str, dict] = {}
+    for evidence_id, test_id, observations in evidence_rows:
+        evidence = {"test_id": test_id, "observations": observations}
+        for mapping in map_evidence_to_mappings(evidence, mappings):
+            control_id = mapping["control_id"]
+            acc = by_control.setdefault(
+                control_id,
+                {
+                    "control_id": control_id,
+                    "suggested_status": "review_required",
+                    "evidence_ids": [],
+                    "test_ids": [],
+                    "reasons": [],
+                },
+            )
+            # Any failing signal dominates a review-only one.
+            if mapping["verdict_hint"] == "fail":
+                acc["suggested_status"] = "fail"
+            if evidence_id not in acc["evidence_ids"]:
+                acc["evidence_ids"].append(evidence_id)
+            if test_id and test_id not in acc["test_ids"]:
+                acc["test_ids"].append(test_id)
+            reason = f"{mapping['description']} (evidence {evidence_id})"
+            if reason not in acc["reasons"]:
+                acc["reasons"].append(reason)
+
+    return {"device_id": device_id, "suggestions": by_control}
+
+
 # ---------------------------------------------------------------------------
 # Assessments
 # ---------------------------------------------------------------------------

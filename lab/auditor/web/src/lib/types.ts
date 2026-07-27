@@ -447,6 +447,25 @@ export interface NCADeviceDetail {
   exceptions: NCAException[];
 }
 
+/**
+ * Auto-verdict hint for one control, from GET /nca/devices/{id}/suggestions.
+ * Emitted only when a finding mapping matched real automated evidence for
+ * this device - it suggests a status the auditor confirms or overrides. The
+ * absence of a suggestion never implies a pass (a test may not have run).
+ */
+export interface NCADeviceSuggestion {
+  control_id: string;
+  suggested_status: Extract<NCAStatus, "fail" | "review_required">;
+  evidence_ids: string[];
+  test_ids: string[];
+  reasons: string[];
+}
+
+export interface NCADeviceSuggestions {
+  device_id: string;
+  suggestions: Record<string, NCADeviceSuggestion>;
+}
+
 export interface NCAControlDetail {
   control: NCAControl;
   assessments: NCAAssessment[];

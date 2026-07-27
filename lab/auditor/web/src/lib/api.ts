@@ -16,6 +16,7 @@ import type {
   NCAControlDetail,
   NCADeviceComplianceRow,
   NCADeviceDetail,
+  NCADeviceSuggestions,
   NCADomainSummary,
   NCAException,
   NCAOrganizationalCompliance,
@@ -237,6 +238,8 @@ export const api = {
     getJson<NCADeviceComplianceRow[]>(`/nca/devices${status ? `?status=${status}` : ""}`),
   ncaDevice: (deviceId: string): Promise<NCADeviceDetail> =>
     getJson<NCADeviceDetail>(`/nca/devices/${encodeURIComponent(deviceId)}`),
+  ncaDeviceSuggestions: (deviceId: string): Promise<NCADeviceSuggestions> =>
+    getJson<NCADeviceSuggestions>(`/nca/devices/${encodeURIComponent(deviceId)}/suggestions`),
   ncaOrganization: (): Promise<NCAOrganizationalCompliance> =>
     getJson<NCAOrganizationalCompliance>("/nca/organization"),
 

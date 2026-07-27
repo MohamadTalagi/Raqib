@@ -36,17 +36,26 @@ def _field_present(record: dict, dotted_path: str) -> bool:
     return True
 
 
-def map_evidence_to_controls(evidence: dict, mappings: list[dict]) -> list[str]:
-    """Returns the control_id of every enabled mapping whose match_rule
-    matches this evidence record. `evidence` is a full evidence-table row
-    (dotted match_rule fields like "observations.default_creds" reach into
-    its JSONB observations column); `mappings` is the
-    compliance_finding_mappings table's rows, each already carrying its own
-    match_rule dict."""
+def map_evidence_to_mappings(evidence: dict, mappings: list[dict]) -> list[dict]:
+    """Returns every enabled mapping whose match_rule matches this evidence
+    record - the full mapping dicts, not just their control_ids, so callers
+    that need the mapping's description/verdict_hint (e.g. the per-device
+    assessment workspace's auto-verdict suggestions) don't re-run the match.
+    `evidence` is a full evidence-table row (dotted match_rule fields like
+    "observations.default_creds" reach into its JSONB observations column);
+    `mappings` is the compliance_finding_mappings table's rows, each already
+    carrying its own match_rule dict."""
     return [
-        mapping["control_id"]
+        mapping
         for mapping in mappings
         if mapping.get("enabled", True)
         and _field_present(evidence, mapping["match_rule"]["field"])
         and condition_matches(evidence, mapping["match_rule"])
     ]
+
+
+def map_evidence_to_controls(evidence: dict, mappings: list[dict]) -> list[str]:
+    """Returns the control_id of every enabled mapping whose match_rule
+    matches this evidence record. Thin wrapper over map_evidence_to_mappings
+    so there is exactly one evidence-matching path."""
+    return [mapping["control_id"] for mapping in map_evidence_to_mappings(evidence, mappings)]
