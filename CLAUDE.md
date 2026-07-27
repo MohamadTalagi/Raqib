@@ -12,7 +12,30 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **NCA Compliance reorganized into an auditor-usable assessment
+**Phase:** **Firmware upload now accepts `.zip` (not just `.tar.gz`) end to
+end — COMPLETE** (2026-07-27). The owner reported "I cannot upload a
+firmware"; first pass broadened the file picker's `accept` filter
+(`docs/errors/030` — Windows greys out compound-extension `.tar.gz` files),
+but the real blocker was that their archive was a `.zip` (what Windows'
+right-click "Compress" produces) and the whole firmware pipeline hardcoded
+`tarfile` (`docs/errors/031`). Added native zip support: new
+`lab/auditor/worker/firmware/archive_reader.py` (`open_archive()` detects
+gzip vs zip by **magic bytes**, yields a uniform member interface with bounded
+reads, preserving the existing zip-bomb caps); `scan_firmware.py` and
+`scan_scripts/firmware_check.py` refactored to iterate it instead of calling
+`tarfile` directly; the API accepts `.zip`, validates by magic bytes (tar
+**or** zip, rejecting unsafe member paths in both), and stores under a
+format-neutral `{device_id}.archive` name (original filename kept only for
+display); both firmware `<input accept>` filters + helper text updated.
+**Verified**: 27 worker firmware tests (tar+zip parametrized) pass in the
+container, 13 API firmware-upload tests + 22 scan-job tests pass, 6
+`archive_reader` unit tests pass on the host, `tsc` clean, touched frontend
+tests green; rebuilt/redeployed api+web+worker and confirmed **live end to
+end** — uploaded a real `.zip`, ran `TEST-FW-MANIFEST`, and the worker read
+the zip, parsed `manifest.json`, and produced real OpenSSL 1.0.1e
+Heartbleed/CCS CVE observations.
+
+Before that: **NCA Compliance reorganized into an auditor-usable assessment
 workspace, with auto-verdict suggestions — COMPLETE** (2026-07-27). The owner
 asked to "improve and modify the NCA Compliance section and make it like a
 real assessment and organized so any auditor can use it." A scoping question
@@ -1196,6 +1219,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-27 | **Firmware upload now accepts `.zip`, not just `.tar.gz`, end to end** — see §0 and `docs/errors/030`/`031`. Owner reported "I cannot upload a firmware"; the picker's `accept=".tar.gz,.tgz"` greyed out files on Windows (030), but the real cause was that the pipeline only handled gzip tarballs and their file was a `.zip` (031). Added a shared `archive_reader.py` (`open_archive()` detects gzip vs zip by magic bytes, uniform member interface, bounded reads preserving the zip-bomb caps); refactored `scan_firmware.py` + `firmware_check.py` off direct `tarfile` use; API accepts+validates `.zip` (magic bytes, unsafe-path check for both formats) and stores under a format-neutral `{device_id}.archive` name; frontend `accept` + helper text updated. 27 worker (tar+zip) + 13 API upload + 6 archive_reader + 22 scan-job tests pass, `tsc` clean; rebuilt/redeployed and verified live: a real `.zip` upload → `TEST-FW-MANIFEST` → worker parsed the zip's manifest and produced real OpenSSL Heartbleed/CCS CVE observations. |
 | 2026-07-27 | **Reorganized NCA Compliance into an auditor-usable assessment workspace with auto-verdict suggestions** — see §0 for the full breakdown. Owner asked to make the section "like a real assessment, organized so any auditor can use it"; a scoping question chose *reorganize the existing module* (not rebuild) + *auto-verdict where possible*. The gap: assessing was scattered — the per-device checklist existed but every "Assess" link navigated away, so there was no single workpaper. New per-device workspace (`DeviceAssessmentPage.tsx`, `/nca-compliance/devices/:deviceId`): progress bar, controls grouped by domain, inline Record/Retest opening the dialog in place, filter tabs. New `GET /nca/devices/{id}/suggestions` endpoint pre-fills a suggested verdict from mapped automated evidence (honest polarity — a mapping match implies FAIL since every mapping fires on an insecure condition; 3 informational mappings suggest review_required; absence never implies pass). New `verdict_hint` column on `compliance_finding_mappings` (migration 007 + init.sql + seed) makes that configurable, not hardcoded; new `map_evidence_to_mappings()` returns full matched mappings with `map_evidence_to_controls()` kept as a thin wrapper. `RecordAssessmentDialog` gained a `suggestion` prop (banner + pre-fill; ignored on retest). Entry points added to the NCA device table ("Assess") and device Compliance tab ("Open assessment workspace"); nothing removed. `tsc`/`oxlint` clean, 6 new backend + 15 new/updated frontend tests green (full frontend suite's 10 failures confirmed as host parallel-runner flakes — 64/64 pass in isolation; 1 NCA API failure is the pre-existing WeasyPrint gap). Applied migration 007 to the live DB, rebuilt/redeployed `auditor-api`/`auditor-web`, confirmed the live endpoint returns real auto-verdict data and the new page is served. |
 | 2026-07-26 | **Made the Network Map's node layout collision-proof at any device count** — see §0 for the full breakdown. The original `scatter()` (built the same day) placed nodes via rejection-sampled random jitter within a fixed-size zone, which had a real failure mode once enough nodes were packed in: after 40 failed attempts it placed the node anyway, overlapping another. Replaced with `gridPlacement()` — a deterministic grid sized to give every id its own cell, growing rows (and the canvas height, via a computed inline `aspectRatio` replacing the old fixed Tailwind aspect classes) to fit however many nodes there are, rather than cramming more into the same space. Verified with a standalone script that minimum pairwise node distance stays ≈100+ units from 1 to 150 devices, vs. the old algorithm's unbounded worst case. No visual change for the current 6-device fleet (computes to the identical height). `tsc`/`oxlint` clean, full Vitest suite green, rebuilt and redeployed `auditor-web` (confirmed via a bundle hash/size diff that the new build was actually served). |
 | 2026-07-26 | **Added the Network Map page (`/network-map`)** — see §0 for the full breakdown. Executed from a self-contained handoff document delivered via Telegram from a separate session where the feature had already been designed, iterated on three times, and finalized on an unmerged branch. Every Step 1 precondition (shared types/components the feature depends on) was verified against this repo's real files before writing anything — all matched exactly, so the spec's code was used unmodified. New `components/network/NetworkGraph.tsx` renders the real two-Docker-network topology (`audit-network`/`internal-network` from `lab/docker-compose.yml`, `auditor-worker` as the one cross-zone bridge) using deterministic scatter + a per-zone Minimum Spanning Tree (Prim's algorithm) rather than a hub-and-spoke layout — the MST approach is a structural guarantee against the star-shaped layout the owner explicitly rejected twice in the design history this document preserved. New `pages/NetworkMapPage.tsx`, one small additive `CardDescription` export on `card.tsx`, a new route, a new sidebar entry, and a CSS dash-flow animation. No new tests (an explicit, stated gap in the handoff document itself, respected as-is). `tsc`/`oxlint` clean, full Vitest suite green (2 unrelated pre-existing environment flakes, confirmed independent in isolation), rebuilt and redeployed `auditor-web`, confirmed live via curl (bundle strings, SPA route, real 6-device fleet data) since the Claude-in-Chrome extension wasn't connected for a visual check. |

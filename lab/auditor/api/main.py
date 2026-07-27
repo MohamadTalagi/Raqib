@@ -3,6 +3,7 @@ import json
 import os
 import re
 import tarfile
+import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -1550,31 +1551,49 @@ MAX_FIRMWARE_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
 def _firmware_path(device_id: str) -> Path:
-    return _document_store_dir() / "firmware" / f"{device_id}.tar.gz"
+    # Format-neutral name: the upload may be a .tar.gz or a .zip, and the
+    # worker detects which by magic bytes (see archive_reader.py). The
+    # original filename is preserved separately in devices.firmware_filename
+    # for display only.
+    return _document_store_dir() / "firmware" / f"{device_id}.archive"
+
+
+def _unsafe_member(name: str) -> bool:
+    # Defense in depth: the worker's firmware analysis never extracts to disk
+    # (it reads member bytes in memory only), so a traversal path can't be
+    # exploited today, but a future maintainer might add an extract call
+    # without knowing that assumption. Rejected the same way for tar and zip.
+    return name.startswith("/") or ".." in name.replace("\\", "/").split("/")
 
 
 def _validate_firmware_archive(data: bytes) -> None:
-    try:
-        with tarfile.open(fileobj=BytesIO(data), mode="r:gz") as tar:
-            for member in tar.getmembers():
-                # Defense in depth: scan_archive()/firmware_check.py never
-                # extract to disk (they read member bytes in memory only),
-                # so this can't be exploited today, but a future maintainer
-                # might add extractall() without knowing that assumption.
-                if member.name.startswith("/") or ".." in member.name.split("/"):
-                    raise HTTPException(
-                        status_code=400,
-                        detail="archive contains an unsafe member path",
-                    )
-    except tarfile.TarError:
-        raise HTTPException(status_code=400, detail="not a valid .tar.gz archive")
+    if data[:2] == b"\x1f\x8b":  # gzip magic -> .tar.gz / .tgz
+        try:
+            with tarfile.open(fileobj=BytesIO(data), mode="r:gz") as tar:
+                names = [m.name for m in tar.getmembers()]
+        except tarfile.TarError:
+            raise HTTPException(status_code=400, detail="not a valid .tar.gz archive")
+    elif data[:4] == b"PK\x03\x04":  # zip local-file-header magic -> .zip
+        try:
+            with zipfile.ZipFile(BytesIO(data)) as zf:
+                names = zf.namelist()
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="not a valid .zip archive")
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="firmware must be a valid .tar.gz or .zip archive",
+        )
+    for name in names:
+        if _unsafe_member(name):
+            raise HTTPException(status_code=400, detail="archive contains an unsafe member path")
 
 
 @app.post("/devices/{device_id}/firmware", status_code=201)
 async def upload_device_firmware(device_id: str, firmware: UploadFile) -> dict:
     validate_device_id(device_id)
-    if not firmware.filename or not firmware.filename.lower().endswith((".tar.gz", ".tgz")):
-        raise HTTPException(status_code=400, detail="firmware must be a .tar.gz or .tgz archive")
+    if not firmware.filename or not firmware.filename.lower().endswith((".tar.gz", ".tgz", ".zip")):
+        raise HTTPException(status_code=400, detail="firmware must be a .tar.gz, .tgz, or .zip archive")
 
     conn = get_connection()
     try:

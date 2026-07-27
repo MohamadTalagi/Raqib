@@ -388,16 +388,17 @@ export function RegisterDeviceForm({
           id="register-firmware"
           aria-label="Firmware archive"
           type="file"
-          // Windows' file picker maps only the final extension of a compound
-          // name, so a bare ".tar.gz" filter greys out real .tar.gz files.
-          // Include ".gz" and the gzip/tar MIME types so the archive is
-          // selectable; the API still gates on the real .tar.gz/.tgz filename.
-          accept=".tar.gz,.tgz,.gz,application/gzip,application/x-gzip,application/x-compressed-tar,application/x-tar"
+          // Accept .tar.gz/.tgz and .zip. Windows' file picker maps only the
+          // final extension of a compound name, so a bare ".tar.gz" filter
+          // greys out real .tar.gz files - include ".gz" and the gzip/tar/zip
+          // MIME types so the archive is selectable; the API still gates on
+          // the real filename + magic bytes.
+          accept=".tar.gz,.tgz,.gz,.zip,application/gzip,application/x-gzip,application/x-compressed-tar,application/x-tar,application/zip,application/x-zip-compressed"
           onChange={(e) => setFirmwareFile(e.target.files?.[0] ?? null)}
           className={`${INPUT_CLASS} cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-[var(--color-surface-hover)] file:px-3 file:py-1.5 file:text-sm file:text-[var(--color-text)]`}
         />
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-          A .tar.gz archive enables automated firmware analysis for this device from the Run Scan page.
+          A .tar.gz or .zip archive enables automated firmware analysis for this device from the Run Scan page.
         </p>
       </div>
 
