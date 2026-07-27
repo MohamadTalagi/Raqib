@@ -296,7 +296,12 @@ export function DeviceDetailPage() {
                       <input
                         type="file"
                         aria-label="Firmware archive"
-                        accept=".tar.gz,.tgz"
+                        // Windows' file picker maps only the final extension of a
+                        // compound name, so a bare ".tar.gz" filter greys out real
+                        // .tar.gz files. Include ".gz" and the gzip/tar MIME types so
+                        // the archive is selectable; the API still gates on the real
+                        // .tar.gz/.tgz filename (see upload_device_firmware).
+                        accept=".tar.gz,.tgz,.gz,application/gzip,application/x-gzip,application/x-compressed-tar,application/x-tar"
                         onChange={(e) => setPendingFirmwareFile(e.target.files?.[0] ?? null)}
                         className="text-sm text-[var(--color-text-secondary)]"
                       />

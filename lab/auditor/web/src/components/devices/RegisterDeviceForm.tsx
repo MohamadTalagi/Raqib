@@ -388,7 +388,11 @@ export function RegisterDeviceForm({
           id="register-firmware"
           aria-label="Firmware archive"
           type="file"
-          accept=".tar.gz,.tgz"
+          // Windows' file picker maps only the final extension of a compound
+          // name, so a bare ".tar.gz" filter greys out real .tar.gz files.
+          // Include ".gz" and the gzip/tar MIME types so the archive is
+          // selectable; the API still gates on the real .tar.gz/.tgz filename.
+          accept=".tar.gz,.tgz,.gz,application/gzip,application/x-gzip,application/x-compressed-tar,application/x-tar"
           onChange={(e) => setFirmwareFile(e.target.files?.[0] ?? null)}
           className={`${INPUT_CLASS} cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-[var(--color-surface-hover)] file:px-3 file:py-1.5 file:text-sm file:text-[var(--color-text)]`}
         />
