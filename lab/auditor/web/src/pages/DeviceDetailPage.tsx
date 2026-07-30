@@ -80,14 +80,32 @@ export function DeviceDetailPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId, refreshKey]);
   const ncaDetail = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
+  const controls = useFetch(api.controls, []);
   const [activeTab, setActiveTab] = useState<"overview" | "compliance">("overview");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deregistering, setDeregistering] = useState(false);
   const [firmwareOverride, setFirmwareOverride] = useState<FirmwareState | null>(null);
   const [pendingFirmwareFile, setPendingFirmwareFile] = useState<File | null>(null);
   const [firmwareBusy, setFirmwareBusy] = useState(false);
+  const [assessControlId, setAssessControlId] = useState("");
+  const [assessBusy, setAssessBusy] = useState(false);
+
+  async function handleAssessControl() {
+    if (!deviceId || !assessControlId) return;
+    setAssessBusy(true);
+    try {
+      const verdict = await api.assessControlVerdict(deviceId, assessControlId);
+      showToast(`${assessControlId} assessed: ${verdict.status}.`, "success");
+      setRefreshKey((k) => k + 1);
+    } catch (caught) {
+      showToast(caught instanceof ApiError ? caught.message : "Could not assess this control.", "error");
+    } finally {
+      setAssessBusy(false);
+    }
+  }
 
   // A device switch (navigating from one detail page to another without a
   // full remount) must not carry over the previous device's upload state.
@@ -188,12 +206,19 @@ export function DeviceDetailPage() {
             <span className="ml-auto text-xs text-[var(--color-text-muted)]">
               Source: {device.source ?? "unknown"}
             </span>
-            <a
-              href={api.deviceReportUrl(device.device_id)}
+            <Link
+              to={`/devices/${device.device_id}/assessment`}
               className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
             >
+              <ClipboardCheck className="h-4 w-4" />
+              View assessment
+            </Link>
+            <a
+              href={api.deviceReportUrl(device.device_id)}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+            >
               <FileDown className="h-4 w-4" />
-              Download report
+              PDF
             </a>
             <a
               href={api.deviceReportHtmlUrl(device.device_id)}
@@ -367,8 +392,36 @@ export function DeviceDetailPage() {
               </Card>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="flex-col items-start gap-3">
                   <CardTitle>Verdicts</CardTitle>
+                  <div className="flex w-full flex-wrap items-center gap-2">
+                    <span className="text-xs text-[var(--color-text-muted)]">Assess a control:</span>
+                    <select
+                      aria-label="Control to assess"
+                      value={assessControlId}
+                      onChange={(e) => setAssessControlId(e.target.value)}
+                      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-secondary)]"
+                    >
+                      <option value="">Select a control…</option>
+                      {(controls.data ?? []).map((c) => (
+                        <option key={c.control_id} value={c.control_id}>
+                          {c.control_id} — {c.title}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleAssessControl}
+                      disabled={!assessControlId || assessBusy}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-[var(--color-brand)] px-3 py-1 text-xs font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {assessBusy ? "Assessing…" : "Assess verdict"}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[var(--color-text-muted)]">
+                    Computes a verdict for the chosen control from this device's collected evidence, using the
+                    deterministic policy engine.
+                  </p>
                 </CardHeader>
                 <CardContent className="pt-2">
                   {verdicts.length === 0 ? (

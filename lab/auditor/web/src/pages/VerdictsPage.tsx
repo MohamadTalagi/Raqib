@@ -9,7 +9,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { ControlRecord, VerdictStatus } from "@/lib/types";
+import type { ControlRecord, Severity, VerdictStatus } from "@/lib/types";
 
 const FILTERS: Array<VerdictStatus | "ALL"> = [
   "ALL",
@@ -20,6 +20,11 @@ const FILTERS: Array<VerdictStatus | "ALL"> = [
   "NOT_APPLICABLE",
 ];
 
+const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
+
+const SELECT_CLASS =
+  "rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)]";
+
 function controlFor(controls: ControlRecord[] | null, controlId: string): ControlRecord | undefined {
   return controls?.find((c) => c.control_id === controlId);
 }
@@ -28,17 +33,29 @@ export function VerdictsPage() {
   const verdicts = useFetch(api.verdicts, []);
   const controls = useFetch(api.controls, []);
   const [filter, setFilter] = useState<VerdictStatus | "ALL">("ALL");
+  const [severityFilter, setSeverityFilter] = useState<Severity | "ALL">("ALL");
+  const [deviceFilter, setDeviceFilter] = useState<string>("ALL");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
-    if (!verdicts.data) return [];
-    if (filter === "ALL") return verdicts.data;
-    return verdicts.data.filter((v) => v.status === filter);
-  }, [verdicts.data, filter]);
+  const deviceOptions = useMemo(() => {
+    const set = new Set((verdicts.data ?? []).map((v) => v.device_id));
+    return Array.from(set).sort();
+  }, [verdicts.data]);
 
+  const filtered = useMemo(() => {
+    return (verdicts.data ?? []).filter(
+      (v) =>
+        (filter === "ALL" || v.status === filter) &&
+        (severityFilter === "ALL" || v.severity === severityFilter) &&
+        (deviceFilter === "ALL" || v.device_id === deviceFilter),
+    );
+  }, [verdicts.data, filter, severityFilter, deviceFilter]);
+
+  // Status-tab counts reflect the current severity + device selection, so the
+  // numbers always match what the list below actually shows.
   const filterCounts = useMemo(() => {
     const counts: Record<VerdictStatus | "ALL", number> = {
-      ALL: verdicts.data?.length ?? 0,
+      ALL: 0,
       PASS: 0,
       FAIL: 0,
       PARTIAL: 0,
@@ -46,10 +63,13 @@ export function VerdictsPage() {
       NOT_APPLICABLE: 0,
     };
     for (const v of verdicts.data ?? []) {
+      if (severityFilter !== "ALL" && v.severity !== severityFilter) continue;
+      if (deviceFilter !== "ALL" && v.device_id !== deviceFilter) continue;
+      counts.ALL += 1;
       counts[v.status] += 1;
     }
     return counts;
-  }, [verdicts.data]);
+  }, [verdicts.data, severityFilter, deviceFilter]);
 
   const loading = verdicts.loading || controls.loading;
   const error = verdicts.error ?? controls.error;
@@ -57,11 +77,59 @@ export function VerdictsPage() {
   return (
     <Shell title="Verdicts" subtitle="Deterministic policy-engine results mapped to CGIoT-1:2024">
       <Tabs
-        className="mb-4"
+        className="mb-3"
         items={FILTERS.map((status) => ({ value: status, label: status, count: filterCounts[status] }))}
         value={filter}
         onChange={(v) => setFilter(v as VerdictStatus | "ALL")}
       />
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+          Severity
+          <select
+            aria-label="Filter by severity"
+            value={severityFilter}
+            onChange={(e) => setSeverityFilter(e.target.value as Severity | "ALL")}
+            className={SELECT_CLASS}
+          >
+            <option value="ALL">All severities</option>
+            {SEVERITIES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+          Device
+          <select
+            aria-label="Filter by device"
+            value={deviceFilter}
+            onChange={(e) => setDeviceFilter(e.target.value)}
+            className={SELECT_CLASS}
+          >
+            <option value="ALL">All devices</option>
+            {deviceOptions.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </label>
+        {(severityFilter !== "ALL" || deviceFilter !== "ALL" || filter !== "ALL") && (
+          <button
+            type="button"
+            onClick={() => {
+              setFilter("ALL");
+              setSeverityFilter("ALL");
+              setDeviceFilter("ALL");
+            }}
+            className="text-xs text-[var(--color-brand)] hover:underline"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
 
       {error ? (
         <ErrorState message={error} />

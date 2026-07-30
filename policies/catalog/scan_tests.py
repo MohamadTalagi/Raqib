@@ -839,7 +839,7 @@ SCAN_CATALOG = {
         "parse_observations": _parse_nmap_observations,
     },
     "TEST-AUTH-DEFAULT-CREDS": {
-        "label": "Default credentials (admin/admin)",
+        "label": "Default credentials",
         "tool": "curl",
         "tool_version_command": ["curl", "--version"],
         "category": CATEGORY_WEB_AUTH,

@@ -199,12 +199,15 @@ describe("DeviceDetailPage", () => {
     await waitFor(() => expect(screen.getByText(/device not found/i)).toBeInTheDocument());
   });
 
-  it("offers a download link to the device report", async () => {
+  it("offers a PDF download link and a consolidated assessment link", async () => {
     vi.spyOn(api, "device").mockResolvedValue(DETAIL as never);
     renderPage();
 
-    const link = await screen.findByRole("link", { name: /download report/i });
-    expect(link).toHaveAttribute("href", expect.stringContaining("/devices/device-insecure/report.pdf"));
+    const pdf = await screen.findByRole("link", { name: "PDF" });
+    expect(pdf).toHaveAttribute("href", expect.stringContaining("/devices/device-insecure/report.pdf"));
+
+    const assessment = screen.getByRole("link", { name: /view assessment/i });
+    expect(assessment).toHaveAttribute("href", "/devices/device-insecure/assessment");
   });
 
   it("offers HTML and JSON report export links alongside the PDF one", async () => {

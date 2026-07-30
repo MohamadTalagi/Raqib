@@ -200,6 +200,11 @@ export const api = {
     deleteRequest(`/devices/${encodeURIComponent(deviceId)}/firmware`),
   controlVerdicts: (controlId: string): Promise<ControlVerdictRollup> =>
     getJson<ControlVerdictRollup>(`/controls/${encodeURIComponent(controlId)}/verdicts`),
+  assessControlVerdict: (deviceId: string, controlId: string): Promise<VerdictRecord> =>
+    postJson<VerdictRecord>(
+      `/devices/${encodeURIComponent(deviceId)}/controls/${encodeURIComponent(controlId)}/assess`,
+      {},
+    ),
 
   // -- Network discovery (discovery-first device onboarding) --------------
 

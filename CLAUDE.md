@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-27
+> **Last updated:** 2026-07-30
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,44 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Firmware upload now accepts `.zip` (not just `.tar.gz`) end to
+**Phase:** **Five owner-requested features — all COMPLETE** (2026-07-30),
+worked as a loop. (1) **Default-creds scan label** cleaned up — dropped the
+misleading "(admin/admin)" suffix from `TEST-AUTH-DEFAULT-CREDS`'s label (the
+scan actually tries 10 pairs); scan still tries admin:admin. (2) **Verdicts
+page filters** — added severity and device dropdowns alongside the existing
+status tabs (status-tab counts now reflect the severity+device selection);
+`VerdictsPage.tsx`. (3) **Per-control verdict assessment on the device page** —
+new `POST /devices/{id}/controls/{control_id}/assess` (deterministic policy
+engine over the device's real evidence, always records a fresh verdict; 400
+with the required test ids when applicable-but-no-evidence, NOT_APPLICABLE
+when the control can't apply); a control-picker + "Assess verdict" panel in
+the device detail Verdicts card. (4) **Consolidated per-device assessment
+report** — new `DeviceAssessmentReportPage.tsx` (`/devices/:id/assessment`)
+compiling profile+inventory, services, firmware, NCA readiness, verdicts, and
+evidence into one printable page with PDF/HTML/JSON download (reuses the
+existing `report.*` endpoints) + a "View assessment" entry point on the device
+page. (5) **Web-based scan console** — new `ScanConsolePage.tsx`
+(`/scan-console`, sidebar under Assessment): a terminal-style runner that is
+**deliberately not a shell** — it only understands `scan`/`list`/`help`/`clear`
+and its sole action is `createScanJob(device, test)`, which auditor-api
+re-validates against the fixed `SCAN_CATALOG` whitelist before the worker runs
+an argv-list command; unknown input is rejected client-side too, so the
+security boundary is unchanged.
+- **Verified**: `tsc`/`oxlint` clean; new backend suite (6 assess-endpoint
+  tests) + 14 verdict tests + 91 `policies/catalog` + 50 API regression tests
+  pass; 45 frontend tests across the 5 touched/new page suites pass (incl. a
+  console test asserting an unknown command never calls the API, and
+  verdict-filter/assess/assessment-report coverage). Rebuilt/redeployed
+  `auditor-api`+`auditor-web`; confirmed live: the label is now "Default
+  credentials", the assess endpoint computed a real SA-IOT-002 FAIL from real
+  evidence, and `/devices/:id/assessment`, `/scan-console`, `/verdicts` all
+  serve with the new UI strings in the bundle. Browser-based visual check not
+  performed (Claude-in-Chrome not connected). One valid verdict
+  (`VD-2026-07-30-0001`, SA-IOT-002 FAIL) was created in the live DB during
+  assess verification — real, correct data, kept (verdicts are append-only by
+  design).
+
+Before that: **Firmware upload now accepts `.zip` (not just `.tar.gz`) end to
 end — COMPLETE** (2026-07-27). The owner reported "I cannot upload a
 firmware"; first pass broadened the file picker's `accept` filter
 (`docs/errors/030` — Windows greys out compound-extension `.tar.gz` files),
@@ -1219,6 +1256,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-30 | **Five owner-requested features, worked as a loop** — see §0. (1) Dropped "(admin/admin)" from the `TEST-AUTH-DEFAULT-CREDS` label (still tries 10 pairs). (2) Verdicts page gained severity + device filters beside the status tabs. (3) New `POST /devices/{id}/controls/{control_id}/assess` (deterministic per-(device,control) verdict from evidence) + an "Assess verdict" control-picker on the device Verdicts card. (4) New consolidated `DeviceAssessmentReportPage` (`/devices/:id/assessment`) compiling profile/inventory/services/firmware/NCA-readiness/verdicts/evidence into one printable page with PDF/HTML/JSON download. (5) New `ScanConsolePage` (`/scan-console`) — a terminal-style runner for whitelisted catalog scans only (`scan`/`list`/`help`/`clear`; sole action is `createScanJob`, server re-validated against the whitelist — not a shell). `tsc`/`oxlint` clean; 6 new assess-endpoint tests + 45 frontend tests across 5 touched/new suites + verdict/catalog/API regression suites pass; rebuilt/redeployed `auditor-api`+`auditor-web` and verified each live. |
 | 2026-07-27 | **Firmware upload now accepts `.zip`, not just `.tar.gz`, end to end** — see §0 and `docs/errors/030`/`031`. Owner reported "I cannot upload a firmware"; the picker's `accept=".tar.gz,.tgz"` greyed out files on Windows (030), but the real cause was that the pipeline only handled gzip tarballs and their file was a `.zip` (031). Added a shared `archive_reader.py` (`open_archive()` detects gzip vs zip by magic bytes, uniform member interface, bounded reads preserving the zip-bomb caps); refactored `scan_firmware.py` + `firmware_check.py` off direct `tarfile` use; API accepts+validates `.zip` (magic bytes, unsafe-path check for both formats) and stores under a format-neutral `{device_id}.archive` name; frontend `accept` + helper text updated. 27 worker (tar+zip) + 13 API upload + 6 archive_reader + 22 scan-job tests pass, `tsc` clean; rebuilt/redeployed and verified live: a real `.zip` upload → `TEST-FW-MANIFEST` → worker parsed the zip's manifest and produced real OpenSSL Heartbleed/CCS CVE observations. |
 | 2026-07-27 | **Reorganized NCA Compliance into an auditor-usable assessment workspace with auto-verdict suggestions** — see §0 for the full breakdown. Owner asked to make the section "like a real assessment, organized so any auditor can use it"; a scoping question chose *reorganize the existing module* (not rebuild) + *auto-verdict where possible*. The gap: assessing was scattered — the per-device checklist existed but every "Assess" link navigated away, so there was no single workpaper. New per-device workspace (`DeviceAssessmentPage.tsx`, `/nca-compliance/devices/:deviceId`): progress bar, controls grouped by domain, inline Record/Retest opening the dialog in place, filter tabs. New `GET /nca/devices/{id}/suggestions` endpoint pre-fills a suggested verdict from mapped automated evidence (honest polarity — a mapping match implies FAIL since every mapping fires on an insecure condition; 3 informational mappings suggest review_required; absence never implies pass). New `verdict_hint` column on `compliance_finding_mappings` (migration 007 + init.sql + seed) makes that configurable, not hardcoded; new `map_evidence_to_mappings()` returns full matched mappings with `map_evidence_to_controls()` kept as a thin wrapper. `RecordAssessmentDialog` gained a `suggestion` prop (banner + pre-fill; ignored on retest). Entry points added to the NCA device table ("Assess") and device Compliance tab ("Open assessment workspace"); nothing removed. `tsc`/`oxlint` clean, 6 new backend + 15 new/updated frontend tests green (full frontend suite's 10 failures confirmed as host parallel-runner flakes — 64/64 pass in isolation; 1 NCA API failure is the pre-existing WeasyPrint gap). Applied migration 007 to the live DB, rebuilt/redeployed `auditor-api`/`auditor-web`, confirmed the live endpoint returns real auto-verdict data and the new page is served. |
 | 2026-07-26 | **Made the Network Map's node layout collision-proof at any device count** — see §0 for the full breakdown. The original `scatter()` (built the same day) placed nodes via rejection-sampled random jitter within a fixed-size zone, which had a real failure mode once enough nodes were packed in: after 40 failed attempts it placed the node anyway, overlapping another. Replaced with `gridPlacement()` — a deterministic grid sized to give every id its own cell, growing rows (and the canvas height, via a computed inline `aspectRatio` replacing the old fixed Tailwind aspect classes) to fit however many nodes there are, rather than cramming more into the same space. Verified with a standalone script that minimum pairwise node distance stays ≈100+ units from 1 to 150 devices, vs. the old algorithm's unbounded worst case. No visual change for the current 6-device fleet (computes to the identical height). `tsc`/`oxlint` clean, full Vitest suite green, rebuilt and redeployed `auditor-web` (confirmed via a bundle hash/size diff that the new build was actually served). |

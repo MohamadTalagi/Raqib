@@ -1009,6 +1009,83 @@ def recompute_verdicts():
     return {"created": len(created), "verdicts": created}
 
 
+@app.post("/devices/{device_id}/controls/{control_id}/assess", status_code=201)
+def assess_control_verdict(device_id: str, control_id: str):
+    """Assess (compute + record) a verdict for one control against one device,
+    on demand, from that device's already-collected evidence. Unlike
+    /verdicts/recompute (which sweeps every pair and skips any that already
+    has a covering verdict), this always produces a fresh verdict for the
+    chosen pair - the auditor explicitly asked to assess it. The verdict is
+    still computed deterministically by the policy engine from real evidence,
+    never hand-set (the project's 'AI-assisted, not AI-decided' rule).
+
+    Returns 400 (with the required test ids) when the device has no evidence
+    for the control yet and the control still applies - there is nothing to
+    assess until the required scan has run."""
+    from policies.engine.conflict import detect_conflict
+    from policies.engine.policy_engine import build_not_applicable_verdict, evaluate, is_control_applicable
+
+    conn = get_connection()
+    try:
+        if _device_row(conn, device_id) is None:
+            raise HTTPException(status_code=404, detail="device not found")
+
+        control = next((c for c in _load_all_controls() if c["control_id"] == control_id), None)
+        if control is None:
+            raise HTTPException(status_code=404, detail="control not found")
+
+        required_test_ids = {req["test_id"] for req in control["required_evidence"]}
+        policy_version = control.get("version")
+
+        evidence_rows = conn.execute(
+            f"SELECT {EVIDENCE_COLUMNS} FROM evidence WHERE device_id = %s ORDER BY evidence_id",
+            (device_id,),
+        ).fetchall()
+        device_evidence = [_row_to_evidence(row) for row in evidence_rows]
+        relevant = [e for e in device_evidence if e["test_id"] in required_test_ids]
+
+        now = datetime.now(timezone.utc)
+        date_str = now.strftime("%Y-%m-%d")
+        seq = conn.execute(
+            "SELECT COUNT(*) FROM verdicts WHERE verdict_id LIKE %s", (f"VD-{date_str}-%",)
+        ).fetchone()[0] + 1
+        verdict_id = f"VD-{date_str}-{seq:04d}"
+
+        if relevant:
+            relevant_ids = sorted(e["evidence_id"] for e in relevant)
+            chosen, conflict_detected, conflict_reason = detect_conflict(control, relevant)
+            verdict = evaluate(
+                control, chosen, verdict_id=verdict_id,
+                conflict_detected=conflict_detected, conflict_reason=conflict_reason,
+                all_evidence_ids=relevant_ids,
+            )
+        else:
+            services = [
+                {"service_type": st}
+                for (st,) in conn.execute(
+                    "SELECT service_type FROM device_services WHERE device_id = %s AND enabled = true",
+                    (device_id,),
+                ).fetchall()
+            ]
+            if is_control_applicable(control, services):
+                # Applicable but no evidence collected yet - nothing to assess.
+                tests = ", ".join(sorted(required_test_ids)) or "the required scan"
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No evidence collected for this control yet — run {tests} first, then assess.",
+                )
+            verdict = build_not_applicable_verdict(
+                control, device_id, now.strftime("%Y-%m-%dT%H:%M:%SZ"), verdict_id=verdict_id,
+            )
+
+        verdict["policy_version"] = policy_version
+        _insert_verdict_row(conn, verdict)
+        conn.commit()
+    finally:
+        conn.close()
+    return verdict
+
+
 @app.get("/verdicts/{verdict_id}")
 def get_verdict_by_id(verdict_id: str):
     conn = get_connection()

@@ -66,6 +66,54 @@ describe("VerdictsPage", () => {
     expect(screen.queryByText(/SA-IOT-002/)).not.toBeInTheDocument();
   });
 
+  it("filters verdicts by severity", async () => {
+    // fixture[0] is high (SA-IOT-003), fixture[1] is critical (SA-IOT-002).
+    vi.spyOn(api, "verdicts").mockResolvedValue(verdictsFixture);
+    vi.spyOn(api, "controls").mockResolvedValue(controlsFixture);
+
+    render(
+      <MemoryRouter>
+        <VerdictsPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Disable unnecessary network services");
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText("Filter by severity"), "critical");
+
+    // Only the critical SA-IOT-002 verdict remains; the high SA-IOT-003 is gone.
+    expect(screen.getAllByText(/SA-IOT-002/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/SA-IOT-003/)).not.toBeInTheDocument();
+  });
+
+  it("filters verdicts by device", async () => {
+    const otherDevice: VerdictRecord = {
+      ...verdictsFixture[0],
+      verdict_id: "VD-2026-07-22-0009",
+      control_id: "SA-IOT-003",
+      device_id: "device-hardened",
+    };
+    vi.spyOn(api, "verdicts").mockResolvedValue([...verdictsFixture, otherDevice]);
+    vi.spyOn(api, "controls").mockResolvedValue(controlsFixture);
+
+    render(
+      <MemoryRouter>
+        <VerdictsPage />
+      </MemoryRouter>,
+    );
+
+    // Two rows share the SA-IOT-003 title pre-filter, so wait on the select itself.
+    await screen.findByLabelText("Filter by device");
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText("Filter by device"), "device-hardened");
+
+    // Only device-hardened rows remain. SA-IOT-002 is the device-insecure
+    // verdict and only ever appears in a row (not in the device dropdown), so
+    // its absence proves the insecure device's verdicts are filtered out.
+    expect(screen.getAllByText(/device-hardened/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/SA-IOT-002/)).not.toBeInTheDocument();
+  });
+
   it("shows a conflict indicator and the policy version in an expanded verdict", async () => {
     const conflicted: VerdictRecord = {
       ...verdictsFixture[0],

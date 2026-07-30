@@ -7,6 +7,7 @@ import {
   Gavel,
   PlayCircle,
   Terminal,
+  SquareTerminal,
   ShieldCheck,
   ClipboardCheck,
   ListChecks,
@@ -36,6 +37,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Assessment",
     items: [
       { to: "/run-scan", label: "Run Scan", icon: PlayCircle, end: false },
+      { to: "/scan-console", label: "Scan Console", icon: SquareTerminal, end: false },
       { to: "/console", label: "Device Console", icon: Terminal, end: false },
     ],
   },

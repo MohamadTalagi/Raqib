@@ -3,10 +3,12 @@ import { OverviewPage } from "@/pages/OverviewPage";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { NetworkMapPage } from "@/pages/NetworkMapPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
+import { DeviceAssessmentReportPage } from "@/pages/DeviceAssessmentReportPage";
 import { EvidencePage } from "@/pages/EvidencePage";
 import { VerdictsPage } from "@/pages/VerdictsPage";
 import { RunScanPage } from "@/pages/RunScanPage";
 import { DeviceConsolePage } from "@/pages/DeviceConsolePage";
+import { ScanConsolePage } from "@/pages/ScanConsolePage";
 import { ControlsPage } from "@/pages/ControlsPage";
 import { ControlDetailPage } from "@/pages/ControlDetailPage";
 import { NCACompliancePage } from "@/pages/NCACompliancePage";
@@ -28,10 +30,12 @@ export default function App() {
             <Route path="/devices" element={<DevicesPage />} />
             <Route path="/network-map" element={<NetworkMapPage />} />
             <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
+            <Route path="/devices/:deviceId/assessment" element={<DeviceAssessmentReportPage />} />
             <Route path="/evidence" element={<EvidencePage />} />
             <Route path="/verdicts" element={<VerdictsPage />} />
             <Route path="/run-scan" element={<RunScanPage />} />
             <Route path="/console" element={<DeviceConsolePage />} />
+            <Route path="/scan-console" element={<ScanConsolePage />} />
             <Route path="/controls" element={<ControlsPage />} />
             <Route path="/controls/:controlId" element={<ControlDetailPage />} />
             <Route path="/nca-compliance" element={<NCACompliancePage />} />

@@ -113,7 +113,7 @@ const SCAN_TESTS: ScanTestSpec[] = [
   },
   {
     test_id: "TEST-AUTH-DEFAULT-CREDS",
-    label: "Default credentials (admin/admin)",
+    label: "Default credentials",
     category: "web-and-auth",
     applicable_service_types: ["http", "https"],
   },
@@ -186,10 +186,10 @@ describe("RunScanPage", () => {
 
     await user.selectOptions(screen.getByLabelText("Device"), "telnet-sim");
     expect(await screen.findByText("Nmap service/port scan")).toBeInTheDocument();
-    expect(screen.queryByText("Default credentials (admin/admin)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Default credentials")).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
-    expect(await screen.findByText("Default credentials (admin/admin)")).toBeInTheDocument();
+    expect(await screen.findByText("Default credentials")).toBeInTheDocument();
   });
 
   it("shows the firmware section as disabled with an upload hint when no firmware is uploaded", async () => {
@@ -398,7 +398,7 @@ describe("RunScanPage", () => {
       await user.click(box);
     }
     expect(screen.getByRole("checkbox", { name: "Nmap service/port scan" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Default credentials (admin/admin)" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Default credentials" })).toBeChecked();
 
     await user.click(screen.getByRole("button", { name: /run selected \(2\)/i }));
     await waitFor(() =>
