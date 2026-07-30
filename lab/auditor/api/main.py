@@ -1094,10 +1094,7 @@ def assess_control_verdict(device_id: str, control_id: str, payload: dict | None
                         f"{', '.join(runnable)} on this device first (Run Scan or the Scan Console), then assess."
                     )
                 else:
-                    detail = (
-                        "This control has no automated collector, so it can't be assessed from a scan. "
-                        "Assess it manually in the NCA Compliance workspace, or record evidence for it first."
-                    )
+                    detail = "This control has no automated collector, so it cannot be assessed from a scan."
                 raise HTTPException(status_code=400, detail=detail)
             verdict = build_not_applicable_verdict(
                 control, device_id, now.strftime("%Y-%m-%dT%H:%M:%SZ"), verdict_id=verdict_id,

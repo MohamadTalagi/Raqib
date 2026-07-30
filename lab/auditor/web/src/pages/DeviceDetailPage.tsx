@@ -22,6 +22,7 @@ import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
 import { applicableDomains } from "@/lib/nca";
+import { scanAssessableControls } from "@/lib/controls";
 import type { Confidence, Severity, VerdictStatus } from "@/lib/types";
 
 const VERDICT_STATUSES: readonly VerdictStatus[] = ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"];
@@ -84,6 +85,7 @@ export function DeviceDetailPage() {
   const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId, refreshKey]);
   const ncaDetail = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
   const controls = useFetch(api.controls, []);
+  const scanTests = useFetch(api.scanTests, []);
   const [activeTab, setActiveTab] = useState<"overview" | "compliance">("overview");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deregistering, setDeregistering] = useState(false);
@@ -404,7 +406,7 @@ export function DeviceDetailPage() {
                       className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-secondary)]"
                     >
                       <option value="">Select a control…</option>
-                      {(controls.data ?? []).map((c) => (
+                      {scanAssessableControls(controls.data ?? [], scanTests.data ?? []).map((c) => (
                         <option key={c.control_id} value={c.control_id}>
                           {c.control_id} — {c.title}
                         </option>

@@ -10,6 +10,7 @@ import { AssessVerdictDialog } from "@/components/verdicts/AssessVerdictDialog";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
+import { scanAssessableControls } from "@/lib/controls";
 import { cn } from "@/lib/utils";
 import type { ControlRecord, Severity, VerdictStatus } from "@/lib/types";
 
@@ -37,6 +38,7 @@ export function VerdictsPage() {
   const verdicts = useFetch(api.verdicts, [refreshKey]);
   const controls = useFetch(api.controls, []);
   const devices = useFetch(api.devices, []);
+  const scanTests = useFetch(api.scanTests, []);
   const [assessOpen, setAssessOpen] = useState(false);
   const [filter, setFilter] = useState<VerdictStatus | "ALL">("ALL");
   const [severityFilter, setSeverityFilter] = useState<Severity | "ALL">("ALL");
@@ -247,7 +249,7 @@ export function VerdictsPage() {
       <AssessVerdictDialog
         open={assessOpen}
         devices={devices.data ?? []}
-        controls={controls.data ?? []}
+        controls={scanAssessableControls(controls.data ?? [], scanTests.data ?? [])}
         onCancel={() => setAssessOpen(false)}
         onAssessed={(verdict) => {
           setAssessOpen(false);
