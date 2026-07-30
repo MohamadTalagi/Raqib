@@ -23,7 +23,11 @@ new `POST /devices/{id}/controls/{control_id}/assess` (deterministic policy
 engine over the device's real evidence, always records a fresh verdict; 400
 with the required test ids when applicable-but-no-evidence, NOT_APPLICABLE
 when the control can't apply); a control-picker + "Assess verdict" panel in
-the device detail Verdicts card. (4) **Consolidated per-device assessment
+the device detail Verdicts card. **The severity is the auditor's choice** —
+the endpoint accepts an optional `{"severity": low|medium|high|critical}`
+(a risk judgement about this device's context, not something the evidence
+decides); the panel has a severity dropdown that defaults to the control's
+catalogued severity. The pass/fail *status* stays evidence-computed. (4) **Consolidated per-device assessment
 report** — new `DeviceAssessmentReportPage.tsx` (`/devices/:id/assessment`)
 compiling profile+inventory, services, firmware, NCA readiness, verdicts, and
 evidence into one printable page with PDF/HTML/JSON download (reuses the

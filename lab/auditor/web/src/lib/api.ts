@@ -25,6 +25,7 @@ import type {
   RecomputeVerdictsResult,
   ScanJob,
   ScanTestSpec,
+  Severity,
   Summary,
   VerdictRecord,
 } from "./types";
@@ -200,10 +201,10 @@ export const api = {
     deleteRequest(`/devices/${encodeURIComponent(deviceId)}/firmware`),
   controlVerdicts: (controlId: string): Promise<ControlVerdictRollup> =>
     getJson<ControlVerdictRollup>(`/controls/${encodeURIComponent(controlId)}/verdicts`),
-  assessControlVerdict: (deviceId: string, controlId: string): Promise<VerdictRecord> =>
+  assessControlVerdict: (deviceId: string, controlId: string, severity?: Severity): Promise<VerdictRecord> =>
     postJson<VerdictRecord>(
       `/devices/${encodeURIComponent(deviceId)}/controls/${encodeURIComponent(controlId)}/assess`,
-      {},
+      severity ? { severity } : {},
     ),
 
   // -- Network discovery (discovery-first device onboarding) --------------

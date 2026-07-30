@@ -10,7 +10,7 @@ from pathlib import Path
 
 import jsonschema
 import yaml
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import Body, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 
@@ -1010,20 +1010,34 @@ def recompute_verdicts():
 
 
 @app.post("/devices/{device_id}/controls/{control_id}/assess", status_code=201)
-def assess_control_verdict(device_id: str, control_id: str):
+def assess_control_verdict(device_id: str, control_id: str, payload: dict | None = Body(default=None)):
     """Assess (compute + record) a verdict for one control against one device,
     on demand, from that device's already-collected evidence. Unlike
     /verdicts/recompute (which sweeps every pair and skips any that already
     has a covering verdict), this always produces a fresh verdict for the
-    chosen pair - the auditor explicitly asked to assess it. The verdict is
-    still computed deterministically by the policy engine from real evidence,
-    never hand-set (the project's 'AI-assisted, not AI-decided' rule).
+    chosen pair - the auditor explicitly asked to assess it. The verdict
+    *status* is still computed deterministically by the policy engine from
+    real evidence, never hand-set (the project's 'AI-assisted, not
+    AI-decided' rule).
+
+    The optional body `{"severity": ...}` lets the auditor set the finding's
+    severity (low/medium/high/critical) instead of defaulting to the control's
+    catalogued severity - severity is a risk judgement about this device's
+    context, not a fact the evidence decides, so the auditor gets the choice.
+    Omitting it keeps the control's default.
 
     Returns 400 (with the required test ids) when the device has no evidence
     for the control yet and the control still applies - there is nothing to
     assess until the required scan has run."""
     from policies.engine.conflict import detect_conflict
     from policies.engine.policy_engine import build_not_applicable_verdict, evaluate, is_control_applicable
+
+    severity_override = (payload or {}).get("severity")
+    if severity_override is not None and severity_override not in ("low", "medium", "high", "critical"):
+        raise HTTPException(
+            status_code=400,
+            detail="severity must be one of low, medium, high, critical",
+        )
 
     conn = get_connection()
     try:
@@ -1079,6 +1093,8 @@ def assess_control_verdict(device_id: str, control_id: str):
             )
 
         verdict["policy_version"] = policy_version
+        if severity_override is not None:
+            verdict["severity"] = severity_override
         _insert_verdict_row(conn, verdict)
         conn.commit()
     finally:

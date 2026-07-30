@@ -91,14 +91,15 @@ export function DeviceDetailPage() {
   const [pendingFirmwareFile, setPendingFirmwareFile] = useState<File | null>(null);
   const [firmwareBusy, setFirmwareBusy] = useState(false);
   const [assessControlId, setAssessControlId] = useState("");
+  const [assessSeverity, setAssessSeverity] = useState<Severity | "">("");
   const [assessBusy, setAssessBusy] = useState(false);
 
   async function handleAssessControl() {
     if (!deviceId || !assessControlId) return;
     setAssessBusy(true);
     try {
-      const verdict = await api.assessControlVerdict(deviceId, assessControlId);
-      showToast(`${assessControlId} assessed: ${verdict.status}.`, "success");
+      const verdict = await api.assessControlVerdict(deviceId, assessControlId, assessSeverity || undefined);
+      showToast(`${assessControlId} assessed: ${verdict.status} (${verdict.severity}).`, "success");
       setRefreshKey((k) => k + 1);
     } catch (caught) {
       showToast(caught instanceof ApiError ? caught.message : "Could not assess this control.", "error");
@@ -409,6 +410,19 @@ export function DeviceDetailPage() {
                         </option>
                       ))}
                     </select>
+                    <select
+                      aria-label="Severity"
+                      value={assessSeverity}
+                      onChange={(e) => setAssessSeverity(e.target.value as Severity | "")}
+                      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-secondary)]"
+                    >
+                      <option value="">Severity: from control</option>
+                      {SEVERITIES.map((s) => (
+                        <option key={s} value={s}>
+                          Severity: {s}
+                        </option>
+                      ))}
+                    </select>
                     <button
                       type="button"
                       onClick={handleAssessControl}
@@ -419,8 +433,9 @@ export function DeviceDetailPage() {
                     </button>
                   </div>
                   <p className="text-[11px] text-[var(--color-text-muted)]">
-                    Computes a verdict for the chosen control from this device's collected evidence, using the
-                    deterministic policy engine.
+                    Computes the pass/fail verdict for the chosen control from this device's collected evidence
+                    (deterministic policy engine). Severity is your call — pick one, or leave it on the control's
+                    default.
                   </p>
                 </CardHeader>
                 <CardContent className="pt-2">

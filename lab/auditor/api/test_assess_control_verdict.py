@@ -82,6 +82,38 @@ def test_assess_marks_not_applicable_when_control_cannot_apply(client):
     assert response.json()["status"] == "NOT_APPLICABLE"
 
 
+def test_assess_uses_the_auditor_chosen_severity(client):
+    _register_device(client, "device-insecure", "http", 80)
+    client.post("/evidence", json=EVIDENCE_DEFAULT_CREDS_FAIL)
+
+    response = client.post(
+        "/devices/device-insecure/controls/SA-IOT-002/assess", json={"severity": "low"}
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "FAIL"  # status is still evidence-computed
+    assert body["severity"] == "low"  # but severity is the auditor's choice
+
+
+def test_assess_defaults_severity_to_the_control_when_not_chosen(client):
+    _register_device(client, "device-insecure", "http", 80)
+    client.post("/evidence", json=EVIDENCE_DEFAULT_CREDS_FAIL)
+
+    body = client.post("/devices/device-insecure/controls/SA-IOT-002/assess").json()
+    # No override -> the control's catalogued severity is used (a real value).
+    assert body["severity"] in ("low", "medium", "high", "critical")
+
+
+def test_assess_rejects_an_invalid_severity(client):
+    _register_device(client, "device-insecure", "http", 80)
+    client.post("/evidence", json=EVIDENCE_DEFAULT_CREDS_FAIL)
+
+    response = client.post(
+        "/devices/device-insecure/controls/SA-IOT-002/assess", json={"severity": "catastrophic"}
+    )
+    assert response.status_code == 400
+
+
 def test_assess_always_records_a_fresh_verdict(client):
     # Unlike recompute (idempotent), an explicit assess always produces a new
     # verdict for the pair, even when nothing has changed.
