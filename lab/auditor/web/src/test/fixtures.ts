@@ -1,7 +1,10 @@
 import type {
   ControlRecord,
   Device,
+  DeviceRiskDetail,
   EvidenceRecord,
+  RiskDevicesResponse,
+  RiskFleetSummary,
   Summary,
   VerdictRecord,
   VulnDeviceSummary,
@@ -35,6 +38,8 @@ export const devicesFixture: Device[] = [
     firmware_filename: null,
     firmware_sha256: null,
     firmware_uploaded_at: null,
+    criticality: "medium",
+    exposure: "internal_only",
     registered: true,
     evidence_count: 2,
     verdict_count: 2,
@@ -55,6 +60,8 @@ export const devicesFixture: Device[] = [
     firmware_filename: null,
     firmware_sha256: null,
     firmware_uploaded_at: null,
+    criticality: "medium",
+    exposure: "internal_only",
     registered: true,
     evidence_count: 7,
     verdict_count: 3,
@@ -75,6 +82,8 @@ export const devicesFixture: Device[] = [
     firmware_filename: null,
     firmware_sha256: null,
     firmware_uploaded_at: null,
+    criticality: "medium",
+    exposure: "internal_only",
     registered: true,
     evidence_count: 1,
     verdict_count: 1,
@@ -95,6 +104,8 @@ export const devicesFixture: Device[] = [
     firmware_filename: null,
     firmware_sha256: null,
     firmware_uploaded_at: null,
+    criticality: "medium",
+    exposure: "internal_only",
     registered: false,
     evidence_count: 1,
     verdict_count: 0,
@@ -240,6 +251,38 @@ export const vulnDeviceSummaryFixture: VulnDeviceSummary = {
   ],
 };
 
+export const riskDevicesFixture: RiskDevicesResponse = {
+  devices: [
+    { device_id: "device-insecure", risk_score: 78, risk_category: "critical", priority_rank: 1 },
+    // Deliberately not 12 or 8 - those already appear elsewhere in these
+    // shared fixtures (total_evidence/total_verdicts), which caused a real
+    // cross-test collision (screen.getByText("12") matched two things).
+    { device_id: "device-hardened", risk_score: 15, risk_category: "low", priority_rank: 2 },
+  ],
+};
+
+export const riskDeviceDetailFixture: DeviceRiskDetail = {
+  device_id: "device-insecure",
+  known: true,
+  risk_score: 78,
+  risk_category: "critical",
+  breakdown: {
+    compliance: { raw_value: 20, normalized: 80, weight: 0.25, contribution: 20 },
+    cvss: { raw_value: 9.8, normalized: 98, weight: 0.2, contribution: 19.6 },
+    exploit_availability: { raw_value: true, normalized: 100, weight: 0.2, contribution: 20 },
+    criticality: { raw_value: "high", normalized: 75, weight: 0.15, contribution: 11.25 },
+    exposure: { raw_value: "internal_only", normalized: 40, weight: 0.1, contribution: 4 },
+    violations: { raw_value: 2, normalized: 40, weight: 0.05, contribution: 2 },
+    insecure_services: { raw_value: 1, normalized: 25, weight: 0.05, contribution: 1.25 },
+  },
+};
+
+export const riskFleetSummaryFixture: RiskFleetSummary = {
+  total_devices: 2,
+  average_score: 45,
+  by_category: { low: 1, medium: 0, high: 0, critical: 1 },
+};
+
 export function mockFetchImplementation(path: string): Promise<Response> {
   const routes: Record<string, unknown> = {
     "/summary": summaryFixture,
@@ -250,8 +293,16 @@ export function mockFetchImplementation(path: string): Promise<Response> {
     "/vuln-intel/status": vulnIntelStatusFixture,
     "/vuln-intel/fleet-summary": vulnFleetSummaryFixture,
     "/vuln-intel/devices/device-insecure": vulnDeviceSummaryFixture,
+    "/risk/devices/device-insecure": riskDeviceDetailFixture,
+    "/risk/devices": riskDevicesFixture,
+    "/risk/fleet-summary": riskFleetSummaryFixture,
   };
-  const matched = Object.keys(routes).find((route) => path.endsWith(route));
+  // Longest (most specific) match wins - e.g. "/risk/devices" must not lose
+  // to the shorter, unrelated "/devices" route just because it also happens
+  // to be a suffix match ("/risk/devices".endsWith("/devices") is true).
+  const matched = Object.keys(routes)
+    .filter((route) => path.endsWith(route))
+    .sort((a, b) => b.length - a.length)[0];
   if (!matched) {
     return Promise.resolve(new Response("not found", { status: 404 }));
   }

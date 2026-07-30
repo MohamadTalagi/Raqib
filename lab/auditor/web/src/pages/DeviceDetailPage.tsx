@@ -11,6 +11,7 @@ import {
   ConfidenceLabel,
   NCAReadinessBadge,
   NCAStatusBadge,
+  RiskCategoryBadge,
   SeverityBadge,
   StatusBadge,
 } from "@/components/ui/severity-badge";
@@ -21,7 +22,7 @@ import { DomainSummaryGrid } from "@/components/nca/DomainSummaryGrid";
 import { VulnAdvisoryPanel } from "@/components/devices/VulnAdvisoryPanel";
 import { VulnFreshnessNote } from "@/components/devices/VulnFreshnessNote";
 import { useFetch } from "@/lib/useFetch";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, type UpdateDevicePayload } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
 import { applicableDomains } from "@/lib/nca";
 import { scanAssessableControls } from "@/lib/controls";
@@ -87,6 +88,7 @@ export function DeviceDetailPage() {
   const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId, refreshKey]);
   const ncaDetail = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
   const vulnSummary = useFetch(() => api.vulnIntelDevice(deviceId ?? ""), [deviceId, refreshKey]);
+  const riskDetail = useFetch(() => api.riskDevice(deviceId ?? ""), [deviceId, refreshKey]);
   const controls = useFetch(api.controls, []);
   const scanTests = useFetch(api.scanTests, []);
   const [activeTab, setActiveTab] = useState<"overview" | "compliance">("overview");
@@ -98,6 +100,21 @@ export function DeviceDetailPage() {
   const [assessControlId, setAssessControlId] = useState("");
   const [assessSeverity, setAssessSeverity] = useState<Severity | "">("");
   const [assessBusy, setAssessBusy] = useState(false);
+  const [riskProfileBusy, setRiskProfileBusy] = useState(false);
+
+  async function handleUpdateRiskProfile(field: "criticality" | "exposure", value: string) {
+    if (!deviceId) return;
+    setRiskProfileBusy(true);
+    try {
+      await api.updateDevice(deviceId, { [field]: value } as UpdateDevicePayload);
+      showToast(`${field === "criticality" ? "Criticality" : "Internet exposure"} updated.`, "success");
+      setRefreshKey((k) => k + 1);
+    } catch (caught) {
+      showToast(caught instanceof ApiError ? caught.message : "Could not update the risk profile.", "error");
+    } finally {
+      setRiskProfileBusy(false);
+    }
+  }
 
   async function handleAssessControl() {
     if (!deviceId || !assessControlId) return;
@@ -206,6 +223,12 @@ export function DeviceDetailPage() {
                 </span>
               </Tooltip>
             )}
+            {activeTab === "overview" && riskDetail.data?.known && riskDetail.data.risk_category && (
+              <Link to="/risk" className="flex items-center gap-1.5">
+                <span className="text-xs text-[var(--color-text-muted)]">Risk:</span>
+                <RiskCategoryBadge category={riskDetail.data.risk_category} size="sm" />
+              </Link>
+            )}
             <span className="font-mono text-xs text-[var(--color-text-secondary)]">
               {device.host ?? <span className="text-[var(--color-text-muted)]">No host configured</span>}
             </span>
@@ -292,6 +315,57 @@ export function DeviceDetailPage() {
                   <MetaField label="Location" value={device.location} />
                   <MetaField label="Owner" value={device.owner} />
                   <MetaField label="Notes" value={device.notes} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex-col items-start gap-1">
+                  <CardTitle>Risk profile</CardTitle>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Business context no scan can determine - feeds the risk-scoring engine
+                    (see the Risk Assessment page). Always your call to set or change.
+                  </p>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <label
+                      htmlFor="device-criticality"
+                      className="text-[10px] font-medium tracking-wide text-[var(--color-text-muted)] uppercase"
+                    >
+                      Criticality
+                    </label>
+                    <select
+                      id="device-criticality"
+                      value={device.criticality}
+                      disabled={riskProfileBusy}
+                      onChange={(e) => handleUpdateRiskProfile("criticality", e.target.value)}
+                      className="mt-1 block w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)] disabled:opacity-50"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="device-exposure"
+                      className="text-[10px] font-medium tracking-wide text-[var(--color-text-muted)] uppercase"
+                    >
+                      Internet exposure
+                    </label>
+                    <select
+                      id="device-exposure"
+                      value={device.exposure}
+                      disabled={riskProfileBusy}
+                      onChange={(e) => handleUpdateRiskProfile("exposure", e.target.value)}
+                      className="mt-1 block w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)] disabled:opacity-50"
+                    >
+                      <option value="none">None</option>
+                      <option value="internal_only">Internal only</option>
+                      <option value="internet_facing">Internet-facing</option>
+                    </select>
+                  </div>
                 </CardContent>
               </Card>
 

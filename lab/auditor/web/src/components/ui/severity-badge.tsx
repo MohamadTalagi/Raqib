@@ -1,7 +1,7 @@
-import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert, ShieldCheck, AlertOctagon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification } from "@/lib/types";
+import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification, RiskCategory } from "@/lib/types";
 
 const SEVERITY_STYLES: Record<Severity, string> = {
   critical: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
@@ -146,6 +146,50 @@ export function NCAReadinessBadge({
     >
       <Icon className={READINESS_ICON_SIZE[size]} strokeWidth={2} />
       {READINESS_LABEL[classification]}
+    </span>
+  );
+}
+
+const RISK_CATEGORY_ICON: Record<RiskCategory, typeof CheckCircle2> = {
+  low: ShieldCheck,
+  medium: AlertTriangle,
+  high: AlertTriangle,
+  critical: AlertOctagon,
+};
+
+const RISK_CATEGORY_LABEL: Record<RiskCategory, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  critical: "Critical",
+};
+
+/**
+ * The Dynamic Risk Assessment engine's (policies/risk/risk_engine.py)
+ * low/medium/high/critical category - icon + text, same colorblind/
+ * greyscale-safe rule as every other classification badge here. Reuses
+ * SEVERITY_STYLES since risk categories and control severities share the
+ * same 4-tier color vocabulary, even though they're semantically distinct
+ * axes (a device's risk score, not a control's assigned severity).
+ */
+export function RiskCategoryBadge({
+  category,
+  size = "md",
+}: {
+  category: RiskCategory;
+  size?: "sm" | "md";
+}) {
+  const Icon = RISK_CATEGORY_ICON[category];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md font-semibold tracking-wide",
+        READINESS_SIZE_STYLES[size],
+        SEVERITY_STYLES[category],
+      )}
+    >
+      <Icon className={READINESS_ICON_SIZE[size]} strokeWidth={2} />
+      {RISK_CATEGORY_LABEL[category]}
     </span>
   );
 }

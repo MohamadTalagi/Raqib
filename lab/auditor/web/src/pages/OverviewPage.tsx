@@ -1,11 +1,17 @@
 import { useMemo } from "react";
-import { Bug, FileSearch, Gavel, HardDrive, ShieldAlert } from "lucide-react";
+import { Bug, FileSearch, Flame, Gavel, HardDrive, ShieldAlert } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/state";
 import { StatTile } from "@/components/ui/stat-tile";
-import { StatusBadge, SeverityBadge, ComplianceBadge, KevBadge } from "@/components/ui/severity-badge";
+import {
+  StatusBadge,
+  SeverityBadge,
+  ComplianceBadge,
+  KevBadge,
+  RiskCategoryBadge,
+} from "@/components/ui/severity-badge";
 import { VulnFreshnessNote } from "@/components/devices/VulnFreshnessNote";
 import { Link } from "react-router-dom";
 import { VerdictDonut } from "@/components/charts/VerdictDonut";
@@ -32,6 +38,14 @@ export function OverviewPage() {
   const verdicts = useFetch(api.verdicts, []);
   const controls = useFetch(api.controls, []);
   const vulnFleet = useFetch(api.vulnIntelFleetSummary, []);
+  const riskDevices = useFetch(api.riskDevices, []);
+
+  // GET /risk/devices already returns worst-first (see risk_routes.py) -
+  // just take the top 5 for this summary card.
+  const topRiskDevices = useMemo(
+    () => (riskDevices.data?.devices ?? []).slice(0, 5),
+    [riskDevices.data],
+  );
 
   const complianceScore = useMemo(() => {
     const s = summary.data;
@@ -255,6 +269,53 @@ export function OverviewPage() {
                   </ul>
                   <VulnFreshnessNote />
                 </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex-col items-start gap-1">
+              <CardTitle className="flex items-center gap-2">
+                <Flame className="h-4 w-4 text-[var(--color-text-muted)]" />
+                Org-wide risk priority
+              </CardTitle>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Combines NCA compliance, CVE/CVSS, exploit availability, device criticality,
+                internet exposure, violations, and insecure services into one score per
+                device.{" "}
+                <Link to="/risk" className="text-[var(--color-brand)] hover:underline">
+                  See the full breakdown
+                </Link>
+                .
+              </p>
+            </CardHeader>
+            <CardContent className="pt-2">
+              {riskDevices.loading || !riskDevices.data ? (
+                <Skeleton className="h-32" />
+              ) : topRiskDevices.length === 0 ? (
+                <p className="py-6 text-center text-sm text-[var(--color-text-muted)]">
+                  No devices registered yet.
+                </p>
+              ) : (
+                <ul className="divide-y divide-[var(--color-border)]">
+                  {topRiskDevices.map((d) => (
+                    <li key={d.device_id} className="flex items-center gap-4 py-2.5 text-sm">
+                      <span className="font-mono-tabular w-6 text-xs text-[var(--color-text-muted)]">
+                        #{d.priority_rank}
+                      </span>
+                      <Link
+                        to={`/devices/${d.device_id}`}
+                        className="min-w-0 flex-1 truncate font-mono text-[var(--color-text)] hover:underline"
+                      >
+                        {d.device_id}
+                      </Link>
+                      <span className="font-mono-tabular text-xs text-[var(--color-text-muted)]">
+                        {d.risk_score}
+                      </span>
+                      <RiskCategoryBadge category={d.risk_category} size="sm" />
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>

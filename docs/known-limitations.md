@@ -144,6 +144,17 @@ firmware-manifest evidence record says exactly which snapshot produced it, and
 `TEST-FW-MANIFEST` evidence carries this data — `TEST-NET-HTTP-INSPECT`'s Server-banner
 enrichment stayed on the older, much smaller static reference table.
 
+## Dynamic risk scores are self-reported for two of their seven inputs
+
+`GET /risk/devices/{id}` (see `docs/risk-assessment.md` for the full write-up)
+combines compliance, CVSS, exploit availability, device criticality, internet
+exposure, violation count, and insecure-service count into one score. Two of those
+seven — criticality and exposure — are auditor-set fields
+(`devices.criticality`/`devices.exposure`) with a computed starting default, not
+something any scan can verify; the score is only as accurate as whoever last
+reviewed them. The score itself never feeds back into or auto-flips a compliance
+verdict, by design.
+
 ## Clean-deployment smoke test
 
 `scripts/smoke_test.sh` brings the stack up and polls Docker health checks

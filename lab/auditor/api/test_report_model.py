@@ -306,3 +306,25 @@ def test_vulnerabilities_reports_real_package_and_cve_data(postgres_url):
     assert vulns["kev_listed_cves"] == 1
     assert vulns["vuln_db_built_at"] == "2026-03-09 00:31:20 +0000 UTC"
     assert vulns["packages"][0]["name"] == "openssl"
+
+
+def test_report_includes_a_real_risk_score_and_breakdown(postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register_device(conn)
+        _add_manifest_evidence(conn)  # gives this device a real CVSS/KEV signal
+        conn.commit()
+        model = build_report_model(conn, "report-cam")
+    finally:
+        conn.close()
+
+    risk = model["risk"]
+    assert 0 <= risk["risk_score"] <= 100
+    assert risk["risk_category"] in ("low", "medium", "high", "critical")
+    assert risk["breakdown"]["cvss"]["raw_value"] == 7.5
+    assert risk["breakdown"]["exploit_availability"]["raw_value"] is True
+    # A never-assessed device (this fixture has no NCA assessment) scores
+    # maximum risk from the compliance factor - same honesty rule
+    # policies/nca/evaluator.py's device_score() already applies.
+    assert risk["breakdown"]["compliance"]["raw_value"] is None
+    assert risk["breakdown"]["compliance"]["normalized"] == 100

@@ -60,4 +60,22 @@ describe("OverviewPage", () => {
     expect(within(card).getByText(/101 CVEs/)).toBeInTheDocument();
     expect(within(card).getByText("KEV")).toBeInTheDocument();
   });
+
+  it("shows org-wide risk priority, worst-first, linking to the full breakdown", async () => {
+    render(
+      <MemoryRouter>
+        <OverviewPage />
+      </MemoryRouter>,
+    );
+
+    const heading = await screen.findByText("Org-wide risk priority");
+    const card = heading.closest(".rounded-lg") as HTMLElement;
+    const rows = within(card).getAllByRole("link", { name: /device-/ });
+    expect(rows.map((r) => r.textContent)).toEqual(["device-insecure", "device-hardened"]);
+    expect(within(card).getByText("Critical")).toBeInTheDocument();
+    expect(within(card).getByText("Low")).toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: /see the full breakdown/i })).toHaveAttribute(
+      "href", "/risk",
+    );
+  });
 });

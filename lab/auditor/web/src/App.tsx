@@ -7,6 +7,7 @@ import { DeviceAssessmentReportPage } from "@/pages/DeviceAssessmentReportPage";
 import { EvidencePage } from "@/pages/EvidencePage";
 import { VerdictsPage } from "@/pages/VerdictsPage";
 import { RunScanPage } from "@/pages/RunScanPage";
+import { RiskAssessmentPage } from "@/pages/RiskAssessmentPage";
 import { DeviceConsolePage } from "@/pages/DeviceConsolePage";
 import { ScanConsolePage } from "@/pages/ScanConsolePage";
 import { ControlsPage } from "@/pages/ControlsPage";
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/evidence" element={<EvidencePage />} />
             <Route path="/verdicts" element={<VerdictsPage />} />
             <Route path="/run-scan" element={<RunScanPage />} />
+            <Route path="/risk" element={<RiskAssessmentPage />} />
             <Route path="/console" element={<DeviceConsolePage />} />
             <Route path="/scan-console" element={<ScanConsolePage />} />
             <Route path="/controls" element={<ControlsPage />} />

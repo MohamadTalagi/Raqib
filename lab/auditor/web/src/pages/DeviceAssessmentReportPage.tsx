@@ -4,12 +4,19 @@ import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
-import { NCAReadinessBadge, NCAStatusBadge, SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
+import {
+  NCAReadinessBadge,
+  NCAStatusBadge,
+  RiskCategoryBadge,
+  SeverityBadge,
+  StatusBadge,
+} from "@/components/ui/severity-badge";
 import { VulnAdvisoryPanel } from "@/components/devices/VulnAdvisoryPanel";
 import { VulnFreshnessNote } from "@/components/devices/VulnFreshnessNote";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
-import type { VerdictStatus, Severity } from "@/lib/types";
+import { RISK_FACTOR_LABELS, formatRiskRawValue } from "@/lib/risk";
+import { RISK_FACTOR_KEYS, type VerdictStatus, type Severity } from "@/lib/types";
 
 function isVerdictStatus(v: string): v is VerdictStatus {
   return ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE", "NOT_APPLICABLE"].includes(v);
@@ -45,6 +52,7 @@ export function DeviceAssessmentReportPage() {
   const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId]);
   const nca = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
   const vulnSummary = useFetch(() => api.vulnIntelDevice(deviceId ?? ""), [deviceId]);
+  const riskDetail = useFetch(() => api.riskDevice(deviceId ?? ""), [deviceId]);
 
   if (detail.error) {
     return (
@@ -203,6 +211,50 @@ export function DeviceAssessmentReportPage() {
                 <VulnAdvisoryPanel packages={vulnSummary.data.packages} />
                 <VulnFreshnessNote />
               </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Risk assessment */}
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Risk assessment</CardTitle>
+            {riskDetail.data?.known && riskDetail.data.risk_category && (
+              <div className="flex items-center gap-2">
+                <span className="font-mono-tabular text-sm text-[var(--color-text-secondary)]">
+                  {riskDetail.data.risk_score}/100
+                </span>
+                <RiskCategoryBadge category={riskDetail.data.risk_category} size="sm" />
+              </div>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-3 pt-2">
+            {riskDetail.loading ? (
+              <Skeleton className="h-40" />
+            ) : !riskDetail.data?.known || !riskDetail.data.breakdown ? (
+              <p className="text-sm text-[var(--color-text-muted)]">
+                Risk score unavailable for this device.
+              </p>
+            ) : (
+              <ul className="divide-y divide-[var(--color-border)] text-sm">
+                {RISK_FACTOR_KEYS.map((key) => {
+                  const factor = riskDetail.data!.breakdown![key];
+                  return (
+                    <li key={key} className="flex items-center justify-between gap-4 py-2">
+                      <div className="min-w-0">
+                        <p className="text-[var(--color-text)]">{RISK_FACTOR_LABELS[key]}</p>
+                        <p className="font-mono text-xs text-[var(--color-text-muted)]">
+                          raw: {formatRiskRawValue(factor.raw_value)} · weight{" "}
+                          {Math.round(factor.weight * 100)}%
+                        </p>
+                      </div>
+                      <span className="font-mono-tabular shrink-0 text-[var(--color-text)]">
+                        +{factor.contribution.toFixed(1)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </CardContent>
         </Card>

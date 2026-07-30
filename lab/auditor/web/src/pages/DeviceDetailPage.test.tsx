@@ -116,6 +116,8 @@ const DETAIL: DeviceDetail = {
     firmware_filename: null,
     firmware_sha256: null,
     firmware_uploaded_at: null,
+    criticality: "medium",
+    exposure: "internal_only",
   },
   services: [{ id: 1, service_type: "http", port: 80, published_port: 8081, enabled: true }],
   evidence: [
@@ -159,6 +161,7 @@ describe("DeviceDetailPage", () => {
     vi.spyOn(api, "ncaDevice").mockResolvedValue(NCA_DETAIL);
     vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(NO_VULN_DATA);
     vi.spyOn(api, "vulnIntelStatus").mockResolvedValue(vulnIntelStatusFixture);
+    vi.spyOn(api, "riskDevice").mockResolvedValue({ device_id: "device-insecure", known: false });
   });
 
   it("shows the device's NCA compliance percentage", async () => {
@@ -428,5 +431,80 @@ describe("DeviceDetailPage", () => {
     // VulnFreshnessNote fetches independently of the page's own data - wait
     // for it rather than asserting synchronously, or this races and flakes.
     expect(await screen.findByText(vulnIntelStatusFixture.vuln_db_built_at!)).toBeInTheDocument();
+  });
+
+  it("shows the device's current criticality and exposure", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    renderPage();
+
+    await screen.findByText("Smart Camera — Insecure");
+
+    expect(screen.getByLabelText("Criticality")).toHaveValue(DETAIL.device.criticality);
+    expect(screen.getByLabelText("Internet exposure")).toHaveValue(DETAIL.device.exposure);
+  });
+
+  it("saves a criticality change via PATCH /devices/{id} and shows a toast", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    const updateSpy = vi.spyOn(api, "updateDevice").mockResolvedValue({
+      ...DETAIL.device, criticality: "critical", services: [],
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Smart Camera — Insecure");
+    await user.selectOptions(screen.getByLabelText("Criticality"), "critical");
+
+    expect(updateSpy).toHaveBeenCalledWith("device-insecure", { criticality: "critical" });
+    expect(await screen.findByText(/criticality updated/i)).toBeInTheDocument();
+  });
+
+  it("saves an exposure change via PATCH /devices/{id} and shows a toast", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    const updateSpy = vi.spyOn(api, "updateDevice").mockResolvedValue({
+      ...DETAIL.device, exposure: "internet_facing", services: [],
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Smart Camera — Insecure");
+    await user.selectOptions(screen.getByLabelText("Internet exposure"), "internet_facing");
+
+    expect(updateSpy).toHaveBeenCalledWith("device-insecure", { exposure: "internet_facing" });
+    expect(await screen.findByText(/internet exposure updated/i)).toBeInTheDocument();
+  });
+
+  it("shows an error toast when saving the risk profile fails", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    vi.spyOn(api, "updateDevice").mockRejectedValue(new ApiError("device not found", 404));
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Smart Camera — Insecure");
+    await user.selectOptions(screen.getByLabelText("Criticality"), "high");
+
+    expect(await screen.findByText("device not found")).toBeInTheDocument();
+  });
+
+  it("shows the device's risk category in the header, linking to the Risk Assessment page", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    vi.spyOn(api, "riskDevice").mockResolvedValue({
+      device_id: "device-insecure", known: true, risk_score: 62, risk_category: "high",
+    });
+    renderPage();
+
+    await screen.findByText("Smart Camera — Insecure");
+
+    const riskLink = await screen.findByRole("link", { name: /high/i });
+    expect(riskLink).toHaveAttribute("href", "/risk");
+  });
+
+  it("shows no risk badge when the device has never been scored", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    // beforeEach's default mock already returns known: false.
+    renderPage();
+
+    await screen.findByText("Smart Camera — Insecure");
+
+    expect(screen.queryByText("Risk:")).not.toBeInTheDocument();
   });
 });

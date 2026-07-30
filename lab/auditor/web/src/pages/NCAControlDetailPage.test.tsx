@@ -24,6 +24,8 @@ const REGISTERED_DEVICE: Device = {
   firmware_filename: null,
   firmware_sha256: null,
   firmware_uploaded_at: null,
+  criticality: "medium",
+  exposure: "internal_only",
   registered: true,
   evidence_count: 0,
   verdict_count: 0,

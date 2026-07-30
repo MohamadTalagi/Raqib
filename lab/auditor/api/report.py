@@ -18,6 +18,7 @@ from pathlib import Path
 import yaml
 
 from policies.engine.report_text import DISCLAIMER, METHODOLOGY
+from risk_routes import _compute_risk_for_device
 from vuln_routes import _manifest_packages, _summarize_packages
 
 VERDICT_STATUSES = ("PASS", "FAIL", "PARTIAL", "INCONCLUSIVE", "NOT_APPLICABLE")
@@ -176,6 +177,10 @@ def build_report_model(conn, device_id: str) -> dict | None:
         "counts": counts,
         "evidence": evidence,
         "vulnerabilities": _vulnerability_summary(conn, device_id),
+        # Reuses risk_routes.py's own per-device computation rather than
+        # recomputing it, so the report and the dashboard can never disagree
+        # about a device's risk score.
+        "risk": _compute_risk_for_device(conn, device_id),
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "assessment_scope": assessment_scope,
         "methodology": METHODOLOGY,

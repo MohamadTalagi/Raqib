@@ -149,6 +149,37 @@
 {% endfor %}
 {% else %}<p class="empty-state">No firmware manifest scan (TEST-FW-MANIFEST) has been recorded for this device.</p>{% endif %}
 
+<h2>8. Risk assessment</h2>
+<p class="cite">
+  Risk score {{ risk.risk_score }}/100 ({{ risk.risk_category | upper }}) &mdash; combines NCA
+  compliance, CVSS, exploit availability, device criticality, internet exposure, violation
+  count, and insecure-service count into one score. Informational only - never fed back
+  into a compliance verdict.
+</p>
+{% set factor_labels = {
+  "compliance": "Compliance (NCA CGIoT-1:2024)",
+  "cvss": "Highest CVSS",
+  "exploit_availability": "Exploit availability (CISA KEV)",
+  "criticality": "Device criticality",
+  "exposure": "Internet exposure",
+  "violations": "Violation count",
+  "insecure_services": "Insecure service count"
+} %}
+<table class="provenance">
+  <thead><tr><th>Factor</th><th>Raw value</th><th>Weight</th><th>Contribution</th></tr></thead>
+  <tbody>
+  {% for key, label in factor_labels.items() %}
+  {% set factor = risk.breakdown[key] %}
+    <tr>
+      <td>{{ label }}</td>
+      <td class="mono">{% if factor.raw_value is none %}&mdash;{% else %}{{ factor.raw_value }}{% endif %}</td>
+      <td class="mono">{{ (factor.weight * 100) | round | int }}%</td>
+      <td class="mono">+{{ factor.contribution }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
 <p class="cite" style="margin-top:6mm">{{ disclaimer }}</p>
 
 </body>

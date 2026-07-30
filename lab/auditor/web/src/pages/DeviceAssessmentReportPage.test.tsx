@@ -37,6 +37,8 @@ const DETAIL: DeviceDetail = {
     firmware_filename: "fw.zip",
     firmware_sha256: "abcdef1234567890abcdef1234567890abcdef1234567890",
     firmware_uploaded_at: "2026-07-27T00:00:00Z",
+    criticality: "medium",
+    exposure: "internal_only",
   },
   services: [{ id: 1, service_type: "http", port: 80, published_port: 8081, enabled: true }],
   evidence: [
@@ -87,6 +89,7 @@ describe("DeviceAssessmentReportPage", () => {
     vi.spyOn(api, "ncaDevice").mockResolvedValue(NCA);
     vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(NO_VULN_DATA);
     vi.spyOn(api, "vulnIntelStatus").mockResolvedValue(vulnIntelStatusFixture);
+    vi.spyOn(api, "riskDevice").mockResolvedValue({ device_id: "device-insecure", known: false });
   });
 
   it("consolidates profile, firmware, verdicts, evidence, and NCA readiness", async () => {
@@ -138,5 +141,34 @@ describe("DeviceAssessmentReportPage", () => {
     expect(await screen.findByText("Vulnerability intelligence (2 CVEs)")).toBeInTheDocument();
     expect(screen.getByText("openssl@1.0.1e")).toBeInTheDocument();
     expect(screen.getByText("CVE-2014-0160")).toBeInTheDocument();
+  });
+
+  it("says the risk score is unavailable when the device has never been scored", async () => {
+    renderPage();
+    expect(await screen.findByText(/risk score unavailable/i)).toBeInTheDocument();
+  });
+
+  it("shows the real risk score, category, and per-factor breakdown", async () => {
+    vi.spyOn(api, "riskDevice").mockResolvedValue({
+      device_id: "device-insecure",
+      known: true,
+      risk_score: 78,
+      risk_category: "critical",
+      breakdown: {
+        compliance: { raw_value: 20, normalized: 80, weight: 0.25, contribution: 20 },
+        cvss: { raw_value: 9.8, normalized: 98, weight: 0.2, contribution: 19.6 },
+        exploit_availability: { raw_value: true, normalized: 100, weight: 0.2, contribution: 20 },
+        criticality: { raw_value: "high", normalized: 75, weight: 0.15, contribution: 11.25 },
+        exposure: { raw_value: "internal_only", normalized: 40, weight: 0.1, contribution: 4 },
+        violations: { raw_value: 2, normalized: 40, weight: 0.05, contribution: 2 },
+        insecure_services: { raw_value: 1, normalized: 25, weight: 0.05, contribution: 1.25 },
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText("78/100")).toBeInTheDocument();
+    expect(screen.getByText("Critical")).toBeInTheDocument();
+    expect(screen.getByText("Compliance (NCA CGIoT-1:2024)")).toBeInTheDocument();
+    expect(screen.getByText(/raw: 9\.8/)).toBeInTheDocument();
   });
 });

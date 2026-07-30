@@ -12,7 +12,74 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Vulnerability Intelligence (IoTGuard Stage 05) built out fully — COMPLETE**
+**Phase:** **Dynamic Risk Assessment (IoTGuard Stage 06) built out fully — COMPLETE**
+(2026-07-31). Stage 06 was entirely unbuilt going in — confirmed by a repo-wide grep
+before starting: zero hits for risk-scoring code anywhere. Orchestrated as a 7-phase
+plan (full write-up in `docs/risk-assessment.md`), agreed with the owner up front on
+four decisions that the codebase genuinely couldn't answer on its own: (1) device
+criticality/internet exposure — neither existed in the data model, added as
+**auditor-set fields with a computed default**, always editable; (2) the risk score's
+compliance input uses the **NCA CGIoT-1:2024 score** (the fuller, 81-guideline
+framework), not the smaller SA-IOT-\* pilot; (3) violation count combines **both**
+compliance engines' failures; (4) UI scope is a **dedicated Risk Assessment page**
+(`/risk`), not just summary cards, so a score is never a black box.
+- **`policies/risk/risk_engine.py`** — one pure, centralized, unit-tested function
+  (`compute_device_risk()`) combining 7 normalized 0–100 "risk contribution" factors
+  (compliance, CVSS, CISA-KEV exploit availability, device criticality, internet
+  exposure, violation count, insecure-service count) into a weighted score + Low/
+  Medium/High/Critical category, matching every other scoring engine's architecture
+  in this codebase (`policy_engine.py`, `policies/nca/evaluator.py`,
+  `vuln_routes.py`). Every weight/threshold/point-value is a named, tunable
+  constant. A never-assessed device scores **maximum** risk on the compliance
+  factor, never a neutral/guessed value — absence of proof of compliance is not
+  proof of safety, same honesty rule `device_score()` already applies.
+- **New `devices.criticality`/`devices.exposure` columns** (migration
+  `008-device-risk-fields.sql`), editable via the existing `PATCH /devices/{id}`
+  (now finally has a real caller — confirmed via a fresh grep this session that the
+  `updateDevice` API client function existed on both ends since an earlier session
+  but was never once invoked from any UI). `criticality` defaults `'high'` only for
+  a device with an enabled MQTT/MQTTS service, else `'medium'`; `exposure` always
+  defaults `'internal_only'` — deliberately **not** inferred from a service's
+  `published_port`, since in this lab that reflects host-dev-convenience port
+  mapping, not real internet reachability, and claiming `internet_facing` from that
+  signal alone would overclaim.
+- **New read-only `lab/auditor/api/risk_routes.py`**: `GET /risk/devices` (every
+  device, computed live, sorted worst-first — this sorted list *is* the org-wide
+  priority ranking), `GET /risk/devices/{id}` (full per-factor breakdown), `GET
+  /risk/fleet-summary`. Assembles its 7 inputs entirely by reusing existing
+  functions (`nca_routes._evaluator_rows_for_scope` → `device_score()`,
+  `vuln_routes._manifest_packages`/`_summarize_packages`, a dedup'd verdicts/
+  assessments query) — never reimplements a compliance score or a CVE lookup. Like
+  `device_score()` and `vuln_routes._summarize_packages()`, the risk score is
+  **never cached or persisted** — computed fresh from current data on every
+  request.
+- **Dashboard**: new `/risk` page (org-wide priority table, each row expanding in
+  place to the full breakdown — matches `VerdictsPage`'s own expand-on-click
+  convention), a new `RiskCategoryBadge` component, an Overview "Org-wide risk
+  priority" card, a risk badge on the device detail page header, and a new "Risk
+  profile" card there letting an auditor set criticality/exposure directly.
+- **Report integration**: `report.py`'s `build_report_model()` imports
+  `risk_routes.py`'s own computation (never reimplements it) into a new numbered
+  section on the PDF/HTML report and a matching card on
+  `DeviceAssessmentReportPage`.
+- **Verified**: 373 backend (`policies`/`lab/auditor/worker`) + 228
+  `lab/auditor/api` (2 pre-existing WeasyPrint gaps, unrelated) + 227 frontend
+  tests (1 confirmed pre-existing timing-flake in `RunScanPage.test.tsx`,
+  unrelated) all passing; `tsc`/`oxlint` clean (same 5 pre-existing warnings,
+  nothing new). Rebuilt and redeployed `auditor-api`+`auditor-web`; confirmed
+  **live end to end**: real `/risk/devices/{id}` breakdown for `device-insecure`
+  hand-verified against the formula (25 + 0 + 0 + 7.5 + 4 + 0 + 2.5 = risk score 39,
+  medium), the live PDF/HTML report and the deployed JS bundle both carry the new
+  section/page, and `/risk` resolves via the SPA route.
+- **Not done this pass** (documented, not silently skipped — full detail in
+  `docs/risk-assessment.md`'s "Known limitations"): the score is self-reported for
+  2 of its 7 inputs (criticality/exposure accuracy depends on the auditor keeping
+  them current); no feedback loop into compliance verdicts, by design; violation
+  count can double-count an issue that fails both compliance engines, by design; no
+  historical trend (a natural fit for Stage 10 - Continuous Monitoring, still
+  unbuilt).
+
+Before that: **Vulnerability Intelligence (IoTGuard Stage 05) built out fully — COMPLETE**
 (2026-07-30/31). Stage 05 was previously a 6-entry hardcoded Python dict
 (`policies/catalog/vuln_reference.py`) covering only the two packages this lab's own
 synthetic firmware fixtures ship — honest about being an "auditor-aid," not
@@ -1355,6 +1422,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-31 | **Built out Dynamic Risk Assessment (IoTGuard Stage 06) fully** — see §0 for the complete breakdown and `docs/risk-assessment.md` for the full architecture writeup. New `policies/risk/risk_engine.py` (one pure, unit-tested `compute_device_risk()` combining compliance/CVSS/CISA-KEV-exploit-availability/device-criticality/internet-exposure/violation-count/insecure-service-count into a weighted 0-100 score + Low/Medium/High/Critical category, matching the architecture of every other scoring engine in this codebase); new `devices.criticality`/`devices.exposure` columns (migration 008) with computed defaults, editable via the pre-existing but previously-never-called `PATCH /devices/{id}`; new read-only `risk_routes.py` (`GET /risk/devices` worst-first = the org-wide priority ranking, `/risk/devices/{id}` full breakdown, `/risk/fleet-summary`), reusing NCA/vuln-intel functions rather than reimplementing them, never cached; a new dedicated `/risk` dashboard page plus an Overview card and a device-detail badge/edit panel; and a matching section on both the PDF/HTML report and the consolidated device assessment page. 373 backend + 228 API + 227 frontend tests passing (was 373/226/226 respectively before this session's API-suite additions), `tsc`/`oxlint` clean. Verified live end to end: `device-insecure`'s real `/risk/devices/{id}` breakdown hand-checked against the formula (score 39, medium), confirmed in the live report, the deployed dashboard bundle, and the `/risk` route. |
 | 2026-07-30/31 | **Built out Vulnerability Intelligence (IoTGuard Stage 05) fully** — see §0 for the complete breakdown and `docs/vulnerability-intelligence.md` for the full architecture writeup. Replaced the 6-entry hardcoded `vuln_reference.py` fallback table with real coverage by wiring in Grype (already installed in the worker image, never invoked) via a hybrid model: scan-time lookups stay 100% local, a scheduled `job_runner.py` check refreshes Grype's local DB and a new CISA KEV cache out of band. New `sbom.py` (manifest → CycloneDX), `cisa_kev.py` (KEV feed fetch/cache), a new read-only `vuln_routes.py` API surface, and dashboard UI (`VulnAdvisoryPanel`/`VulnFreshnessNote`/`KevBadge`) across Overview, the device detail page, the consolidated assessment report, and the PDF/HTML report. Real coverage jump confirmed live: openssl 1.0.1e went from 2 CVEs to 77, busybox 1.19.4 from 0 to 24, with real CISA KEV cross-referencing (Heartbleed confirmed genuinely KEV-listed). Caught and fixed two real bugs live (a staleness-check design flaw that would have re-triggered a DB update on every check forever, and a frontend test race condition) and caught-and-repaired one real, unrelated incident (a corrupted Grype DB from an earlier container restart, handled gracefully by the existing three-tier fallback with zero bad data reaching evidence). 333 backend + 214 frontend tests passing (was 290/193), `tsc`/`oxlint` clean. Verified live end to end through the real production pipeline (register → upload firmware → scan → evidence → dashboard/report), not just against test databases. |
 | 2026-07-30 | **Hide non-scannable controls from the assess pickers** — the "This control has no automated collector…" dead-end message appeared because manual-only controls (e.g. SA-IOT-001, whose only test `TEST-DEVICE-ID` has no `SCAN_CATALOG` entry) were still listed in the assess control dropdowns. New `lib/controls.ts::scanAssessableControls()` filters the pickers (device detail assess panel + `AssessVerdictDialog`) to controls with at least one catalogued collector, so the dead-end can't be selected; falls back to all controls if the catalog hasn't loaded. Backend 400 kept as a concise defensive guard (verbose NCA-workspace text trimmed). 3 helper unit tests; verified live SA-IOT-001 is excluded. |
 | 2026-07-30 | **Assess-verdict follow-ups** — (a) fixed a misleading error: assessing a control whose required test has no automated collector (e.g. SA-IOT-001 → TEST-DEVICE-ID, which has no `SCAN_CATALOG` entry) told the user to "run TEST-DEVICE-ID first" — impossible through the product. The 400 now distinguishes runnable required tests (names them) from manual-only controls ("This control has no automated collector … assess it manually …"). (b) Added an **"Assess verdict"** button + `AssessVerdictDialog` on the Verdicts page (pick device + control + optional severity → `POST .../assess`; backend 400s shown inline), so a new verdict can be assessed without opening a device page. 1 new backend test (manual-only message) + 2 new frontend tests; `tsc`/`oxlint` clean; rebuilt/redeployed and verified live. |

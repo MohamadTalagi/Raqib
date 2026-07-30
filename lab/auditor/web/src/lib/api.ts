@@ -31,6 +31,11 @@ import type {
   VulnDeviceSummary,
   VulnFleetSummary,
   VulnIntelStatus,
+  DeviceRiskDetail,
+  RiskCriticality,
+  RiskDevicesResponse,
+  RiskExposure,
+  RiskFleetSummary,
 } from "./types";
 
 function resolveApiBaseUrl(): string {
@@ -155,7 +160,14 @@ export interface CreateDevicePayload {
   services: DeviceServicePayload[];
 }
 
-export type UpdateDevicePayload = Partial<CreateDevicePayload>;
+// criticality/exposure are never accepted at POST /devices time (the API
+// computes a sensible default there - see main.py's create_device) - only
+// PATCH /devices/{id} can set them, so they're additive to Update's payload
+// rather than part of CreateDevicePayload itself.
+export type UpdateDevicePayload = Partial<CreateDevicePayload> & {
+  criticality?: RiskCriticality;
+  exposure?: RiskExposure;
+};
 
 export const api = {
   summary: (): Promise<Summary> => getJson<Summary>("/summary"),
@@ -298,4 +310,11 @@ export const api = {
     getJson<VulnFleetSummary>("/vuln-intel/fleet-summary"),
   vulnIntelDevice: (deviceId: string): Promise<VulnDeviceSummary> =>
     getJson<VulnDeviceSummary>(`/vuln-intel/devices/${encodeURIComponent(deviceId)}`),
+
+  // -- Dynamic Risk Assessment (IoTGuard Stage 06) -------------------------
+
+  riskDevices: (): Promise<RiskDevicesResponse> => getJson<RiskDevicesResponse>("/risk/devices"),
+  riskDevice: (deviceId: string): Promise<DeviceRiskDetail> =>
+    getJson<DeviceRiskDetail>(`/risk/devices/${encodeURIComponent(deviceId)}`),
+  riskFleetSummary: (): Promise<RiskFleetSummary> => getJson<RiskFleetSummary>("/risk/fleet-summary"),
 };

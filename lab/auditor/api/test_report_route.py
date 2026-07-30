@@ -123,6 +123,21 @@ def test_html_report_renders_the_vulnerability_intelligence_section(client, post
     assert "1 KEV-LISTED" in response.text
 
 
+def test_html_report_renders_the_risk_assessment_section(client, postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register(conn)
+    finally:
+        conn.close()
+
+    response = client.get("/devices/route-cam/report.html")
+
+    assert response.status_code == 200
+    assert "Risk assessment" in response.text
+    assert "Compliance (NCA CGIoT-1:2024)" in response.text
+    assert "Device criticality" in response.text
+
+
 def test_json_report_includes_methodology_and_disclaimer(client, postgres_url):
     conn = psycopg.connect(postgres_url)
     try:

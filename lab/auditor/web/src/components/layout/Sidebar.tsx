@@ -13,6 +13,7 @@ import {
   ListChecks,
   Building2,
   Network,
+  Flame,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Assessment",
     items: [
       { to: "/run-scan", label: "Run Scan", icon: PlayCircle, end: false },
+      { to: "/risk", label: "Risk Assessment", icon: Flame, end: false },
       { to: "/scan-console", label: "Scan Console", icon: SquareTerminal, end: false },
       { to: "/console", label: "Device Console", icon: Terminal, end: false },
     ],

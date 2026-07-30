@@ -192,6 +192,11 @@ export interface CreateAssessmentResult extends Assessment {
 export type ServiceType = "http" | "https" | "mqtt" | "mqtts" | "telnet" | "ssh";
 export type DeviceTier = "insecure" | "partial" | "hardened" | "unknown";
 
+// Dynamic Risk Assessment (Stage 06) device-level inputs - auditor-set, no
+// scan can determine these. See policies/risk/risk_engine.py.
+export type RiskCriticality = "low" | "medium" | "high" | "critical";
+export type RiskExposure = "none" | "internal_only" | "internet_facing";
+
 export interface DeviceService {
   id: number;
   service_type: ServiceType;
@@ -227,6 +232,8 @@ export interface DeviceBase {
   firmware_filename: string | null;
   firmware_sha256: string | null;
   firmware_uploaded_at: string | null;
+  criticality: RiskCriticality;
+  exposure: RiskExposure;
 }
 
 /**
@@ -594,4 +601,54 @@ export interface VulnDeviceSummary {
   total_cves: number;
   kev_listed_cves: number;
   highest_cvss: number | null;
+}
+
+// -- Dynamic Risk Assessment (IoTGuard Stage 06) -----------------------------
+// Sourced from lab/auditor/api/risk_routes.py, which assembles these 7
+// inputs by reusing the NCA/vuln-intel/device data every other page already
+// reads, then calls policies/risk/risk_engine.py's pure scoring function.
+
+export type RiskCategory = "low" | "medium" | "high" | "critical";
+
+export const RISK_FACTOR_KEYS = [
+  "compliance",
+  "cvss",
+  "exploit_availability",
+  "criticality",
+  "exposure",
+  "violations",
+  "insecure_services",
+] as const;
+export type RiskFactorKey = (typeof RISK_FACTOR_KEYS)[number];
+
+export interface RiskFactorBreakdown {
+  raw_value: string | number | boolean | null;
+  normalized: number;
+  weight: number;
+  contribution: number;
+}
+
+export interface DeviceRiskRanking {
+  device_id: string;
+  risk_score: number;
+  risk_category: RiskCategory;
+  priority_rank: number;
+}
+
+export interface RiskDevicesResponse {
+  devices: DeviceRiskRanking[];
+}
+
+export interface DeviceRiskDetail {
+  device_id: string;
+  known: boolean;
+  risk_score?: number;
+  risk_category?: RiskCategory;
+  breakdown?: Record<RiskFactorKey, RiskFactorBreakdown>;
+}
+
+export interface RiskFleetSummary {
+  total_devices: number;
+  average_score: number | null;
+  by_category: Record<RiskCategory, number>;
 }
