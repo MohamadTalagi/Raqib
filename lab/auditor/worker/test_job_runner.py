@@ -1,7 +1,14 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from job_runner import poll_once, poll_network_scans_once, process_job, process_network_scan
+import job_runner
+from job_runner import (
+    maybe_refresh_grype_db,
+    poll_once,
+    poll_network_scans_once,
+    process_job,
+    process_network_scan,
+)
 
 
 def _mock_completed(stdout="", stderr="", returncode=0):
@@ -288,3 +295,97 @@ def test_poll_network_scans_once_processes_every_pending_scan(mock_process_scan,
     assert mock_process_scan.call_count == 2
     mock_get.assert_called_once()
     assert mock_get.call_args.kwargs["params"] == {"status": "pending"}
+
+
+# -- Grype DB scheduled refresh (vulnerability intelligence) ----------------
+#
+# Staleness is tracked via our OWN sentinel file (touched after a successful
+# `grype db update`), not via grype's own "Built" field - that field reflects
+# when Anchore built their upstream snapshot, not when we last fetched it,
+# and comparing it against wall-clock time made an earlier version of this
+# check re-attempt an update on every single interval forever (caught live:
+# a real, freshly-updated DB's "Built" date was still 100+ real days old).
+
+
+@patch("job_runner.subprocess.run")
+def test_maybe_refresh_grype_db_skips_check_within_the_interval(mock_run, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_grype_check_monotonic", 100.0)
+    maybe_refresh_grype_db(now=100.0 + job_runner.GRYPE_DB_CHECK_INTERVAL_SECONDS - 1)
+    mock_run.assert_not_called()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.subprocess.run")
+def test_maybe_refresh_grype_db_updates_when_sentinel_is_stale(mock_run, mock_age, monkeypatch, tmp_path):
+    monkeypatch.setattr(job_runner, "_last_grype_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "GRYPE_DB_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = job_runner.GRYPE_DB_MAX_AGE_SECONDS + 1
+    mock_run.return_value = _mock_completed(returncode=0)
+
+    maybe_refresh_grype_db(now=0.0)
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args.args[0] == ["grype", "db", "update"]
+    assert (tmp_path / "sentinel").exists()  # a successful update touches it
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.subprocess.run")
+def test_maybe_refresh_grype_db_skips_update_when_sentinel_is_fresh(mock_run, mock_age, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_grype_check_monotonic", None)
+    mock_age.return_value = 60.0
+
+    maybe_refresh_grype_db(now=0.0)
+
+    mock_run.assert_not_called()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.subprocess.run")
+def test_maybe_refresh_grype_db_updates_when_sentinel_is_missing(mock_run, mock_age, monkeypatch, tmp_path):
+    # No prior successful refresh at all (fresh volume) - must attempt an
+    # update rather than silently doing nothing forever.
+    monkeypatch.setattr(job_runner, "_last_grype_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "GRYPE_DB_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = None
+    mock_run.return_value = _mock_completed(returncode=0)
+
+    maybe_refresh_grype_db(now=0.0)
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args.args[0] == ["grype", "db", "update"]
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.subprocess.run")
+def test_maybe_refresh_grype_db_never_raises_when_update_fails(mock_run, mock_age, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_grype_check_monotonic", None)
+    mock_age.return_value = None
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd=["grype", "db", "update"], timeout=600)
+
+    maybe_refresh_grype_db(now=0.0)  # must not raise
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.subprocess.run")
+def test_maybe_refresh_grype_db_does_not_touch_sentinel_on_failed_update(mock_run, mock_age, monkeypatch, tmp_path):
+    monkeypatch.setattr(job_runner, "_last_grype_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "GRYPE_DB_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = None
+    mock_run.return_value = _mock_completed(returncode=1, stderr="network unreachable")
+
+    maybe_refresh_grype_db(now=0.0)
+
+    assert not (tmp_path / "sentinel").exists()
+
+
+def test_sentinel_age_seconds_returns_none_when_sentinel_does_not_exist(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_runner, "GRYPE_DB_REFRESH_SENTINEL", str(tmp_path / "does-not-exist"))
+    assert job_runner._sentinel_age_seconds() is None
+
+
+def test_touch_refresh_sentinel_creates_parent_directories(tmp_path, monkeypatch):
+    sentinel = tmp_path / "nested" / "dir" / "sentinel"
+    monkeypatch.setattr(job_runner, "GRYPE_DB_REFRESH_SENTINEL", str(sentinel))
+    job_runner._touch_refresh_sentinel()
+    assert sentinel.exists()

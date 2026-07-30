@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 
 import requests
 
@@ -33,6 +34,29 @@ from policies.catalog.scan_tests import (
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
 POLL_INTERVAL_SECONDS = float(os.environ.get("JOB_POLL_INTERVAL_SECONDS", "2"))
 COMMAND_TIMEOUT_SECONDS = 30
+
+# Vulnerability-intelligence hybrid model: firmware scans themselves never
+# touch the network (scan_scripts/firmware_check.py's _run_grype only reads
+# Grype's local on-disk DB) - this is the one place that does, and only
+# occasionally. Checked at most every GRYPE_DB_CHECK_INTERVAL_SECONDS (not
+# every 2s poll iteration); a DB update itself runs inline and blocks job
+# polling for its duration - acceptable given how infrequently it fires, and
+# simpler than a second thread for what's currently a once-a-week operation.
+#
+# Staleness is tracked via our OWN sentinel file, written after each
+# successful `grype db update` - NOT via `grype db status`'s "Built" field.
+# That field is when Anchore built their upstream snapshot, not when we last
+# fetched it; confirmed live that it can be many weeks old even seconds after
+# a fresh, successful `grype db update`, which made an earlier version of
+# this check re-attempt an update on every single interval forever.
+GRYPE_DB_CHECK_INTERVAL_SECONDS = float(os.environ.get("GRYPE_DB_CHECK_INTERVAL_SECONDS", str(6 * 3600)))
+GRYPE_DB_MAX_AGE_SECONDS = float(os.environ.get("GRYPE_DB_MAX_AGE_SECONDS", str(7 * 24 * 3600)))
+GRYPE_DB_UPDATE_TIMEOUT_SECONDS = 600
+GRYPE_DB_REFRESH_SENTINEL = os.environ.get(
+    "GRYPE_DB_REFRESH_SENTINEL", os.path.expanduser("~/.cache/grype/db/.vuln-intel-last-refresh"),
+)
+
+_last_grype_check_monotonic: float | None = None
 
 
 def resolve_target(job: dict) -> dict:
@@ -185,6 +209,60 @@ def process_network_scan(scan: dict) -> None:
     })
 
 
+def _sentinel_age_seconds() -> float | None:
+    try:
+        mtime = os.path.getmtime(GRYPE_DB_REFRESH_SENTINEL)
+    except OSError:
+        return None
+    return time.time() - mtime
+
+
+def _touch_refresh_sentinel() -> None:
+    try:
+        os.makedirs(os.path.dirname(GRYPE_DB_REFRESH_SENTINEL), exist_ok=True)
+        with open(GRYPE_DB_REFRESH_SENTINEL, "w") as f:
+            f.write(datetime.now(timezone.utc).isoformat())
+    except OSError as exc:
+        # Non-fatal: the DB itself did update successfully, only our own
+        # staleness bookkeeping failed - worst case we re-check needlessly
+        # often, never silently stop updating.
+        print(f"job_runner: could not write grype refresh sentinel: {exc}", file=sys.stderr, flush=True)
+
+
+def maybe_refresh_grype_db(now: float | None = None) -> None:
+    """The scheduled half of the vulnerability-intelligence hybrid model:
+    refresh Grype's local DB if we haven't successfully refreshed it within
+    GRYPE_DB_MAX_AGE_SECONDS, but check no more often than
+    GRYPE_DB_CHECK_INTERVAL_SECONDS. Never raises - a failed refresh leaves
+    the last-good DB in place (Grype's own update mechanism swaps in the new
+    DB only on success) and is retried at the next check."""
+    global _last_grype_check_monotonic
+    now = time.monotonic() if now is None else now
+    if (
+        _last_grype_check_monotonic is not None
+        and (now - _last_grype_check_monotonic) < GRYPE_DB_CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_grype_check_monotonic = now
+
+    sentinel_age = _sentinel_age_seconds()
+    if sentinel_age is not None and sentinel_age < GRYPE_DB_MAX_AGE_SECONDS:
+        return
+
+    try:
+        result = subprocess.run(
+            ["grype", "db", "update"],
+            capture_output=True, text=True, timeout=GRYPE_DB_UPDATE_TIMEOUT_SECONDS, check=False,
+        )
+        if result.returncode == 0:
+            print("job_runner: grype db update completed", flush=True)
+            _touch_refresh_sentinel()
+        else:
+            print(f"job_runner: grype db update failed: {result.stderr.strip()}", file=sys.stderr, flush=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"job_runner: grype db update failed: {exc}", file=sys.stderr, flush=True)
+
+
 def poll_network_scans_once() -> int:
     response = requests.get(f"{API_URL}/network-scans", params={"status": "pending"}, timeout=10)
     response.raise_for_status()
@@ -200,6 +278,7 @@ def main() -> None:
         try:
             poll_once()
             poll_network_scans_once()
+            maybe_refresh_grype_db()
         except Exception as exc:  # noqa: BLE001 - never let a poll failure kill the loop
             print(f"job_runner: poll error: {exc}", file=sys.stderr, flush=True)
         time.sleep(POLL_INTERVAL_SECONDS)

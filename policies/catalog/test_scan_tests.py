@@ -1,3 +1,5 @@
+import json
+
 from policies.catalog.scan_tests import (
     ALL_SERVICE_TYPES,
     SCAN_CATALOG,
@@ -633,6 +635,90 @@ def test_parse_fw_manifest_observations_when_absent():
     assert obs["manifest_present"] is False
     assert obs["packages"] == []
     assert obs["notes"]
+
+
+def test_parse_fw_manifest_observations_prefers_grype_result_when_present():
+    # A canned Grype match for openssl - real CVE data from the live spike,
+    # deliberately different in shape/count from the static table's 2 entries
+    # so the test proves Grype's result wins, not just that both agree.
+    grype_result = json.dumps([
+        {
+            "package": "openssl", "version": "1.0.1e", "id": "CVE-2014-0160",
+            "severity": "High", "cvss": 7.5, "fix_state": "fixed",
+            "fix_versions": ["1.0.1g"], "summary": "Heartbleed",
+        },
+        {
+            "package": "openssl", "version": "1.0.1e", "id": "CVE-2016-6304",
+            "severity": "High", "cvss": 7.5, "fix_state": "fixed",
+            "fix_versions": ["1.0.2i"], "summary": "OOB write via OCSP status request",
+        },
+    ])
+    output = f"manifest_present=True\npackages=openssl:1.0.1e\ngrype_result={grype_result}\n"
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, output)
+    openssl_pkg = obs["packages"][0]
+    assert {c["id"] for c in openssl_pkg["cves"]} == {"CVE-2014-0160", "CVE-2016-6304"}
+    assert openssl_pkg["patched_version"] == "1.0.1g"
+    assert openssl_pkg["outdated"] is True
+
+
+def test_parse_fw_manifest_observations_reports_clean_when_grype_ran_and_found_nothing():
+    # "sqlite" isn't in the static reference table either - without the fix
+    # this shipped for, an unmatched package would wrongly say "no local
+    # reference data" even though Grype genuinely checked and found nothing.
+    output = "manifest_present=True\npackages=sqlite:3.44.0\ngrype_result=[]\n"
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, output)
+    pkg = obs["packages"][0]
+    assert pkg["outdated"] is False
+    assert pkg["cves"] == []
+    assert "No CVEs found" in pkg["notes"][0]
+
+
+def test_parse_fw_manifest_observations_falls_back_to_static_table_when_grype_did_not_run():
+    # No grype_result line at all (binary missing / DB not initialized) -
+    # must reproduce today's exact static-table behavior, zero regression.
+    output = "manifest_present=True\npackages=busybox:1.19.4\n"
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, output)
+    pkg = obs["packages"][0]
+    assert pkg["outdated"] is True
+    assert pkg["latest_known_version"] == "1.36.x"
+
+
+def test_parse_fw_manifest_observations_captures_db_freshness_metadata():
+    grype_result = json.dumps([
+        {"package": "openssl", "version": "1.0.1e", "id": "CVE-2014-0160", "severity": "High",
+         "cvss": 7.5, "fix_state": "fixed", "fix_versions": ["1.0.1g"], "summary": "Heartbleed"},
+    ])
+    output = (
+        "manifest_present=True\npackages=openssl:1.0.1e\n"
+        f"grype_result={grype_result}\n"
+        "grype_db_built_at=2026-03-09 00:31:20 +0000 UTC\n"
+        "grype_db_checksum=sha256:a65e27aecbbb2cd6671f5da84c16db7e9c60f0114075e6ae9bcc71f466460a0c\n"
+    )
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, output)
+    assert obs["vuln_db_built_at"] == "2026-03-09 00:31:20 +0000 UTC"
+    assert obs["vuln_db_checksum"] == "sha256:a65e27aecbbb2cd6671f5da84c16db7e9c60f0114075e6ae9bcc71f466460a0c"
+
+
+def test_parse_fw_manifest_observations_omits_freshness_fields_when_grype_did_not_run():
+    output = "manifest_present=True\npackages=busybox:1.19.4\n"
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, output)
+    assert "vuln_db_built_at" not in obs
+    assert "vuln_db_checksum" not in obs
+
+
+def test_parse_fw_manifest_observations_static_table_wins_when_grype_has_no_entry_for_it():
+    # Grype ran (so unmatched packages default to "clean") but this
+    # particular package genuinely wasn't in the batch - busybox's curated
+    # static entry must still be used, not a false "clean" result.
+    other_grype_result = json.dumps([
+        {"package": "openssl", "version": "1.0.1e", "id": "CVE-2014-0160", "severity": "High",
+         "cvss": 7.5, "fix_state": "fixed", "fix_versions": ["1.0.1g"], "summary": "Heartbleed"},
+    ])
+    output = f"manifest_present=True\npackages=busybox:1.19.4\ngrype_result={other_grype_result}\n"
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, output)
+    pkg = obs["packages"][0]
+    assert pkg["outdated"] is True
+    assert pkg["latest_known_version"] == "1.36.x"
 
 
 def test_parse_fw_updatescript_observations():

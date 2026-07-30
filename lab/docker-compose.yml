@@ -118,6 +118,11 @@ services:
       # parses the already-verified CGIoT-1:2024 transcription rather than
       # re-reading the PDF at request time.
       - ../docs:/work/docs:ro
+      # Grype's vulnerability DB (root's default cache dir, confirmed via a
+      # live `grype db status`), so `grype db update` (job_runner.py's
+      # maybe_refresh_grype_db) persists across container restarts/rebuilds
+      # instead of re-downloading every time.
+      - grype-db-data:/root/.cache/grype/db
     # NET_ADMIN/NET_RAW are needed only for TEST-NET-PKTCAPTURE, which runs
     # tcpdump on the worker's own interface (mirrors traffic-capture's
     # identical cap_add above - a Docker bridge won't let a passive third
@@ -180,3 +185,4 @@ services:
 volumes:
   mqtt-secure-passwd:
   auditor-db-data:
+  grype-db-data:

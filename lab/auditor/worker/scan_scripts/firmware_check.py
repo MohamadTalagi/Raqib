@@ -14,15 +14,102 @@ parse, shebang sniff).
 
 import json
 import os
+import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from lab.auditor.worker.firmware.archive_reader import Member, open_archive
 from lab.auditor.worker.firmware.scan_firmware import MAX_MEMBER_BYTES, scan_archive
+from lab.auditor.worker.scan_scripts.sbom import build_cyclonedx_sbom
 
 DOCUMENT_STORE_DIR = Path(os.environ.get("DOCUMENT_STORE_DIR", "/work/document-store"))
 
 CERT_KEY_SUFFIXES = (".pem", ".crt", ".key", ".cer")
+
+GRYPE_TIMEOUT_SECONDS = 20
+
+
+def _summarize_grype_matches(raw_stdout: str) -> list[dict]:
+    """Trim Grype's verbose per-match JSON (each real match carries 50+
+    reference URLs) down to exactly the fields this project's advisory shape
+    needs, so the collector's printed output stays a reasonable size."""
+    data = json.loads(raw_stdout)
+    summarized = []
+    for match in data.get("matches", []):
+        vuln = match["vulnerability"]
+        artifact = match["artifact"]
+        cvss_entries = vuln.get("cvss") or []
+        best_cvss = max(
+            (c["metrics"]["baseScore"] for c in cvss_entries if c.get("metrics", {}).get("baseScore") is not None),
+            default=None,
+        )
+        fix = vuln.get("fix") or {}
+        summarized.append({
+            "package": artifact["name"],
+            "version": artifact["version"],
+            "id": vuln["id"],
+            "severity": vuln.get("severity"),
+            "cvss": best_cvss,
+            "fix_state": fix.get("state"),
+            "fix_versions": fix.get("versions", []),
+            "summary": (vuln.get("description") or "")[:400],
+        })
+    return summarized
+
+
+def _grype_db_status() -> dict | None:
+    """Which vulnerability DB snapshot `_run_grype` would use right now, so a
+    finding can cite it (`grype db status` has no `-o json` flag - this
+    parses its plain-text output, confirmed live against the real command).
+    Returns None (never raises) if Grype isn't installed or has no DB yet."""
+    try:
+        result = subprocess.run(
+            ["grype", "db", "status"], capture_output=True, text=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    built = re.search(r"^Built:\s+(.+)$", result.stdout, re.MULTILINE)
+    checksum = re.search(r"^Checksum:\s+(\S+)$", result.stdout, re.MULTILINE)
+    if not built:
+        return None
+    return {"built_at": built.group(1).strip(), "checksum": checksum.group(1).strip() if checksum else None}
+
+
+def _run_grype(packages: list[tuple[str, str]]) -> list[dict] | None:
+    """Scan `packages` against Grype's local vulnerability DB, fully offline
+    (no network call here - `grype db update` is a separate, scheduled
+    operation). Returns None (never raises) if Grype isn't installed, its DB
+    hasn't been fetched yet, or anything else goes wrong - callers fall back
+    to the static reference table, exactly like an unresolved lookup today."""
+    if not packages:
+        return None
+    sbom_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(build_cyclonedx_sbom(packages), f)
+            sbom_path = f.name
+        result = subprocess.run(
+            ["grype", f"sbom:{sbom_path}", "-o", "json", "--add-cpes-if-none"],
+            capture_output=True,
+            text=True,
+            timeout=GRYPE_TIMEOUT_SECONDS,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        return _summarize_grype_matches(result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, KeyError):
+        return None
+    finally:
+        if sbom_path is not None:
+            try:
+                os.unlink(sbom_path)
+            except OSError:
+                pass
 
 
 def _archive_path(device_id: str) -> Path:
@@ -75,15 +162,23 @@ def check_certkey(members: list[Member], archive_path: Path) -> None:
 def check_manifest(members: list[Member], archive_path: Path) -> None:
     member = next((m for m in members if m.is_file and m.name == "manifest.json"), None)
     present = member is not None
-    packages = []
+    packages: list[tuple[str, str]] = []
     if present:
         try:
             manifest = json.loads(_read_member(member).decode(errors="replace"))
-            packages = [f"{p.get('name', '')}:{p.get('version', '')}" for p in manifest.get("packages", [])]
+            packages = [(p.get("name", ""), p.get("version", "")) for p in manifest.get("packages", [])]
         except (json.JSONDecodeError, AttributeError):
             pass
     print(f"manifest_present={present}")
-    print(f"packages={','.join(packages)}")
+    print(f"packages={','.join(f'{n}:{v}' for n, v in packages)}")
+    grype_matches = _run_grype(packages)
+    if grype_matches is not None:
+        print(f"grype_result={json.dumps(grype_matches)}")
+        db_status = _grype_db_status()
+        if db_status is not None:
+            print(f"grype_db_built_at={db_status['built_at']}")
+            if db_status["checksum"]:
+                print(f"grype_db_checksum={db_status['checksum']}")
 
 
 def check_updatescript(members: list[Member], archive_path: Path) -> None:

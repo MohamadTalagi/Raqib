@@ -44,6 +44,7 @@ automates that gap - keep their established test_id and observation field
 names exactly, or verdict recomputation silently stops matching them.
 """
 
+import json
 import re
 
 from policies.catalog.vuln_reference import lookup_component
@@ -758,14 +759,74 @@ def _parse_fw_certkey_observations(target: dict, output: str) -> dict:
     return {"cert_or_key_present": present, "notes": notes}
 
 
+def _advisory_from_grype_matches(name: str, version: str, matches: list[dict]) -> dict:
+    fixed = [m for m in matches if m.get("fix_state") == "fixed" and m.get("fix_versions")]
+    patched_version = fixed[0]["fix_versions"][0] if fixed else None
+    cves = sorted(
+        (
+            {"id": m["id"], "cvss": m.get("cvss"), "summary": m.get("summary") or ""}
+            for m in matches
+        ),
+        key=lambda c: c["cvss"] or 0,
+        reverse=True,
+    )
+    return {
+        "name": name,
+        "version": version,
+        "outdated": patched_version is not None,
+        "eol": None,
+        "latest_known_version": None,
+        "official_patch_available": patched_version is not None,
+        "patched_version": patched_version,
+        "cves": cves,
+        "notes": [
+            f"{len(cves)} CVE(s) found via Grype's local vulnerability database "
+            "(package/version match only - not vendor/model-specific).",
+        ],
+    }
+
+
+def _clean_grype_advisory(name: str, version: str) -> dict:
+    return {
+        "name": name,
+        "version": version,
+        "outdated": False,
+        "eol": None,
+        "latest_known_version": None,
+        "official_patch_available": False,
+        "patched_version": None,
+        "cves": [],
+        "notes": ["No CVEs found for this package/version in Grype's local vulnerability database."],
+    }
+
+
 def _parse_fw_manifest_observations(target: dict, output: str) -> dict:
     present = "manifest_present=True" in output
     packages_line = re.search(r"^packages=(.*)$", output, re.MULTILINE)
+    grype_line = re.search(r"^grype_result=(.*)$", output, re.MULTILINE)
+    grype_ran = grype_line is not None
+    grype_matches_by_pkg: dict[tuple[str, str], list[dict]] = {}
+    if grype_line and grype_line.group(1):
+        try:
+            for m in json.loads(grype_line.group(1)):
+                grype_matches_by_pkg.setdefault((m["package"], m["version"]), []).append(m)
+        except (json.JSONDecodeError, KeyError):
+            grype_ran = False
     packages = []
     if present and packages_line and packages_line.group(1):
         for entry in packages_line.group(1).split(","):
             name, _, version = entry.partition(":")
-            packages.append(lookup_component(name, version))
+            key = (name, version)
+            if key in grype_matches_by_pkg:
+                packages.append(_advisory_from_grype_matches(name, version, grype_matches_by_pkg[key]))
+                continue
+            static = lookup_component(name, version)
+            if static["outdated"] is not None:
+                packages.append(static)
+            elif grype_ran:
+                packages.append(_clean_grype_advisory(name, version))
+            else:
+                packages.append(static)
     outdated_count = sum(1 for p in packages if p["outdated"])
     cve_count = sum(len(p["cves"]) for p in packages)
     notes = []
@@ -776,9 +837,18 @@ def _parse_fw_manifest_observations(target: dict, output: str) -> dict:
     else:
         notes.append(
             f"{outdated_count} of {len(packages)} listed package(s) are outdated, "
-            f"with {cve_count} known CVE(s) recorded in this local reference.",
+            f"with {cve_count} known CVE(s) found across Grype's local vulnerability "
+            "database and this project's own curated reference table.",
         )
-    return {"manifest_present": present, "packages": packages, "notes": notes}
+    result = {"manifest_present": present, "packages": packages, "notes": notes}
+    if grype_ran:
+        built_at = re.search(r"^grype_db_built_at=(.*)$", output, re.MULTILINE)
+        checksum = re.search(r"^grype_db_checksum=(.*)$", output, re.MULTILINE)
+        if built_at and built_at.group(1):
+            result["vuln_db_built_at"] = built_at.group(1)
+        if checksum and checksum.group(1):
+            result["vuln_db_checksum"] = checksum.group(1)
+    return result
 
 
 def _parse_fw_updatescript_observations(target: dict, output: str) -> dict:

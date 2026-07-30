@@ -1,4 +1,5 @@
 import io
+import json
 import tarfile
 import zipfile
 from contextlib import redirect_stdout
@@ -76,11 +77,98 @@ def test_certkey_check_finds_nothing_in_current_fixtures(tmp_path):
 
 
 @BOTH_FORMATS
-def test_manifest_check_reports_real_packages(fmt, tmp_path):
+def test_manifest_check_reports_real_packages(fmt, tmp_path, monkeypatch):
+    # Explicit "Grype unavailable" so this doesn't silently depend on whether
+    # the host running the test happens to have the grype binary installed.
+    monkeypatch.setattr(firmware_check, "_run_grype", lambda packages: None)
     output = _run("manifest", _variant(fmt, "device-insecure", tmp_path))
     assert "manifest_present=True" in output
     assert "openssl:1.0.1e" in output
     assert "busybox:1.19.4" in output
+    assert "grype_result=" not in output
+
+
+def test_manifest_check_includes_grype_result_when_available(tmp_path, monkeypatch):
+    canned = [{
+        "package": "openssl", "version": "1.0.1e", "id": "CVE-2014-0160",
+        "severity": "High", "cvss": 7.5, "fix_state": "fixed",
+        "fix_versions": ["1.0.1g"], "summary": "Heartbleed",
+    }]
+    monkeypatch.setattr(firmware_check, "_run_grype", lambda packages: canned)
+    monkeypatch.setattr(firmware_check, "_grype_db_status", lambda: {"built_at": "2026-03-09 00:31:20 +0000 UTC", "checksum": "sha256:abc123"})
+    output = _run("manifest", _variant("targz", "device-insecure", tmp_path))
+    assert "grype_result=" in output
+    line = next(l for l in output.splitlines() if l.startswith("grype_result="))
+    assert json.loads(line[len("grype_result="):]) == canned
+    assert "grype_db_built_at=2026-03-09 00:31:20 +0000 UTC" in output
+    assert "grype_db_checksum=sha256:abc123" in output
+
+
+def test_manifest_check_omits_db_status_lines_when_grype_did_not_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(firmware_check, "_run_grype", lambda packages: None)
+    output = _run("manifest", _variant("targz", "device-insecure", tmp_path))
+    assert "grype_db_built_at=" not in output
+    assert "grype_db_checksum=" not in output
+
+
+def test_grype_db_status_parses_real_output_shape(monkeypatch):
+    # Exact shape of `grype db status`'s real plain-text output (it has no
+    # -o json flag, confirmed live) - captured from a real refreshed DB.
+    real_output = (
+        "Location:  /root/.cache/grype/db/5\n"
+        "Built:     2026-03-09 00:31:20 +0000 UTC\n"
+        "Schema:    5\n"
+        "Checksum:  sha256:a65e27aecbbb2cd6671f5da84c16db7e9c60f0114075e6ae9bcc71f466460a0c\n"
+        "Status:    valid\n"
+    )
+
+    class _FakeResult:
+        returncode = 0
+        stdout = real_output
+
+    monkeypatch.setattr(firmware_check.subprocess, "run", lambda *a, **k: _FakeResult())
+    status = firmware_check._grype_db_status()
+    assert status["built_at"] == "2026-03-09 00:31:20 +0000 UTC"
+    assert status["checksum"] == "sha256:a65e27aecbbb2cd6671f5da84c16db7e9c60f0114075e6ae9bcc71f466460a0c"
+
+
+def test_grype_db_status_returns_none_when_command_fails(monkeypatch):
+    def _raise(*args, **kwargs):
+        raise FileNotFoundError("grype not on PATH")
+    monkeypatch.setattr(firmware_check.subprocess, "run", _raise)
+    assert firmware_check._grype_db_status() is None
+
+
+def test_run_grype_returns_none_when_binary_is_missing(monkeypatch):
+    def _raise(*args, **kwargs):
+        raise FileNotFoundError("grype not on PATH")
+    monkeypatch.setattr(firmware_check.subprocess, "run", _raise)
+    assert firmware_check._run_grype([("openssl", "1.0.1e")]) is None
+
+
+def test_run_grype_returns_none_for_empty_package_list():
+    assert firmware_check._run_grype([]) is None
+
+
+def test_summarize_grype_matches_extracts_expected_fields():
+    raw = json.dumps({
+        "matches": [{
+            "vulnerability": {
+                "id": "CVE-2014-0160",
+                "severity": "High",
+                "cvss": [{"metrics": {"baseScore": 5.0}}, {"metrics": {"baseScore": 7.5}}],
+                "fix": {"state": "fixed", "versions": ["1.0.1g"]},
+                "description": "Heartbleed" * 100,
+            },
+            "artifact": {"name": "openssl", "version": "1.0.1e"},
+        }],
+    })
+    [summary] = firmware_check._summarize_grype_matches(raw)
+    assert summary["package"] == "openssl"
+    assert summary["cvss"] == 7.5
+    assert summary["fix_state"] == "fixed"
+    assert summary["fix_versions"] == ["1.0.1g"]
+    assert len(summary["summary"]) <= 400
 
 
 @BOTH_FORMATS
