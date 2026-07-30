@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { ToastProvider } from "@/lib/useToast";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VerdictsPage } from "./VerdictsPage";
 import { api } from "@/lib/api";
@@ -15,7 +16,9 @@ describe("VerdictsPage", () => {
   it("renders a verdict card per record with control title from /controls", async () => {
     render(
       <MemoryRouter>
-        <VerdictsPage />
+        <ToastProvider>
+          <VerdictsPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -27,7 +30,9 @@ describe("VerdictsPage", () => {
   it("filters verdicts by status", async () => {
     render(
       <MemoryRouter>
-        <VerdictsPage />
+        <ToastProvider>
+          <VerdictsPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -51,7 +56,9 @@ describe("VerdictsPage", () => {
 
     render(
       <MemoryRouter>
-        <VerdictsPage />
+        <ToastProvider>
+          <VerdictsPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -73,7 +80,9 @@ describe("VerdictsPage", () => {
 
     render(
       <MemoryRouter>
-        <VerdictsPage />
+        <ToastProvider>
+          <VerdictsPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -98,7 +107,9 @@ describe("VerdictsPage", () => {
 
     render(
       <MemoryRouter>
-        <VerdictsPage />
+        <ToastProvider>
+          <VerdictsPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 
@@ -114,6 +125,63 @@ describe("VerdictsPage", () => {
     expect(screen.queryByText(/SA-IOT-002/)).not.toBeInTheDocument();
   });
 
+  it("opens the assess dialog and assesses a new verdict for a chosen device/control/severity", async () => {
+    const assessSpy = vi.spyOn(api, "assessControlVerdict").mockResolvedValue({
+      ...verdictsFixture[0],
+      verdict_id: "VD-NEW-0001",
+      control_id: "SA-IOT-003",
+      device_id: "device-insecure",
+      status: "FAIL",
+      severity: "low",
+    });
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <VerdictsPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /assess verdict/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    // Wait for the async device/control options to load into the dialog.
+    await within(dialog).findByRole("option", { name: "device-insecure" });
+    await user.selectOptions(within(dialog).getByLabelText("Device"), "device-insecure");
+    await user.selectOptions(within(dialog).getByLabelText("Control"), "SA-IOT-003");
+    await user.selectOptions(within(dialog).getByLabelText("Severity"), "low");
+    await user.click(within(dialog).getByRole("button", { name: /assess verdict/i }));
+
+    expect(assessSpy).toHaveBeenCalledWith("device-insecure", "SA-IOT-003", "low");
+  });
+
+  it("shows the backend error inline when a control has no evidence to assess", async () => {
+    vi.spyOn(api, "assessControlVerdict").mockRejectedValue(
+      new (await import("@/lib/api")).ApiError("This control has no automated collector, so it can't be assessed from a scan.", 400),
+    );
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <VerdictsPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /assess verdict/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("option", { name: "device-insecure" });
+    await user.selectOptions(within(dialog).getByLabelText("Device"), "device-insecure");
+    await user.selectOptions(within(dialog).getByLabelText("Control"), "SA-IOT-003");
+    await user.click(within(dialog).getByRole("button", { name: /assess verdict/i }));
+
+    expect(await within(dialog).findByText(/no automated collector/i)).toBeInTheDocument();
+  });
+
   it("shows a conflict indicator and the policy version in an expanded verdict", async () => {
     const conflicted: VerdictRecord = {
       ...verdictsFixture[0],
@@ -127,7 +195,9 @@ describe("VerdictsPage", () => {
 
     render(
       <MemoryRouter>
-        <VerdictsPage />
+        <ToastProvider>
+          <VerdictsPage />
+        </ToastProvider>
       </MemoryRouter>,
     );
 

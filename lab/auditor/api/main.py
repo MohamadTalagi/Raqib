@@ -1083,11 +1083,22 @@ def assess_control_verdict(device_id: str, control_id: str, payload: dict | None
             ]
             if is_control_applicable(control, services):
                 # Applicable but no evidence collected yet - nothing to assess.
-                tests = ", ".join(sorted(required_test_ids)) or "the required scan"
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"No evidence collected for this control yet — run {tests} first, then assess.",
-                )
+                # Only some required tests have an automated collector (a
+                # SCAN_CATALOG entry). If none do (e.g. SA-IOT-001's
+                # TEST-DEVICE-ID), telling the user to "run" them is
+                # misleading - the control is manual-assessment-only.
+                runnable = sorted(t for t in required_test_ids if t in SCAN_CATALOG)
+                if runnable:
+                    detail = (
+                        "No evidence collected for this control yet — run "
+                        f"{', '.join(runnable)} on this device first (Run Scan or the Scan Console), then assess."
+                    )
+                else:
+                    detail = (
+                        "This control has no automated collector, so it can't be assessed from a scan. "
+                        "Assess it manually in the NCA Compliance workspace, or record evidence for it first."
+                    )
+                raise HTTPException(status_code=400, detail=detail)
             verdict = build_not_applicable_verdict(
                 control, device_id, now.strftime("%Y-%m-%dT%H:%M:%SZ"), verdict_id=verdict_id,
             )

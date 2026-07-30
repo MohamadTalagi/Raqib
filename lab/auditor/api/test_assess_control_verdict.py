@@ -74,6 +74,18 @@ def test_assess_400_when_applicable_but_no_evidence(client):
     assert "run" in response.json()["detail"].lower()
 
 
+def test_assess_400_explains_manual_only_control_without_a_collector(client):
+    # SA-IOT-001 requires TEST-DEVICE-ID, which has NO SCAN_CATALOG entry - it
+    # can't be run through the product, so the message must not tell the user
+    # to "run" it; it must point them at manual assessment instead.
+    _register_device(client, "device-insecure", "http", 80)
+    response = client.post("/devices/device-insecure/controls/SA-IOT-001/assess")
+    assert response.status_code == 400
+    detail = response.json()["detail"].lower()
+    assert "no automated collector" in detail
+    assert "test-device-id" not in detail  # never names an unrunnable test
+
+
 def test_assess_marks_not_applicable_when_control_cannot_apply(client):
     # An http-only device can never satisfy SA-IOT-004 (needs mqtt).
     _register_device(client, "http-only-cam", "http", 80)

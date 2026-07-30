@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, AlertTriangle } from "lucide-react";
+import { ChevronDown, AlertTriangle, Plus } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
 import { Tabs } from "@/components/ui/tabs";
+import { AssessVerdictDialog } from "@/components/verdicts/AssessVerdictDialog";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
+import { useToast } from "@/lib/useToast";
 import { cn } from "@/lib/utils";
 import type { ControlRecord, Severity, VerdictStatus } from "@/lib/types";
 
@@ -30,8 +32,12 @@ function controlFor(controls: ControlRecord[] | null, controlId: string): Contro
 }
 
 export function VerdictsPage() {
-  const verdicts = useFetch(api.verdicts, []);
+  const { showToast } = useToast();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const verdicts = useFetch(api.verdicts, [refreshKey]);
   const controls = useFetch(api.controls, []);
+  const devices = useFetch(api.devices, []);
+  const [assessOpen, setAssessOpen] = useState(false);
   const [filter, setFilter] = useState<VerdictStatus | "ALL">("ALL");
   const [severityFilter, setSeverityFilter] = useState<Severity | "ALL">("ALL");
   const [deviceFilter, setDeviceFilter] = useState<string>("ALL");
@@ -129,6 +135,14 @@ export function VerdictsPage() {
             Clear filters
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setAssessOpen(true)}
+          className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-[var(--color-brand)] px-3 py-1.5 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" />
+          Assess verdict
+        </button>
       </div>
 
       {error ? (
@@ -229,6 +243,18 @@ export function VerdictsPage() {
           })}
         </div>
       )}
+
+      <AssessVerdictDialog
+        open={assessOpen}
+        devices={devices.data ?? []}
+        controls={controls.data ?? []}
+        onCancel={() => setAssessOpen(false)}
+        onAssessed={(verdict) => {
+          setAssessOpen(false);
+          showToast(`${verdict.control_id} on ${verdict.device_id} assessed: ${verdict.status} (${verdict.severity}).`, "success");
+          setRefreshKey((k) => k + 1);
+        }}
+      />
     </Shell>
   );
 }
