@@ -1,11 +1,12 @@
 import { useMemo } from "react";
-import { FileSearch, Gavel, HardDrive, ShieldAlert } from "lucide-react";
+import { Bug, FileSearch, Gavel, HardDrive, ShieldAlert } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/state";
 import { StatTile } from "@/components/ui/stat-tile";
-import { StatusBadge, SeverityBadge, ComplianceBadge } from "@/components/ui/severity-badge";
+import { StatusBadge, SeverityBadge, ComplianceBadge, KevBadge } from "@/components/ui/severity-badge";
+import { VulnFreshnessNote } from "@/components/devices/VulnFreshnessNote";
 import { Link } from "react-router-dom";
 import { VerdictDonut } from "@/components/charts/VerdictDonut";
 import { DeviceActivityBar } from "@/components/charts/DeviceActivityBar";
@@ -30,6 +31,7 @@ export function OverviewPage() {
   const devices = useFetch(api.devices, []);
   const verdicts = useFetch(api.verdicts, []);
   const controls = useFetch(api.controls, []);
+  const vulnFleet = useFetch(api.vulnIntelFleetSummary, []);
 
   const complianceScore = useMemo(() => {
     const s = summary.data;
@@ -205,6 +207,54 @@ export function OverviewPage() {
                     </li>
                   ))}
                 </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex-col items-start gap-1">
+              <CardTitle className="flex items-center gap-2">
+                <Bug className="h-4 w-4 text-[var(--color-text-muted)]" />
+                Vulnerability intelligence by device
+              </CardTitle>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Real CVE data from each device's most recent firmware manifest scan (Grype's
+                local vulnerability database, cross-referenced against CISA's Known Exploited
+                Vulnerabilities catalog). Devices with no firmware scan aren't listed.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-2">
+              {vulnFleet.loading || !vulnFleet.data ? (
+                <Skeleton className="h-32" />
+              ) : vulnFleet.data.devices.length === 0 ? (
+                <p className="py-6 text-center text-sm text-[var(--color-text-muted)]">
+                  No device has a firmware manifest scan yet.
+                </p>
+              ) : (
+                <>
+                  <ul className="divide-y divide-[var(--color-border)]">
+                    {vulnFleet.data.devices.map((d) => (
+                      <li key={d.device_id} className="flex items-center gap-4 py-2.5 text-sm">
+                        <Link
+                          to={`/devices/${d.device_id}`}
+                          className="min-w-0 flex-1 truncate font-mono text-[var(--color-text)] hover:underline"
+                        >
+                          {d.device_id}
+                        </Link>
+                        <span className="font-mono-tabular text-xs text-[var(--color-text-muted)]">
+                          {d.total_cves} CVE{d.total_cves === 1 ? "" : "s"}
+                          {d.highest_cvss !== null ? ` · highest CVSS ${d.highest_cvss}` : ""}
+                        </span>
+                        {d.kev_listed_cves > 0 ? (
+                          <KevBadge size="xs" />
+                        ) : (
+                          <span className="w-[52px]" aria-hidden="true" />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <VulnFreshnessNote />
+                </>
               )}
             </CardContent>
           </Card>

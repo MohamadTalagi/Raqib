@@ -1,4 +1,4 @@
-import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification } from "@/lib/types";
@@ -204,6 +204,28 @@ export function BlockingBadge({ size = "sm" }: { size?: "xs" | "sm" }) {
       >
         <Ban className={BLOCKING_ICON_SIZE[size]} strokeWidth={2} />
         blocking
+      </span>
+    </Tooltip>
+  );
+}
+
+export const KEV_EXPLANATION =
+  "This CVE is on CISA's Known Exploited Vulnerabilities catalog - confirmed exploitation in the wild, not just a theoretical CVSS score.";
+
+/** Marks a CVE that's on CISA's real KEV catalog (see vuln_routes.py / policies/catalog's Grype+CISA-KEV integration) - a stronger, more concrete signal than CVSS alone, so it carries its own explanation the same way BlockingBadge does. */
+export function KevBadge({ size = "sm" }: { size?: "xs" | "sm" }) {
+  return (
+    <Tooltip content={KEV_EXPLANATION}>
+      <span
+        tabIndex={0}
+        className={cn(
+          "inline-flex items-center rounded-md font-mono font-medium uppercase tracking-wide",
+          "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)]",
+          BLOCKING_SIZE_STYLES[size],
+        )}
+      >
+        <ShieldAlert className={BLOCKING_ICON_SIZE[size]} strokeWidth={2} />
+        KEV
       </span>
     </Tooltip>
   );

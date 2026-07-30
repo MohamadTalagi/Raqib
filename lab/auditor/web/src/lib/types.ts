@@ -530,3 +530,68 @@ export interface CreateNCAExceptionPayload {
   requested_by: string;
   expires_at: string;
 }
+
+// -- Vulnerability intelligence (IoTGuard Stage 05) -------------------------
+// Sourced from evidence.observations recorded by the worker's Grype/CISA-KEV
+// -backed TEST-FW-MANIFEST collector - see lab/auditor/api/vuln_routes.py.
+
+export interface VulnCVE {
+  id: string;
+  cvss: number | null;
+  summary: string;
+  kev_listed: boolean;
+  kev_date_added: string | null;
+}
+
+export interface VulnPackageAdvisory {
+  name: string;
+  version: string;
+  outdated: boolean | null;
+  eol: boolean | null;
+  latest_known_version: string | null;
+  official_patch_available: boolean | null;
+  patched_version: string | null;
+  // null means "not cross-referenced against KEV here" (e.g. the static
+  // reference-table fallback) - never a guessed 0. See vuln_routes.py.
+  kev_listed_count: number | null;
+  cves: VulnCVE[];
+  notes: string[];
+}
+
+export interface VulnIntelStatus {
+  known: boolean;
+  vuln_db_built_at: string | null;
+  vuln_db_checksum: string | null;
+  observed_at: string | null;
+  observed_from_evidence_id: string | null;
+  observed_from_device_id: string | null;
+}
+
+export interface VulnDeviceRollup {
+  device_id: string;
+  observed_at: string;
+  total_packages: number;
+  outdated_packages: number;
+  total_cves: number;
+  kev_listed_cves: number;
+  highest_cvss: number | null;
+}
+
+export interface VulnFleetSummary {
+  devices: VulnDeviceRollup[];
+  total_cves: number;
+  total_kev_listed_cves: number;
+}
+
+export interface VulnDeviceSummary {
+  device_id: string;
+  has_data: boolean;
+  evidence_id: string | null;
+  observed_at: string | null;
+  packages: VulnPackageAdvisory[];
+  total_packages: number;
+  outdated_packages: number;
+  total_cves: number;
+  kev_listed_cves: number;
+  highest_cvss: number | null;
+}

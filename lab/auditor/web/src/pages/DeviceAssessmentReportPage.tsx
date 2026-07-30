@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { NCAReadinessBadge, NCAStatusBadge, SeverityBadge, StatusBadge } from "@/components/ui/severity-badge";
+import { VulnAdvisoryPanel } from "@/components/devices/VulnAdvisoryPanel";
+import { VulnFreshnessNote } from "@/components/devices/VulnFreshnessNote";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 import type { VerdictStatus, Severity } from "@/lib/types";
@@ -42,6 +44,7 @@ export function DeviceAssessmentReportPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId]);
   const nca = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
+  const vulnSummary = useFetch(() => api.vulnIntelDevice(deviceId ?? ""), [deviceId]);
 
   if (detail.error) {
     return (
@@ -176,6 +179,30 @@ export function DeviceAssessmentReportPage() {
               <p className="col-span-2 text-sm text-[var(--color-text-muted)] sm:col-span-3">
                 No firmware uploaded for this device.
               </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Vulnerability intelligence */}
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Vulnerability intelligence
+              {vulnSummary.data?.has_data ? ` (${vulnSummary.data.total_cves} CVEs)` : ""}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-2">
+            {vulnSummary.loading ? (
+              <Skeleton className="h-24" />
+            ) : !vulnSummary.data?.has_data ? (
+              <p className="text-sm text-[var(--color-text-muted)]">
+                No firmware manifest scan (TEST-FW-MANIFEST) has been recorded for this device.
+              </p>
+            ) : (
+              <>
+                <VulnAdvisoryPanel packages={vulnSummary.data.packages} />
+                <VulnFreshnessNote />
+              </>
             )}
           </CardContent>
         </Card>

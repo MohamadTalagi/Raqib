@@ -1,3 +1,5 @@
+import json
+
 import psycopg
 import pytest
 
@@ -240,3 +242,67 @@ def test_verdict_with_path_traversal_control_id_still_appears_and_does_not_raise
     assert control["title"] is None
     assert control["clause"] is None
     assert model["counts"]["FAIL"] == 1
+
+
+def test_vulnerabilities_reports_no_data_when_never_scanned(postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register_device(conn)
+        conn.commit()
+        model = build_report_model(conn, "report-cam")
+    finally:
+        conn.close()
+
+    assert model["vulnerabilities"] == {
+        "has_data": False, "evidence_id": None, "observed_at": None, "packages": [],
+    }
+
+
+def _add_manifest_evidence(conn, device_id="report-cam", evidence_id="EV-MANIFEST-1"):
+    observations = {
+        "manifest_present": True,
+        "vuln_db_built_at": "2026-03-09 00:31:20 +0000 UTC",
+        "packages": [
+            {
+                "name": "openssl", "version": "1.0.1e", "outdated": True, "eol": None,
+                "latest_known_version": None, "official_patch_available": True,
+                "patched_version": "1.0.1g", "kev_listed_count": 1,
+                "cves": [
+                    {"id": "CVE-2014-0160", "cvss": 7.5, "summary": "Heartbleed",
+                     "kev_listed": True, "kev_date_added": "2022-05-04"},
+                ],
+                "notes": [],
+            },
+        ],
+        "notes": [],
+    }
+    conn.execute(
+        """
+        INSERT INTO evidence (evidence_id, device_id, test_id, tool, tool_version,
+                              command, timestamp, finding, observations,
+                              raw_output_path, confidence, sha256)
+        VALUES (%s, %s, 'TEST-FW-MANIFEST', 'python3', '3.12', 'firmware_check.py manifest',
+                now(), 'firmware manifest analyzed', %s::jsonb,
+                'document-store/raw/test.txt', 'high', 'abc123')
+        """,
+        (evidence_id, device_id, json.dumps(observations)),
+    )
+
+
+def test_vulnerabilities_reports_real_package_and_cve_data(postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register_device(conn)
+        _add_manifest_evidence(conn)
+        conn.commit()
+        model = build_report_model(conn, "report-cam")
+    finally:
+        conn.close()
+
+    vulns = model["vulnerabilities"]
+    assert vulns["has_data"] is True
+    assert vulns["evidence_id"] == "EV-MANIFEST-1"
+    assert vulns["total_cves"] == 1
+    assert vulns["kev_listed_cves"] == 1
+    assert vulns["vuln_db_built_at"] == "2026-03-09 00:31:20 +0000 UTC"
+    assert vulns["packages"][0]["name"] == "openssl"

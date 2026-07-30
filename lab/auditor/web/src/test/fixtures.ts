@@ -1,4 +1,13 @@
-import type { ControlRecord, Device, EvidenceRecord, Summary, VerdictRecord } from "@/lib/types";
+import type {
+  ControlRecord,
+  Device,
+  EvidenceRecord,
+  Summary,
+  VerdictRecord,
+  VulnDeviceSummary,
+  VulnFleetSummary,
+  VulnIntelStatus,
+} from "@/lib/types";
 
 export const summaryFixture: Summary = {
   total_evidence: 12,
@@ -165,6 +174,72 @@ export const controlsFixture: ControlRecord[] = [
   },
 ];
 
+export const vulnIntelStatusFixture: VulnIntelStatus = {
+  known: true,
+  vuln_db_built_at: "2026-03-09 00:31:20 +0000 UTC",
+  vuln_db_checksum: "sha256:a65e27aecbbb2cd6671f5da84c16db7e9c60f0114075e6ae9bcc71f466460a0c",
+  observed_at: "2026-07-30T20:41:48+00:00",
+  observed_from_evidence_id: "EV-2026-07-30-0001",
+  observed_from_device_id: "device-insecure",
+};
+
+export const vulnFleetSummaryFixture: VulnFleetSummary = {
+  devices: [
+    {
+      device_id: "device-insecure",
+      observed_at: "2026-07-30T20:41:48+00:00",
+      total_packages: 2,
+      outdated_packages: 2,
+      total_cves: 101,
+      kev_listed_cves: 1,
+      highest_cvss: 10,
+    },
+  ],
+  total_cves: 101,
+  total_kev_listed_cves: 1,
+};
+
+export const vulnDeviceSummaryFixture: VulnDeviceSummary = {
+  device_id: "device-insecure",
+  has_data: true,
+  evidence_id: "EV-2026-07-30-0001",
+  observed_at: "2026-07-30T20:41:48+00:00",
+  total_packages: 2,
+  outdated_packages: 2,
+  total_cves: 2,
+  kev_listed_cves: 1,
+  highest_cvss: 7.5,
+  packages: [
+    {
+      name: "openssl",
+      version: "1.0.1e",
+      outdated: true,
+      eol: null,
+      latest_known_version: null,
+      official_patch_available: true,
+      patched_version: "1.0.1g",
+      kev_listed_count: 1,
+      cves: [
+        {
+          id: "CVE-2014-0160",
+          cvss: 7.5,
+          summary: "Heartbleed - a missing bounds check in the TLS heartbeat extension.",
+          kev_listed: true,
+          kev_date_added: "2022-05-04",
+        },
+        {
+          id: "CVE-2016-6304",
+          cvss: 5.9,
+          summary: "OOB write via OCSP status request.",
+          kev_listed: false,
+          kev_date_added: null,
+        },
+      ],
+      notes: [],
+    },
+  ],
+};
+
 export function mockFetchImplementation(path: string): Promise<Response> {
   const routes: Record<string, unknown> = {
     "/summary": summaryFixture,
@@ -172,6 +247,9 @@ export function mockFetchImplementation(path: string): Promise<Response> {
     "/evidence": evidenceFixture,
     "/verdicts": verdictsFixture,
     "/controls": controlsFixture,
+    "/vuln-intel/status": vulnIntelStatusFixture,
+    "/vuln-intel/fleet-summary": vulnFleetSummaryFixture,
+    "/vuln-intel/devices/device-insecure": vulnDeviceSummaryFixture,
   };
   const matched = Object.keys(routes).find((route) => path.endsWith(route));
   if (!matched) {

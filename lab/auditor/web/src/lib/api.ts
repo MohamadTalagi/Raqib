@@ -28,6 +28,9 @@ import type {
   Severity,
   Summary,
   VerdictRecord,
+  VulnDeviceSummary,
+  VulnFleetSummary,
+  VulnIntelStatus,
 } from "./types";
 
 function resolveApiBaseUrl(): string {
@@ -287,4 +290,12 @@ export const api = {
   ncaControlsReportCsvUrl: (): string => `${API_BASE_URL}/nca/reports/controls.csv`,
   ncaEvidenceReportCsvUrl: (): string => `${API_BASE_URL}/nca/reports/evidence.csv`,
   ncaExecutiveReportPdfUrl: (): string => `${API_BASE_URL}/nca/reports/executive.pdf`,
+
+  // -- Vulnerability intelligence (IoTGuard Stage 05) ---------------------
+
+  vulnIntelStatus: (): Promise<VulnIntelStatus> => getJson<VulnIntelStatus>("/vuln-intel/status"),
+  vulnIntelFleetSummary: (): Promise<VulnFleetSummary> =>
+    getJson<VulnFleetSummary>("/vuln-intel/fleet-summary"),
+  vulnIntelDevice: (deviceId: string): Promise<VulnDeviceSummary> =>
+    getJson<VulnDeviceSummary>(`/vuln-intel/devices/${encodeURIComponent(deviceId)}`),
 };

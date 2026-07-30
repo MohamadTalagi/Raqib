@@ -18,6 +18,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
 import { DomainSummaryGrid } from "@/components/nca/DomainSummaryGrid";
+import { VulnAdvisoryPanel } from "@/components/devices/VulnAdvisoryPanel";
+import { VulnFreshnessNote } from "@/components/devices/VulnFreshnessNote";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
@@ -84,6 +86,7 @@ export function DeviceDetailPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId, refreshKey]);
   const ncaDetail = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
+  const vulnSummary = useFetch(() => api.vulnIntelDevice(deviceId ?? ""), [deviceId, refreshKey]);
   const controls = useFetch(api.controls, []);
   const scanTests = useFetch(api.scanTests, []);
   const [activeTab, setActiveTab] = useState<"overview" | "compliance">("overview");
@@ -318,6 +321,27 @@ export function DeviceDetailPage() {
                         <Trash2 className="h-4 w-4" />
                         Remove firmware
                       </button>
+
+                      <div className="border-t border-[var(--color-border)] pt-3">
+                        <p className="mb-2 text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                          Vulnerability intelligence
+                        </p>
+                        {vulnSummary.loading ? (
+                          <Skeleton className="h-16" />
+                        ) : !vulnSummary.data?.has_data ? (
+                          <p className="text-xs text-[var(--color-text-muted)]">
+                            No firmware manifest scan (TEST-FW-MANIFEST) has run for this device
+                            yet - run it from the Run Scan page to see real CVE/KEV data here.
+                          </p>
+                        ) : (
+                          <>
+                            <VulnAdvisoryPanel packages={vulnSummary.data.packages} />
+                            <div className="mt-2">
+                              <VulnFreshnessNote />
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <div className="flex flex-wrap items-center gap-3">

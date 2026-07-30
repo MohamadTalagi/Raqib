@@ -3,7 +3,21 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeviceAssessmentReportPage } from "./DeviceAssessmentReportPage";
 import { api } from "@/lib/api";
-import type { DeviceDetail, NCADeviceDetail } from "@/lib/types";
+import type { DeviceDetail, NCADeviceDetail, VulnDeviceSummary } from "@/lib/types";
+import { vulnDeviceSummaryFixture, vulnIntelStatusFixture } from "@/test/fixtures";
+
+const NO_VULN_DATA: VulnDeviceSummary = {
+  device_id: "device-insecure",
+  has_data: false,
+  evidence_id: null,
+  observed_at: null,
+  packages: [],
+  total_packages: 0,
+  outdated_packages: 0,
+  total_cves: 0,
+  kev_listed_cves: 0,
+  highest_cvss: null,
+};
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -71,6 +85,8 @@ describe("DeviceAssessmentReportPage", () => {
   beforeEach(() => {
     vi.spyOn(api, "device").mockResolvedValue(DETAIL);
     vi.spyOn(api, "ncaDevice").mockResolvedValue(NCA);
+    vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(NO_VULN_DATA);
+    vi.spyOn(api, "vulnIntelStatus").mockResolvedValue(vulnIntelStatusFixture);
   });
 
   it("consolidates profile, firmware, verdicts, evidence, and NCA readiness", async () => {
@@ -108,5 +124,19 @@ describe("DeviceAssessmentReportPage", () => {
     vi.spyOn(api, "device").mockRejectedValue(new Error("device not found"));
     renderPage();
     expect(await screen.findByText(/device not found/i)).toBeInTheDocument();
+  });
+
+  it("says no manifest scan has run when there's no vulnerability data yet", async () => {
+    renderPage();
+    expect(await screen.findByText(/no firmware manifest scan/i)).toBeInTheDocument();
+  });
+
+  it("shows real CVE/KEV data in the Vulnerability intelligence section", async () => {
+    vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(vulnDeviceSummaryFixture);
+    renderPage();
+
+    expect(await screen.findByText("Vulnerability intelligence (2 CVEs)")).toBeInTheDocument();
+    expect(screen.getByText("openssl@1.0.1e")).toBeInTheDocument();
+    expect(screen.getByText("CVE-2014-0160")).toBeInTheDocument();
   });
 });

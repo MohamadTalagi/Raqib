@@ -1,3 +1,5 @@
+import json
+
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
@@ -79,6 +81,46 @@ def test_html_report_renders_real_content_without_weasyprint(client, postgres_ur
     assert response.headers["content-type"].startswith("text/html")
     assert "Route Cam" in response.text
     assert "<style>" in response.text  # the stylesheet is inlined, not a relative <link>
+
+
+def test_html_report_renders_the_vulnerability_intelligence_section(client, postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register(conn)
+        conn.execute(
+            """
+            INSERT INTO evidence (evidence_id, device_id, test_id, tool, tool_version,
+                                  command, timestamp, finding, observations,
+                                  raw_output_path, confidence, sha256)
+            VALUES ('EV-VULN-1', 'route-cam', 'TEST-FW-MANIFEST', 'python3', '3.12',
+                    'firmware_check.py manifest', now(), 'firmware manifest analyzed', %s::jsonb,
+                    'document-store/raw/x.txt', 'high', 'abc123')
+            """,
+            (json.dumps({
+                "manifest_present": True,
+                "packages": [{
+                    "name": "openssl", "version": "1.0.1e", "outdated": True, "eol": None,
+                    "latest_known_version": None, "official_patch_available": True,
+                    "patched_version": "1.0.1g", "kev_listed_count": 1,
+                    "cves": [{
+                        "id": "CVE-2014-0160", "cvss": 7.5, "summary": "Heartbleed",
+                        "kev_listed": True, "kev_date_added": "2022-05-04",
+                    }],
+                    "notes": [],
+                }],
+                "notes": [],
+            }),),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    response = client.get("/devices/route-cam/report.html")
+
+    assert response.status_code == 200
+    assert "openssl@1.0.1e" in response.text
+    assert "CVE-2014-0160" in response.text
+    assert "1 KEV-LISTED" in response.text
 
 
 def test_json_report_includes_methodology_and_disclaimer(client, postgres_url):

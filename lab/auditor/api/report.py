@@ -18,6 +18,7 @@ from pathlib import Path
 import yaml
 
 from policies.engine.report_text import DISCLAIMER, METHODOLOGY
+from vuln_routes import _manifest_packages, _summarize_packages
 
 VERDICT_STATUSES = ("PASS", "FAIL", "PARTIAL", "INCONCLUSIVE", "NOT_APPLICABLE")
 
@@ -174,10 +175,42 @@ def build_report_model(conn, device_id: str) -> dict | None:
         "controls_not_assessed": controls_not_assessed,
         "counts": counts,
         "evidence": evidence,
+        "vulnerabilities": _vulnerability_summary(conn, device_id),
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "assessment_scope": assessment_scope,
         "methodology": METHODOLOGY,
         "disclaimer": DISCLAIMER,
+    }
+
+
+def _vulnerability_summary(conn, device_id: str) -> dict:
+    """The device's most recent TEST-FW-MANIFEST scan, if any - same query
+    and rollup (_manifest_packages/_summarize_packages) as
+    lab/auditor/api/vuln_routes.py's GET /vuln-intel/devices/{id}, imported
+    rather than reimplemented so the report and the dashboard can never
+    disagree about what a device's vulnerability data says."""
+    row = conn.execute(
+        """
+        SELECT evidence_id, observations, timestamp
+        FROM evidence
+        WHERE device_id = %s AND test_id = 'TEST-FW-MANIFEST'
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """,
+        (device_id,),
+    ).fetchone()
+    if row is None:
+        return {"has_data": False, "evidence_id": None, "observed_at": None, "packages": []}
+
+    evidence_id, observations, timestamp = row
+    packages = _manifest_packages(observations)
+    return {
+        "has_data": True,
+        "evidence_id": evidence_id,
+        "observed_at": timestamp.isoformat(),
+        "vuln_db_built_at": observations.get("vuln_db_built_at"),
+        "packages": packages,
+        **_summarize_packages(packages),
     }
 
 

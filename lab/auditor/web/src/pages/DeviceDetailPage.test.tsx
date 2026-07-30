@@ -5,7 +5,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeviceDetailPage } from "./DeviceDetailPage";
 import { api, ApiError } from "@/lib/api";
 import { ToastProvider } from "@/lib/useToast";
-import type { DeviceDetail, NCADeviceDetail } from "@/lib/types";
+import type { DeviceDetail, NCADeviceDetail, VulnDeviceSummary } from "@/lib/types";
+import { vulnDeviceSummaryFixture, vulnIntelStatusFixture } from "@/test/fixtures";
+
+const NO_VULN_DATA: VulnDeviceSummary = {
+  device_id: "device-insecure",
+  has_data: false,
+  evidence_id: null,
+  observed_at: null,
+  packages: [],
+  total_packages: 0,
+  outdated_packages: 0,
+  total_cves: 0,
+  kev_listed_cves: 0,
+  highest_cvss: null,
+};
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -143,6 +157,8 @@ function renderPage() {
 describe("DeviceDetailPage", () => {
   beforeEach(() => {
     vi.spyOn(api, "ncaDevice").mockResolvedValue(NCA_DETAIL);
+    vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(NO_VULN_DATA);
+    vi.spyOn(api, "vulnIntelStatus").mockResolvedValue(vulnIntelStatusFixture);
   });
 
   it("shows the device's NCA compliance percentage", async () => {
@@ -382,5 +398,35 @@ describe("DeviceDetailPage", () => {
     // NCA_DETAIL's one control has blocking: true - its failure alone forces
     // the device's readiness to Failed, so the Controls list must flag it.
     expect(screen.getByText("blocking")).toBeInTheDocument();
+  });
+
+  it("prompts to run TEST-FW-MANIFEST when firmware is uploaded but never scanned", async () => {
+    vi.spyOn(api, "device").mockResolvedValue({
+      ...DETAIL,
+      device: { ...DETAIL.device, firmware_filename: "camera-fw.tar.gz", firmware_sha256: "a".repeat(64) },
+    });
+    renderPage();
+
+    expect(await screen.findByText(/no firmware manifest scan/i)).toBeInTheDocument();
+  });
+
+  it("shows real CVE/KEV data in the Firmware card once a manifest scan has run", async () => {
+    vi.spyOn(api, "device").mockResolvedValue({
+      ...DETAIL,
+      device: { ...DETAIL.device, firmware_filename: "camera-fw.tar.gz", firmware_sha256: "a".repeat(64) },
+    });
+    vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(vulnDeviceSummaryFixture);
+    renderPage();
+
+    expect(await screen.findByText("openssl@1.0.1e")).toBeInTheDocument();
+    expect(screen.getByText("CVE-2014-0160")).toBeInTheDocument();
+    expect(screen.getByText("KEV")).toBeInTheDocument();
+    // The freshness note's sentence is split across inline <span>s (the
+    // built-at date rendered in its own font-mono span) - assert on that
+    // span directly rather than the whole sentence, which RTL's default
+    // text matcher won't bridge across element boundaries.
+    // VulnFreshnessNote fetches independently of the page's own data - wait
+    // for it rather than asserting synchronously, or this races and flakes.
+    expect(await screen.findByText(vulnIntelStatusFixture.vuln_db_built_at!)).toBeInTheDocument();
   });
 });

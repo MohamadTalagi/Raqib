@@ -7,6 +7,8 @@ import {
   ConfidenceLabel,
   BLOCKING_EXPLANATION,
   BlockingBadge,
+  KEV_EXPLANATION,
+  KevBadge,
   NCAReadinessBadge,
 } from "./severity-badge";
 
@@ -70,5 +72,20 @@ describe("BlockingBadge", () => {
 
     await user.hover(screen.getByText("blocking"));
     expect(await screen.findByRole("tooltip")).toHaveTextContent(BLOCKING_EXPLANATION);
+  });
+});
+
+describe("KevBadge", () => {
+  it("renders the KEV label", () => {
+    render(<KevBadge />);
+    expect(screen.getByText("KEV")).toBeInTheDocument();
+  });
+
+  it("explains itself via a tooltip", async () => {
+    const user = userEvent.setup();
+    render(<KevBadge />);
+
+    await user.hover(screen.getByText("KEV"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(KEV_EXPLANATION);
   });
 });

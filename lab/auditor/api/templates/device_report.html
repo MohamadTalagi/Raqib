@@ -114,6 +114,41 @@
 </table>
 {% else %}<p class="empty-state">No evidence recorded for this device.</p>{% endif %}
 
+<h2>7. Vulnerability intelligence</h2>
+{% if vulnerabilities.has_data %}
+<p class="cite">
+  From the most recent firmware manifest scan ({{ vulnerabilities.evidence_id }}, {{ vulnerabilities.observed_at }}) &mdash;
+  {{ vulnerabilities.total_cves }} known CVE(s) across {{ vulnerabilities.packages | length }} package(s),
+  {{ vulnerabilities.kev_listed_cves }} on CISA's Known Exploited Vulnerabilities catalog.
+  {% if vulnerabilities.vuln_db_built_at %}Vulnerability database built {{ vulnerabilities.vuln_db_built_at }}.{% endif %}
+  Package/version match only, not vendor/model-specific.
+</p>
+{% for p in vulnerabilities.packages %}
+<div class="finding">
+  <div><span class="mono">{{ p.name }}@{{ p.version }}</span>
+    {% if p.outdated %}<span class="status status-FAIL">OUTDATED</span>{% elif p.outdated == false %}<span class="status status-PASS">CURRENT</span>{% endif %}
+    {% if p.patched_version %}&middot; patched in {{ p.patched_version }}{% endif %}
+    {% if p.kev_listed_count %}&middot; <span class="status status-FAIL">{{ p.kev_listed_count }} KEV-LISTED</span>{% endif %}
+  </div>
+  {% if p.cves %}
+  <table class="provenance">
+    <thead><tr><th>CVE</th><th>CVSS</th><th>KEV</th><th>Summary</th></tr></thead>
+    <tbody>
+    {% for c in p.cves %}
+      <tr>
+        <td class="mono">{{ c.id }}</td>
+        <td class="mono">{% if c.cvss is not none %}{{ c.cvss }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if c.kev_listed %}yes ({{ c.kev_date_added }}){% else %}no{% endif %}</td>
+        <td>{{ c.summary }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty-state">No CVEs found for this package/version.</p>{% endif %}
+</div>
+{% endfor %}
+{% else %}<p class="empty-state">No firmware manifest scan (TEST-FW-MANIFEST) has been recorded for this device.</p>{% endif %}
+
 <p class="cite" style="margin-top:6mm">{{ disclaimer }}</p>
 
 </body>
