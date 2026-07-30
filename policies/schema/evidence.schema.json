@@ -16,7 +16,10 @@
     "command": {"type": "string"},
     "timestamp": {"type": "string"},
     "finding": {"type": "string"},
-    "observations": {"type": "object"},
+    "observations": {
+      "type": "object",
+      "description": "Deliberately schema-less - shape varies per test_id (see policies/catalog/scan_tests.py's parse_observations functions). Two optional keys are worth calling out here since they're not obvious from a field name alone: TEST-FW-MANIFEST's per-package advisories under observations.packages[].kev_listed_count (an int if CISA's KEV catalog was checked for that package, or null if it wasn't - e.g. the static vuln_reference.py fallback table never checks KEV, so null there means 'not checked', never a guessed 0) and each observations.packages[].cves[].kev_listed/kev_date_added (booleans/dates from the same cross-reference). Firmware/HTTP-inspect evidence that used Grype's local vulnerability DB also carries observations.vuln_db_built_at and observations.vuln_db_checksum, citing exactly which DB snapshot produced the finding - present only when Grype actually ran (absent, not null, otherwise)."
+    },
     "raw_output_path": {"type": "string"},
     "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
