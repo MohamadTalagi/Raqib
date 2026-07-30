@@ -230,3 +230,69 @@ def test_patch_with_valid_display_name_succeeds(client):
     )
     assert response.status_code == 200
     assert response.json()["display_name"] == "Renamed Camera"
+
+
+# -- Risk-assessment inputs: criticality / exposure (Stage 06) --------------
+
+
+def test_register_device_defaults_criticality_medium_and_exposure_internal_only(client):
+    response = client.post("/devices", json=_payload())
+    body = response.json()
+    assert body["criticality"] == "medium"
+    assert body["exposure"] == "internal_only"
+
+
+def test_register_device_with_an_mqtt_service_defaults_criticality_high(client):
+    # A broker is a central dependency many other devices lean on - the one
+    # thing registration data can actually support inferring, unlike
+    # exposure (see the next test).
+    response = client.post(
+        "/devices",
+        json=_payload(services=[{"service_type": "mqtt", "port": 1883, "published_port": None}]),
+    )
+    assert response.json()["criticality"] == "high"
+
+
+def test_register_device_never_infers_internet_facing_from_a_published_port(client):
+    # A published_port in this lab is host-dev-convenience mapping, not real
+    # internet reachability - claiming internet_facing from that alone would
+    # overclaim. Only an auditor should assert it, via PATCH.
+    response = client.post(
+        "/devices",
+        json=_payload(services=[{"service_type": "http", "port": 80, "published_port": 8091}]),
+    )
+    assert response.json()["exposure"] == "internal_only"
+
+
+def test_criticality_and_exposure_appear_in_the_device_list_and_detail(client):
+    client.post("/devices", json=_payload())
+    list_entry = next(d for d in client.get("/devices").json() if d["device_id"] == "test-camera")
+    assert list_entry["criticality"] == "medium"
+    assert list_entry["exposure"] == "internal_only"
+    detail = client.get("/devices/test-camera").json()
+    assert detail["device"]["criticality"] == "medium"
+    assert detail["device"]["exposure"] == "internal_only"
+
+
+def test_patch_can_override_criticality_and_exposure(client):
+    client.post("/devices", json=_payload())
+    response = client.patch(
+        "/devices/test-camera", json={"criticality": "critical", "exposure": "internet_facing"}
+    )
+    assert response.status_code == 200
+    assert response.json()["criticality"] == "critical"
+    assert response.json()["exposure"] == "internet_facing"
+
+
+def test_patch_rejects_an_invalid_criticality_value(client):
+    client.post("/devices", json=_payload())
+    response = client.patch("/devices/test-camera", json={"criticality": "apocalyptic"})
+    assert response.status_code == 400
+    assert response.json()["field"] == "criticality"
+
+
+def test_patch_rejects_an_invalid_exposure_value(client):
+    client.post("/devices", json=_payload())
+    response = client.patch("/devices/test-camera", json={"exposure": "outer-space"})
+    assert response.status_code == 400
+    assert response.json()["field"] == "exposure"

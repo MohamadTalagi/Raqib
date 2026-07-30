@@ -114,6 +114,13 @@ CREATE TABLE devices (
     firmware_filename     TEXT,
     firmware_sha256       TEXT,
     firmware_uploaded_at  TIMESTAMPTZ,
+    -- Dynamic Risk Assessment (Stage 06) inputs no scan can determine -
+    -- auditor-set, with a computed default applied at registration (see
+    -- main.py's create_device). See migrations/008-device-risk-fields.sql.
+    criticality      TEXT NOT NULL DEFAULT 'medium'
+        CHECK (criticality IN ('low', 'medium', 'high', 'critical')),
+    exposure         TEXT NOT NULL DEFAULT 'internal_only'
+        CHECK (exposure IN ('none', 'internal_only', 'internet_facing')),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -24,6 +24,7 @@ from device_validation import (
     validate_service_type,
 )
 from nca_routes import router as nca_router
+from risk_routes import router as risk_router
 from vuln_routes import router as vuln_router
 from policies.catalog.scan_tests import (
     SCAN_CATALOG,
@@ -31,6 +32,7 @@ from policies.catalog.scan_tests import (
     is_firmware_test,
     is_network_discovery_test,
 )
+from policies.risk.risk_engine import CRITICALITY_LEVELS, EXPOSURE_LEVELS
 from report import build_report_model, render_report_html, render_report_pdf
 from upload_utils import read_capped
 
@@ -52,6 +54,7 @@ app.add_middleware(
 
 app.include_router(nca_router)
 app.include_router(vuln_router)
+app.include_router(risk_router)
 
 
 @app.exception_handler(ValidationError)
@@ -1294,6 +1297,17 @@ def _services_for(conn, device_id: str) -> list[dict]:
     ]
 
 
+def _computed_default_criticality(services: list[dict]) -> str:
+    """Starting point for the risk-scoring engine's device-criticality input
+    (policies/risk/risk_engine.py) - never a fabricated guess, just the one
+    thing registration data can actually support: a broker is a central
+    dependency many devices lean on, so it defaults higher. Always
+    auditor-editable afterward via PATCH /devices/{id}."""
+    if any(s["service_type"] in ("mqtt", "mqtts") and s["enabled"] for s in services):
+        return "high"
+    return "medium"
+
+
 @app.post("/devices", status_code=201)
 def create_device(payload: dict) -> dict:
     try:
@@ -1302,6 +1316,15 @@ def create_device(payload: dict) -> dict:
         return JSONResponse(
             status_code=400, content={"field": exc.field, "detail": exc.message}
         )
+
+    criticality = _computed_default_criticality(device["services"])
+    # Deliberately NOT inferred from a service's published_port: in this lab
+    # a published port only reflects host-machine dev-convenience mapping
+    # (so a browser on the host can reach a container), not real internet
+    # reachability - claiming "internet_facing" from that alone would be a
+    # stronger, more alarming claim than the data actually supports.
+    # internet_facing is something only an auditor should assert.
+    exposure = "internal_only"
 
     conn = get_connection()
     try:
@@ -1314,13 +1337,15 @@ def create_device(payload: dict) -> dict:
         conn.execute(
             """
             INSERT INTO devices (device_id, display_name, description, tier, host,
-                                 vendor, model, location, owner, notes, source)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'manual')
+                                 vendor, model, location, owner, notes, source,
+                                 criticality, exposure)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'manual', %s, %s)
             """,
             (
                 device["device_id"], device["display_name"], device["description"],
                 device["tier"], device["host"], device["vendor"], device["model"],
                 device["location"], device["owner"], device["notes"],
+                criticality, exposure,
             ),
         )
         for service in device["services"]:
@@ -1342,6 +1367,7 @@ def create_device(payload: dict) -> dict:
     return {
         **device, "source": "manual", "services": services, "registered": True,
         "firmware_filename": None, "firmware_sha256": None, "firmware_uploaded_at": None,
+        "criticality": criticality, "exposure": exposure,
     }
 
 
@@ -1361,7 +1387,8 @@ def get_devices() -> list[dict]:
                 (d.device_id IS NOT NULL) AS registered,
                 COALESCE(e.evidence_count, 0),
                 COALESCE(v.verdict_count, 0),
-                d.firmware_filename, d.firmware_sha256, d.firmware_uploaded_at
+                d.firmware_filename, d.firmware_sha256, d.firmware_uploaded_at,
+                d.criticality, d.exposure
             FROM (
                 SELECT device_id FROM devices
                 UNION SELECT device_id FROM evidence
@@ -1396,6 +1423,8 @@ def get_devices() -> list[dict]:
                     "firmware_filename": r[14],
                     "firmware_sha256": r[15],
                     "firmware_uploaded_at": r[16].isoformat() if r[16] else None,
+                    "criticality": r[17],
+                    "exposure": r[18],
                     "services": _services_for(conn, device_id) if r[11] else [],
                 }
             )
@@ -1407,6 +1436,7 @@ def get_devices() -> list[dict]:
 PATCHABLE_DEVICE_FIELDS = (
     "display_name", "description", "tier", "host",
     "vendor", "model", "location", "owner", "notes",
+    "criticality", "exposure",
 )
 
 
@@ -1415,7 +1445,8 @@ def _device_row(conn, device_id: str) -> dict | None:
         """
         SELECT device_id, display_name, description, tier, host, vendor, model,
                location, owner, notes, source, created_at, updated_at,
-               firmware_filename, firmware_sha256, firmware_uploaded_at
+               firmware_filename, firmware_sha256, firmware_uploaded_at,
+               criticality, exposure
         FROM devices WHERE device_id = %s
         """,
         (device_id,),
@@ -1426,6 +1457,7 @@ def _device_row(conn, device_id: str) -> dict | None:
         "device_id", "display_name", "description", "tier", "host", "vendor",
         "model", "location", "owner", "notes", "source", "created_at", "updated_at",
         "firmware_filename", "firmware_sha256", "firmware_uploaded_at",
+        "criticality", "exposure",
     )
     device = dict(zip(keys, row))
     device["created_at"] = device["created_at"].isoformat()
@@ -1560,6 +1592,14 @@ def update_device(device_id: str, payload: dict) -> dict:
             validate_host(updates["host"])
         if "tier" in updates and updates["tier"] not in TIERS:
             raise ValidationError("tier", f"tier must be one of {', '.join(TIERS)}")
+        if "criticality" in updates and updates["criticality"] not in CRITICALITY_LEVELS:
+            raise ValidationError(
+                "criticality", f"criticality must be one of {', '.join(CRITICALITY_LEVELS)}"
+            )
+        if "exposure" in updates and updates["exposure"] not in EXPOSURE_LEVELS:
+            raise ValidationError(
+                "exposure", f"exposure must be one of {', '.join(EXPOSURE_LEVELS)}"
+            )
         if "display_name" in updates:
             updates["display_name"] = _validate_display_name(updates["display_name"])
     except ValidationError as exc:
