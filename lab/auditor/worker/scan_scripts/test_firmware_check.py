@@ -150,7 +150,8 @@ def test_run_grype_returns_none_for_empty_package_list():
     assert firmware_check._run_grype([]) is None
 
 
-def test_summarize_grype_matches_extracts_expected_fields():
+def test_summarize_grype_matches_extracts_expected_fields(monkeypatch):
+    monkeypatch.setattr(firmware_check.cisa_kev, "load_kev_index", lambda: {})
     raw = json.dumps({
         "matches": [{
             "vulnerability": {
@@ -169,6 +170,42 @@ def test_summarize_grype_matches_extracts_expected_fields():
     assert summary["fix_state"] == "fixed"
     assert summary["fix_versions"] == ["1.0.1g"]
     assert len(summary["summary"]) <= 400
+    assert summary["kev_listed"] is False
+    assert summary["kev_date_added"] is None
+
+
+def test_summarize_grype_matches_flags_kev_listed_cves(monkeypatch):
+    # CVE-2014-0160 (Heartbleed) is a real CISA KEV entry, confirmed live
+    # against the real feed - used here as a realistic fixture, not fetched.
+    monkeypatch.setattr(
+        firmware_check.cisa_kev, "load_kev_index",
+        lambda: {"CVE-2014-0160": {"date_added": "2022-03-25", "known_ransomware_use": "Unknown"}},
+    )
+    raw = json.dumps({
+        "matches": [
+            {
+                "vulnerability": {
+                    "id": "CVE-2014-0160", "severity": "High",
+                    "cvss": [{"metrics": {"baseScore": 7.5}}],
+                    "fix": {"state": "fixed", "versions": ["1.0.1g"]}, "description": "Heartbleed",
+                },
+                "artifact": {"name": "openssl", "version": "1.0.1e"},
+            },
+            {
+                "vulnerability": {
+                    "id": "CVE-2016-6304", "severity": "High",
+                    "cvss": [{"metrics": {"baseScore": 7.5}}],
+                    "fix": {"state": "unknown", "versions": []}, "description": "Not KEV-listed",
+                },
+                "artifact": {"name": "openssl", "version": "1.0.1e"},
+            },
+        ],
+    })
+    heartbleed, other = firmware_check._summarize_grype_matches(raw)
+    assert heartbleed["kev_listed"] is True
+    assert heartbleed["kev_date_added"] == "2022-03-25"
+    assert other["kev_listed"] is False
+    assert other["kev_date_added"] is None
 
 
 @BOTH_FORMATS

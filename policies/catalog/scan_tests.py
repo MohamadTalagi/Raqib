@@ -762,12 +762,19 @@ def _parse_fw_certkey_observations(target: dict, output: str) -> dict:
 def _advisory_from_grype_matches(name: str, version: str, matches: list[dict]) -> dict:
     fixed = [m for m in matches if m.get("fix_state") == "fixed" and m.get("fix_versions")]
     patched_version = fixed[0]["fix_versions"][0] if fixed else None
+    kev_count = sum(1 for m in matches if m.get("kev_listed"))
     cves = sorted(
         (
-            {"id": m["id"], "cvss": m.get("cvss"), "summary": m.get("summary") or ""}
+            {
+                "id": m["id"], "cvss": m.get("cvss"), "summary": m.get("summary") or "",
+                "kev_listed": bool(m.get("kev_listed")),
+                "kev_date_added": m.get("kev_date_added"),
+            }
             for m in matches
         ),
-        key=lambda c: c["cvss"] or 0,
+        # KEV-listed findings first (a real exploitation record outranks a
+        # merely-high CVSS score), then by CVSS within each group.
+        key=lambda c: (c["kev_listed"], c["cvss"] or 0),
         reverse=True,
     )
     return {
@@ -778,10 +785,18 @@ def _advisory_from_grype_matches(name: str, version: str, matches: list[dict]) -
         "latest_known_version": None,
         "official_patch_available": patched_version is not None,
         "patched_version": patched_version,
+        "kev_listed_count": kev_count,
         "cves": cves,
         "notes": [
             f"{len(cves)} CVE(s) found via Grype's local vulnerability database "
-            "(package/version match only - not vendor/model-specific).",
+            "(package/version match only - not vendor/model-specific)."
+            + (
+                f" {kev_count} of these are on CISA's Known Exploited "
+                "Vulnerabilities catalog - confirmed exploitation in the wild, "
+                "not just a theoretical score."
+                if kev_count
+                else ""
+            ),
         ],
     }
 
@@ -795,6 +810,7 @@ def _clean_grype_advisory(name: str, version: str) -> dict:
         "latest_known_version": None,
         "official_patch_available": False,
         "patched_version": None,
+        "kev_listed_count": 0,
         "cves": [],
         "notes": ["No CVEs found for this package/version in Grype's local vulnerability database."],
     }

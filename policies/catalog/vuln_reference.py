@@ -136,6 +136,7 @@ def lookup_component(name: str, version: str) -> dict:
             "latest_known_version": None,
             "official_patch_available": None,
             "patched_version": None,
+            "kev_listed_count": None,
             "cves": [],
             "notes": [
                 f"No local vulnerability reference data for {name} {version} "
@@ -150,6 +151,10 @@ def lookup_component(name: str, version: str) -> dict:
         "latest_known_version": advisory.latest_known_version,
         "official_patch_available": advisory.official_patch_available,
         "patched_version": advisory.patched_version,
+        # This static table isn't cross-referenced against CISA KEV at all
+        # (unlike the Grype-backed path) - None means "not checked here",
+        # never a guessed False, matching every other field's honesty rule.
+        "kev_listed_count": None,
         "cves": [{"id": c.id, "cvss": c.cvss, "summary": c.summary} for c in advisory.cves],
         "notes": list(advisory.notes),
     }

@@ -30,6 +30,7 @@ from policies.catalog.scan_tests import (
     is_firmware_test,
     is_network_discovery_test,
 )
+from lab.auditor.worker.scan_scripts import cisa_kev
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
 POLL_INTERVAL_SECONDS = float(os.environ.get("JOB_POLL_INTERVAL_SECONDS", "2"))
@@ -56,7 +57,17 @@ GRYPE_DB_REFRESH_SENTINEL = os.environ.get(
     "GRYPE_DB_REFRESH_SENTINEL", os.path.expanduser("~/.cache/grype/db/.vuln-intel-last-refresh"),
 )
 
+# Same hybrid model, same cadence, same sentinel-file pattern as the Grype DB
+# above - CISA's KEV feed is a plain HTTPS GET (cisa_kev.py), not a
+# subprocess, but the staleness bookkeeping is identical.
+CISA_KEV_CHECK_INTERVAL_SECONDS = float(os.environ.get("CISA_KEV_CHECK_INTERVAL_SECONDS", str(6 * 3600)))
+CISA_KEV_MAX_AGE_SECONDS = float(os.environ.get("CISA_KEV_MAX_AGE_SECONDS", str(7 * 24 * 3600)))
+CISA_KEV_REFRESH_SENTINEL = os.environ.get(
+    "CISA_KEV_REFRESH_SENTINEL", os.path.expanduser("~/.cache/grype/db/.cisa-kev-last-refresh"),
+)
+
 _last_grype_check_monotonic: float | None = None
+_last_kev_check_monotonic: float | None = None
 
 
 def resolve_target(job: dict) -> dict:
@@ -209,24 +220,24 @@ def process_network_scan(scan: dict) -> None:
     })
 
 
-def _sentinel_age_seconds() -> float | None:
+def _sentinel_age_seconds(path: str) -> float | None:
     try:
-        mtime = os.path.getmtime(GRYPE_DB_REFRESH_SENTINEL)
+        mtime = os.path.getmtime(path)
     except OSError:
         return None
     return time.time() - mtime
 
 
-def _touch_refresh_sentinel() -> None:
+def _touch_sentinel(path: str) -> None:
     try:
-        os.makedirs(os.path.dirname(GRYPE_DB_REFRESH_SENTINEL), exist_ok=True)
-        with open(GRYPE_DB_REFRESH_SENTINEL, "w") as f:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
             f.write(datetime.now(timezone.utc).isoformat())
     except OSError as exc:
-        # Non-fatal: the DB itself did update successfully, only our own
-        # staleness bookkeeping failed - worst case we re-check needlessly
-        # often, never silently stop updating.
-        print(f"job_runner: could not write grype refresh sentinel: {exc}", file=sys.stderr, flush=True)
+        # Non-fatal: the refresh itself did succeed, only our own staleness
+        # bookkeeping failed - worst case we re-check needlessly often,
+        # never silently stop refreshing.
+        print(f"job_runner: could not write refresh sentinel {path}: {exc}", file=sys.stderr, flush=True)
 
 
 def maybe_refresh_grype_db(now: float | None = None) -> None:
@@ -245,7 +256,7 @@ def maybe_refresh_grype_db(now: float | None = None) -> None:
         return
     _last_grype_check_monotonic = now
 
-    sentinel_age = _sentinel_age_seconds()
+    sentinel_age = _sentinel_age_seconds(GRYPE_DB_REFRESH_SENTINEL)
     if sentinel_age is not None and sentinel_age < GRYPE_DB_MAX_AGE_SECONDS:
         return
 
@@ -256,11 +267,37 @@ def maybe_refresh_grype_db(now: float | None = None) -> None:
         )
         if result.returncode == 0:
             print("job_runner: grype db update completed", flush=True)
-            _touch_refresh_sentinel()
+            _touch_sentinel(GRYPE_DB_REFRESH_SENTINEL)
         else:
             print(f"job_runner: grype db update failed: {result.stderr.strip()}", file=sys.stderr, flush=True)
     except (OSError, subprocess.SubprocessError) as exc:
         print(f"job_runner: grype db update failed: {exc}", file=sys.stderr, flush=True)
+
+
+def maybe_refresh_cisa_kev(now: float | None = None) -> None:
+    """Same hybrid model and sentinel pattern as maybe_refresh_grype_db, for
+    CISA's KEV feed (cisa_kev.py - a plain HTTPS GET, not a subprocess).
+    Never raises - a failed fetch leaves the last-good cache in place
+    (cisa_kev.fetch_and_cache_kev_feed does an atomic swap only on success)
+    and is retried at the next check."""
+    global _last_kev_check_monotonic
+    now = time.monotonic() if now is None else now
+    if (
+        _last_kev_check_monotonic is not None
+        and (now - _last_kev_check_monotonic) < CISA_KEV_CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_kev_check_monotonic = now
+
+    sentinel_age = _sentinel_age_seconds(CISA_KEV_REFRESH_SENTINEL)
+    if sentinel_age is not None and sentinel_age < CISA_KEV_MAX_AGE_SECONDS:
+        return
+
+    if cisa_kev.fetch_and_cache_kev_feed():
+        print("job_runner: CISA KEV feed refresh completed", flush=True)
+        _touch_sentinel(CISA_KEV_REFRESH_SENTINEL)
+    else:
+        print("job_runner: CISA KEV feed refresh failed", file=sys.stderr, flush=True)
 
 
 def poll_network_scans_once() -> int:
@@ -279,6 +316,7 @@ def main() -> None:
             poll_once()
             poll_network_scans_once()
             maybe_refresh_grype_db()
+            maybe_refresh_cisa_kev()
         except Exception as exc:  # noqa: BLE001 - never let a poll failure kill the loop
             print(f"job_runner: poll error: {exc}", file=sys.stderr, flush=True)
         time.sleep(POLL_INTERVAL_SECONDS)

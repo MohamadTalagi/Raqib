@@ -379,13 +379,61 @@ def test_maybe_refresh_grype_db_does_not_touch_sentinel_on_failed_update(mock_ru
     assert not (tmp_path / "sentinel").exists()
 
 
-def test_sentinel_age_seconds_returns_none_when_sentinel_does_not_exist(tmp_path, monkeypatch):
-    monkeypatch.setattr(job_runner, "GRYPE_DB_REFRESH_SENTINEL", str(tmp_path / "does-not-exist"))
-    assert job_runner._sentinel_age_seconds() is None
+def test_sentinel_age_seconds_returns_none_when_sentinel_does_not_exist(tmp_path):
+    assert job_runner._sentinel_age_seconds(str(tmp_path / "does-not-exist")) is None
 
 
-def test_touch_refresh_sentinel_creates_parent_directories(tmp_path, monkeypatch):
+def test_touch_sentinel_creates_parent_directories(tmp_path):
     sentinel = tmp_path / "nested" / "dir" / "sentinel"
-    monkeypatch.setattr(job_runner, "GRYPE_DB_REFRESH_SENTINEL", str(sentinel))
-    job_runner._touch_refresh_sentinel()
+    job_runner._touch_sentinel(str(sentinel))
     assert sentinel.exists()
+
+
+# -- CISA KEV scheduled refresh (vulnerability intelligence) ----------------
+# Same sentinel-based staleness pattern as the Grype DB refresh above, just
+# fetching over HTTPS (cisa_kev.py) instead of shelling out to a subprocess.
+
+
+@patch("job_runner.cisa_kev.fetch_and_cache_kev_feed")
+def test_maybe_refresh_cisa_kev_skips_check_within_the_interval(mock_fetch, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_kev_check_monotonic", 100.0)
+    job_runner.maybe_refresh_cisa_kev(now=100.0 + job_runner.CISA_KEV_CHECK_INTERVAL_SECONDS - 1)
+    mock_fetch.assert_not_called()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.cisa_kev.fetch_and_cache_kev_feed")
+def test_maybe_refresh_cisa_kev_fetches_when_sentinel_is_stale(mock_fetch, mock_age, monkeypatch, tmp_path):
+    monkeypatch.setattr(job_runner, "_last_kev_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "CISA_KEV_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = job_runner.CISA_KEV_MAX_AGE_SECONDS + 1
+    mock_fetch.return_value = True
+
+    job_runner.maybe_refresh_cisa_kev(now=0.0)
+
+    mock_fetch.assert_called_once()
+    assert (tmp_path / "sentinel").exists()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.cisa_kev.fetch_and_cache_kev_feed")
+def test_maybe_refresh_cisa_kev_skips_fetch_when_sentinel_is_fresh(mock_fetch, mock_age, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_kev_check_monotonic", None)
+    mock_age.return_value = 60.0
+
+    job_runner.maybe_refresh_cisa_kev(now=0.0)
+
+    mock_fetch.assert_not_called()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.cisa_kev.fetch_and_cache_kev_feed")
+def test_maybe_refresh_cisa_kev_does_not_touch_sentinel_on_failed_fetch(mock_fetch, mock_age, monkeypatch, tmp_path):
+    monkeypatch.setattr(job_runner, "_last_kev_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "CISA_KEV_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = None
+    mock_fetch.return_value = False
+
+    job_runner.maybe_refresh_cisa_kev(now=0.0)
+
+    assert not (tmp_path / "sentinel").exists()

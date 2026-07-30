@@ -628,6 +628,9 @@ def test_parse_fw_manifest_observations():
     assert openssl_pkg["outdated"] is True
     assert {c["id"] for c in openssl_pkg["cves"]} == {"CVE-2014-0160", "CVE-2014-0224"}
     assert "2 of 2" in obs["notes"][0]
+    # The static table isn't cross-referenced against KEV - None ("not
+    # checked here"), never a guessed 0.
+    assert openssl_pkg["kev_listed_count"] is None
 
 
 def test_parse_fw_manifest_observations_when_absent():
@@ -661,6 +664,32 @@ def test_parse_fw_manifest_observations_prefers_grype_result_when_present():
     assert openssl_pkg["outdated"] is True
 
 
+def test_parse_fw_manifest_observations_surfaces_kev_listing_and_sorts_it_first():
+    # CVE-2014-0160 (Heartbleed) is genuinely on CISA's real KEV catalog,
+    # confirmed live - a lower-CVSS KEV-listed CVE must still sort ahead of
+    # a higher-CVSS non-KEV one, since confirmed exploitation outranks score.
+    grype_result = json.dumps([
+        {
+            "package": "openssl", "version": "1.0.1e", "id": "CVE-9999-0001",
+            "severity": "Critical", "cvss": 9.8, "fix_state": "unknown", "fix_versions": [],
+            "summary": "Higher CVSS, not KEV-listed", "kev_listed": False, "kev_date_added": None,
+        },
+        {
+            "package": "openssl", "version": "1.0.1e", "id": "CVE-2014-0160",
+            "severity": "High", "cvss": 7.5, "fix_state": "fixed", "fix_versions": ["1.0.1g"],
+            "summary": "Heartbleed", "kev_listed": True, "kev_date_added": "2022-03-25",
+        },
+    ])
+    output = f"manifest_present=True\npackages=openssl:1.0.1e\ngrype_result={grype_result}\n"
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](FIRMWARE_TARGET, output)
+    openssl_pkg = obs["packages"][0]
+    assert openssl_pkg["kev_listed_count"] == 1
+    assert openssl_pkg["cves"][0]["id"] == "CVE-2014-0160"  # KEV-listed sorts first despite lower CVSS
+    assert openssl_pkg["cves"][0]["kev_date_added"] == "2022-03-25"
+    assert openssl_pkg["cves"][1]["kev_listed"] is False
+    assert "Known Exploited Vulnerabilities" in openssl_pkg["notes"][0]
+
+
 def test_parse_fw_manifest_observations_reports_clean_when_grype_ran_and_found_nothing():
     # "sqlite" isn't in the static reference table either - without the fix
     # this shipped for, an unmatched package would wrongly say "no local
@@ -670,6 +699,7 @@ def test_parse_fw_manifest_observations_reports_clean_when_grype_ran_and_found_n
     pkg = obs["packages"][0]
     assert pkg["outdated"] is False
     assert pkg["cves"] == []
+    assert pkg["kev_listed_count"] == 0
     assert "No CVEs found" in pkg["notes"][0]
 
 

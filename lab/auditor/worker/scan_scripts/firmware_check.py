@@ -22,6 +22,7 @@ from pathlib import Path
 
 from lab.auditor.worker.firmware.archive_reader import Member, open_archive
 from lab.auditor.worker.firmware.scan_firmware import MAX_MEMBER_BYTES, scan_archive
+from lab.auditor.worker.scan_scripts import cisa_kev
 from lab.auditor.worker.scan_scripts.sbom import build_cyclonedx_sbom
 
 DOCUMENT_STORE_DIR = Path(os.environ.get("DOCUMENT_STORE_DIR", "/work/document-store"))
@@ -34,8 +35,14 @@ GRYPE_TIMEOUT_SECONDS = 20
 def _summarize_grype_matches(raw_stdout: str) -> list[dict]:
     """Trim Grype's verbose per-match JSON (each real match carries 50+
     reference URLs) down to exactly the fields this project's advisory shape
-    needs, so the collector's printed output stays a reasonable size."""
+    needs, so the collector's printed output stays a reasonable size.
+
+    Cross-references each CVE against the locally cached CISA KEV catalog
+    (cisa_kev.load_kev_index() - a fast local file read, refreshed out of
+    band by job_runner.py, never a network call here) since KEV listing
+    isn't a first-class field in this pinned Grype version's own JSON."""
     data = json.loads(raw_stdout)
+    kev_index = cisa_kev.load_kev_index()
     summarized = []
     for match in data.get("matches", []):
         vuln = match["vulnerability"]
@@ -46,6 +53,7 @@ def _summarize_grype_matches(raw_stdout: str) -> list[dict]:
             default=None,
         )
         fix = vuln.get("fix") or {}
+        kev_entry = kev_index.get(vuln["id"])
         summarized.append({
             "package": artifact["name"],
             "version": artifact["version"],
@@ -55,6 +63,8 @@ def _summarize_grype_matches(raw_stdout: str) -> list[dict]:
             "fix_state": fix.get("state"),
             "fix_versions": fix.get("versions", []),
             "summary": (vuln.get("description") or "")[:400],
+            "kev_listed": kev_entry is not None,
+            "kev_date_added": kev_entry["date_added"] if kev_entry else None,
         })
     return summarized
 
