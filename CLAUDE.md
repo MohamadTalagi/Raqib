@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-30
+> **Last updated:** 2026-07-31
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,102 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Five owner-requested features — all COMPLETE** (2026-07-30),
+**Phase:** **Vulnerability Intelligence (IoTGuard Stage 05) built out fully — COMPLETE**
+(2026-07-30/31). Stage 05 was previously a 6-entry hardcoded Python dict
+(`policies/catalog/vuln_reference.py`) covering only the two packages this lab's own
+synthetic firmware fixtures ship — honest about being an "auditor-aid," not
+deployment-ready coverage. Orchestrated as an 8-phase plan (full write-up in
+`docs/vulnerability-intelligence.md`), agreed with the owner up front on two decisions:
+a **hybrid sourcing model** (scan-time lookups stay 100% local/offline, a separate
+scheduled process refreshes the local snapshot — preserving this project's "evidence
+must be reproducible" rule) and **package/component-level scope only** (device-level
+vendor/model CPE matching deferred). A live spike then found something that changed
+the shape of the whole plan for the better: the worker image already installs **Grype
+and Syft** (named in the original Day-2 brief) but neither was ever actually invoked —
+Grype's own local, versioned, offline-refreshable vulnerability database *is* the
+hybrid model this task called for, already built. Wired Grype in instead of hand-rolling
+an NVD API client and new Postgres tables.
+- **Grype wired into `TEST-FW-MANIFEST`**: new `sbom.py` translates a firmware
+  manifest's package list into a CycloneDX SBOM Grype can scan (a small
+  hand-verified `CPE_OVERRIDES` table covers components where Grype's default
+  purl-synthesis under-matches, confirmed live); `firmware_check.py` runs
+  `grype sbom:... --add-cpes-if-none` and summarizes the match JSON;
+  `scan_tests.py` merges Grype's result with the static table with a clear
+  priority (Grype → static table → honest "no data"), fixing a real gap found
+  while writing this: a package Grype genuinely checked and found clean must
+  say so, not fall through to a "not checked" message. Real coverage jump,
+  confirmed live: openssl 1.0.1e went from 2 known CVEs (static table) to 77
+  (Grype); busybox 1.19.4 from 0 to 24.
+- **Grype's local DB persists and auto-refreshes**: a new `grype-db-data` Docker
+  volume + a low-frequency staleness check in `job_runner.py`'s existing poll
+  loop (`maybe_refresh_grype_db`). **Caught a real bug live**: the first version
+  compared Grype's own "Built" field (when Anchore published their upstream
+  snapshot) against wall-clock time, which is *always* stale by real-world
+  standards and would have re-attempted an update every single check forever —
+  fixed by tracking refresh success via a local sentinel file instead, confirmed
+  live across multiple real restarts spanning 20+ minutes that the throttle now
+  holds correctly.
+- **CISA KEV cross-reference**: new `cisa_kev.py` fetches and caches CISA's real
+  published KEV feed (1656 entries, confirmed live); every Grype-resolved CVE
+  gets tagged `kev_listed`/`kev_date_added`, sorted first within its package's
+  CVE list. Confirmed live that CVE-2014-0160 (Heartbleed) is genuinely
+  KEV-listed. **Caught and repaired a real, unrelated incident during this same
+  live pass**: Grype's local DB had been corrupted (likely from a container
+  restart interrupting a write during the same day's earlier Docker-networking
+  recovery) — the existing three-tier fallback handled it exactly as designed
+  (silent fallback to the static table, no crash, no fabricated data) until the
+  DB was manually repaired.
+- **New read-only API surface** (`lab/auditor/api/vuln_routes.py`): `GET
+  /vuln-intel/status` (which DB snapshot the most recent scan used, sourced from
+  evidence since the API has no access to the worker's filesystem),
+  `/vuln-intel/fleet-summary` (worst-first by device), `/vuln-intel/devices/{id}`
+  (one device's full advisory list). Set up this session's first host-side
+  Python test environment (`.venv` + the `C:\work` junction, same pattern
+  documented in the 2026-07-21 entry below) since `lab/auditor/api`'s test suite
+  needs a real ephemeral Postgres the worker container's minimal image doesn't
+  support.
+- **Dashboard UI** (previously nothing rendered this data at all — confirmed no
+  existing component ever read `outdated`/`eol`/`cves` from a package advisory):
+  a new `KevBadge` (`components/ui/severity-badge.tsx`, same tooltip-explained
+  pattern as `BlockingBadge`); `VulnAdvisoryPanel` (the real per-package CVE
+  list, KEV-listed sorted first, capped with a "+N more" indicator) and
+  `VulnFreshnessNote` (since this data is snapshot-based, unlike the rest of
+  this app's evidence); wired into Overview (a new "Vulnerability intelligence
+  by device" card), the device detail page's Firmware card, the consolidated
+  `DeviceAssessmentReportPage`, and the server-rendered PDF/HTML report
+  (`report.py` imports `vuln_routes.py`'s own rollup function rather than
+  reimplementing it, so the report and dashboard can never disagree).
+- **Verified**: 333 backend (`policies`/`lab/auditor/worker`) + 9 new
+  `test_vuln_routes.py` + 3 new report tests + 214 frontend tests (35 files, was
+  193) all passing; `tsc`/`oxlint` clean (same 5 pre-existing warnings, nothing
+  new). One real test bug caught and fixed: a `DeviceDetailPage` test asserted
+  synchronously on `VulnFreshnessNote`'s content, which fetches independently of
+  the page's own data load — a genuine race (reproduced consistently in
+  isolation), fixed by awaiting it properly and confirmed clean across 5 repeat
+  runs. Rebuilt and redeployed `auditor-api`+`auditor-web`; confirmed **live end
+  to end through the real production pipeline**, not just against a test
+  database: registered a throwaway device, uploaded real firmware, ran a real
+  `TEST-FW-MANIFEST` scan job, recorded the resulting evidence, and confirmed
+  `/vuln-intel/status`, `/vuln-intel/fleet-summary`, the live PDF/HTML report,
+  and the deployed JS bundle all served the real Grype+KEV data end to end
+  (101 CVEs, 1 KEV-listed) — then cleaned up every throwaway artifact
+  afterward, including one incidental discovery: host-side pytest runs that
+  exercise evidence-recording endpoints write real raw-output files into the
+  real `document-store/raw/` directory (via the `/work` → `C:\work` junction),
+  even though the database side is fully isolated to an ephemeral test
+  Postgres — noted in `docs/vulnerability-intelligence.md` for future sessions.
+- **Not done this pass** (documented, not silently skipped — full detail in
+  `docs/vulnerability-intelligence.md`'s "Known limitations"): device-level
+  vendor/model CPE matching (deferred per the up-front scoping decision);
+  `TEST-NET-HTTP-INSPECT` isn't Grype-backed (stayed on the small static table —
+  wiring it in would have required breaking the pure-parser convention every
+  other collector in `scan_tests.py` holds); EPSS scores (absent from the pinned
+  Grype version); any verdict-logic change (a KEV-listed finding doesn't
+  auto-flip a verdict, matching this project's "tool-assisted, not
+  tool-decided" rule); DB corruption is only caught by the natural refresh
+  cycle, not actively detected.
+
+Before that: **Five owner-requested features — all COMPLETE** (2026-07-30),
 worked as a loop. (1) **Default-creds scan label** cleaned up — dropped the
 misleading "(admin/admin)" suffix from `TEST-AUTH-DEFAULT-CREDS`'s label (the
 scan actually tries 10 pairs); scan still tries admin:admin. (2) **Verdicts
@@ -1260,6 +1355,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-30/31 | **Built out Vulnerability Intelligence (IoTGuard Stage 05) fully** — see §0 for the complete breakdown and `docs/vulnerability-intelligence.md` for the full architecture writeup. Replaced the 6-entry hardcoded `vuln_reference.py` fallback table with real coverage by wiring in Grype (already installed in the worker image, never invoked) via a hybrid model: scan-time lookups stay 100% local, a scheduled `job_runner.py` check refreshes Grype's local DB and a new CISA KEV cache out of band. New `sbom.py` (manifest → CycloneDX), `cisa_kev.py` (KEV feed fetch/cache), a new read-only `vuln_routes.py` API surface, and dashboard UI (`VulnAdvisoryPanel`/`VulnFreshnessNote`/`KevBadge`) across Overview, the device detail page, the consolidated assessment report, and the PDF/HTML report. Real coverage jump confirmed live: openssl 1.0.1e went from 2 CVEs to 77, busybox 1.19.4 from 0 to 24, with real CISA KEV cross-referencing (Heartbleed confirmed genuinely KEV-listed). Caught and fixed two real bugs live (a staleness-check design flaw that would have re-triggered a DB update on every check forever, and a frontend test race condition) and caught-and-repaired one real, unrelated incident (a corrupted Grype DB from an earlier container restart, handled gracefully by the existing three-tier fallback with zero bad data reaching evidence). 333 backend + 214 frontend tests passing (was 290/193), `tsc`/`oxlint` clean. Verified live end to end through the real production pipeline (register → upload firmware → scan → evidence → dashboard/report), not just against test databases. |
 | 2026-07-30 | **Hide non-scannable controls from the assess pickers** — the "This control has no automated collector…" dead-end message appeared because manual-only controls (e.g. SA-IOT-001, whose only test `TEST-DEVICE-ID` has no `SCAN_CATALOG` entry) were still listed in the assess control dropdowns. New `lib/controls.ts::scanAssessableControls()` filters the pickers (device detail assess panel + `AssessVerdictDialog`) to controls with at least one catalogued collector, so the dead-end can't be selected; falls back to all controls if the catalog hasn't loaded. Backend 400 kept as a concise defensive guard (verbose NCA-workspace text trimmed). 3 helper unit tests; verified live SA-IOT-001 is excluded. |
 | 2026-07-30 | **Assess-verdict follow-ups** — (a) fixed a misleading error: assessing a control whose required test has no automated collector (e.g. SA-IOT-001 → TEST-DEVICE-ID, which has no `SCAN_CATALOG` entry) told the user to "run TEST-DEVICE-ID first" — impossible through the product. The 400 now distinguishes runnable required tests (names them) from manual-only controls ("This control has no automated collector … assess it manually …"). (b) Added an **"Assess verdict"** button + `AssessVerdictDialog` on the Verdicts page (pick device + control + optional severity → `POST .../assess`; backend 400s shown inline), so a new verdict can be assessed without opening a device page. 1 new backend test (manual-only message) + 2 new frontend tests; `tsc`/`oxlint` clean; rebuilt/redeployed and verified live. |
 | 2026-07-30 | **Five owner-requested features, worked as a loop** — see §0. (1) Dropped "(admin/admin)" from the `TEST-AUTH-DEFAULT-CREDS` label (still tries 10 pairs). (2) Verdicts page gained severity + device filters beside the status tabs. (3) New `POST /devices/{id}/controls/{control_id}/assess` (deterministic per-(device,control) verdict from evidence) + an "Assess verdict" control-picker on the device Verdicts card. (4) New consolidated `DeviceAssessmentReportPage` (`/devices/:id/assessment`) compiling profile/inventory/services/firmware/NCA-readiness/verdicts/evidence into one printable page with PDF/HTML/JSON download. (5) New `ScanConsolePage` (`/scan-console`) — a terminal-style runner for whitelisted catalog scans only (`scan`/`list`/`help`/`clear`; sole action is `createScanJob`, server re-validated against the whitelist — not a shell). `tsc`/`oxlint` clean; 6 new assess-endpoint tests + 45 frontend tests across 5 touched/new suites + verdict/catalog/API regression suites pass; rebuilt/redeployed `auditor-api`+`auditor-web` and verified each live. |

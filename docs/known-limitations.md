@@ -132,6 +132,18 @@ assessments/exceptions — see `docs/nca-compliance.md`).
   no mechanism yet to diff two policy versions against each other or show
   what changed between them.
 
+## Vulnerability intelligence is snapshot-based, not live-real-time
+
+`TEST-FW-MANIFEST`'s CVE/CISA-KEV data (see `docs/vulnerability-intelligence.md` for
+the full write-up) comes from Grype's local vulnerability database, refreshed by the
+worker on a schedule (default: check every 6h, refresh if the last successful refresh
+is over 7 days old) — not fetched live at scan time. A finding is only ever as current
+as the last successful `grype db update`; `observations.vuln_db_built_at` on each
+firmware-manifest evidence record says exactly which snapshot produced it, and
+`GET /vuln-intel/status` / the dashboard's freshness note report the same thing. Only
+`TEST-FW-MANIFEST` evidence carries this data — `TEST-NET-HTTP-INSPECT`'s Server-banner
+enrichment stayed on the older, much smaller static reference table.
+
 ## Clean-deployment smoke test
 
 `scripts/smoke_test.sh` brings the stack up and polls Docker health checks
