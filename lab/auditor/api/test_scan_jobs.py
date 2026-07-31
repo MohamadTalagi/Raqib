@@ -37,6 +37,15 @@ def test_get_scan_tests_returns_the_catalog(client):
     assert "TEST-HTTP-HEADERS" in test_ids
 
 
+def test_get_scan_tests_includes_the_pipeline_phase(client):
+    tests_by_id = {t["test_id"]: t for t in client.get("/scan-tests").json()}
+    assert tests_by_id["TEST-NET-PORTSCAN"]["pipeline_phase"] == "fingerprinting"
+    assert tests_by_id["TEST-AUTH-DEFAULT-CREDS"]["pipeline_phase"] == "sa_iot_compliance"
+    assert tests_by_id["TEST-FW-MANIFEST"]["pipeline_phase"] == "vuln_intelligence"
+    # The standalone subnet sweep isn't part of any per-device pipeline phase.
+    assert tests_by_id["TEST-NET-DISCOVERY"]["pipeline_phase"] is None
+
+
 def test_post_scan_job_creates_pending_job(client):
     _register_device(client, "device-insecure")
     response = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"})

@@ -213,6 +213,9 @@ def get_scan_tests():
             "label": spec["label"],
             "category": spec["category"],
             "applicable_service_types": list(spec["applicable_service_types"]),
+            # Dashboard-overhaul pipeline phase - null for tests with none
+            # (e.g. TEST-NET-DISCOVERY, the standalone subnet sweep).
+            "pipeline_phase": spec.get("pipeline_phase"),
         }
         for test_id, spec in SCAN_CATALOG.items()
     ]

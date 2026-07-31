@@ -2,6 +2,9 @@ import json
 
 from policies.catalog.scan_tests import (
     ALL_SERVICE_TYPES,
+    PIPELINE_PHASE_FINGERPRINTING,
+    PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+    PIPELINE_PHASE_VULN_INTELLIGENCE,
     SCAN_CATALOG,
     is_applicable,
     is_firmware_test,
@@ -1125,3 +1128,36 @@ def test_suggested_confidence_fw_manifest_is_high_when_grype_ran():
     assert obs["vuln_db_built_at"] == "2026-07-01T00:00:00Z"
     _, confidence = suggest_finding_and_confidence("TEST-FW-MANIFEST", obs)
     assert confidence == "high"
+
+
+# --- dashboard-overhaul pipeline_phase tagging ---
+
+def test_every_test_id_has_the_expected_pipeline_phase():
+    # The full, explicit mapping (Week 1 dashboard-overhaul plan) - locked
+    # down completely rather than spot-checked, since this is the one
+    # source of truth the new Fingerprinting/SA-IOT Compliance/Vulnerability
+    # Intelligence pages filter their test lists by.
+    expected = {
+        "TEST-NET-REACHABILITY": PIPELINE_PHASE_FINGERPRINTING,
+        "TEST-NET-PORTSCAN": PIPELINE_PHASE_FINGERPRINTING,
+        "TEST-NET-HTTP-INSPECT": PIPELINE_PHASE_FINGERPRINTING,
+        "TEST-AUTH-DEFAULT-CREDS": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-HTTP-HEADERS": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-AUTH-ANON-ACCESS": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-AUTH-SESSION": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-ADMIN-UNAUTH": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-MQTT-OPEN": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-TLS-CONFIG": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-NET-PKTCAPTURE": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-FW-VERSION": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-FW-CONFIG": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-FW-SECRETS": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-FW-APIKEY": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-FW-CERTKEY": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-FW-UPDATESCRIPT": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-FW-MANIFEST": PIPELINE_PHASE_VULN_INTELLIGENCE,
+        "TEST-NET-DISCOVERY": None,
+    }
+    assert set(expected) == set(SCAN_CATALOG)  # catches a new test added with no phase decision made
+    for test_id, phase in expected.items():
+        assert SCAN_CATALOG[test_id].get("pipeline_phase") == phase, test_id

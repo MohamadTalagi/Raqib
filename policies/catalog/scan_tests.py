@@ -61,6 +61,18 @@ CATEGORY_NETWORK_PROTOCOL = "network-and-protocol"
 CATEGORY_FIRMWARE = "firmware"
 CATEGORY_NETWORK_DISCOVERY = "network-discovery"
 
+# Dashboard-overhaul pipeline phase tagging - a separate axis from `category`
+# above (category drives is_firmware_test()/is_network_discovery_test() and
+# stays untouched). Which phase a test belongs to for the new guided-pipeline
+# UI: "what is this device" (fingerprinting) vs "is it compliant" (sa_iot_
+# compliance) vs "does it have known CVEs" (vuln_intelligence, deliberately
+# scoped to TEST-FW-MANIFEST only - the one test that actually produces CVE/
+# CVSS/CISA-KEV data, not every firmware check). TEST-NET-DISCOVERY gets no
+# phase tag - it's the standalone subnet sweep, already its own thing.
+PIPELINE_PHASE_FINGERPRINTING = "fingerprinting"
+PIPELINE_PHASE_SA_IOT_COMPLIANCE = "sa_iot_compliance"
+PIPELINE_PHASE_VULN_INTELLIGENCE = "vuln_intelligence"
+
 # Mirrors device_validation.ALLOWED_NETWORK (audit-network) - duplicated as a
 # plain string here rather than imported, since scan_tests.py is shared code
 # loaded by both auditor-api and auditor-worker and must not take on a
@@ -981,6 +993,7 @@ SCAN_CATALOG = {
         "applicable_service_types": ALL_SERVICE_TYPES,
         "build_command": _reachability_command,
         "parse_observations": _parse_reachability_observations,
+        "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
     },
     "TEST-NET-DISCOVERY": {
         "label": "Network discovery (VLAN sweep)",
@@ -1007,6 +1020,7 @@ SCAN_CATALOG = {
         "applicable_service_types": ALL_SERVICE_TYPES,
         "build_command": _nmap_command,
         "parse_observations": _parse_nmap_observations,
+        "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
     },
     "TEST-AUTH-DEFAULT-CREDS": {
         "label": "Default credentials",
@@ -1017,6 +1031,7 @@ SCAN_CATALOG = {
         "build_command": _login_command,
         "parse_observations": _parse_login_observations,
         "suggest_confidence": _suggest_confidence_default_creds,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-HTTP-HEADERS": {
         "label": "HTTP security headers",
@@ -1026,6 +1041,7 @@ SCAN_CATALOG = {
         "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _headers_command,
         "parse_observations": _parse_headers_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-AUTH-ANON-ACCESS": {
         "label": "Anonymous access",
@@ -1035,6 +1051,7 @@ SCAN_CATALOG = {
         "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _anon_access_command,
         "parse_observations": _parse_anon_access_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-AUTH-SESSION": {
         "label": "Weak session behavior",
@@ -1045,6 +1062,7 @@ SCAN_CATALOG = {
         "build_command": _session_command,
         "parse_observations": _parse_session_observations,
         "suggest_confidence": _suggest_confidence_session,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-ADMIN-UNAUTH": {
         "label": "Unprotected administrative endpoint",
@@ -1054,6 +1072,7 @@ SCAN_CATALOG = {
         "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _admin_unauth_command,
         "parse_observations": _parse_admin_unauth_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-NET-HTTP-INSPECT": {
         "label": "HTTP inspection",
@@ -1064,6 +1083,7 @@ SCAN_CATALOG = {
         "build_command": _http_inspect_command,
         "parse_observations": _parse_http_inspect_observations,
         "suggest_confidence": _suggest_confidence_http_inspect,
+        "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
     },
     "TEST-MQTT-OPEN": {
         "label": "MQTT anonymous access",
@@ -1073,6 +1093,7 @@ SCAN_CATALOG = {
         "applicable_service_types": MQTT_SERVICE_TYPES,
         "build_command": _mqtt_command,
         "parse_observations": _parse_mqtt_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-TLS-CONFIG": {
         "label": "TLS configuration",
@@ -1083,6 +1104,7 @@ SCAN_CATALOG = {
         "build_command": _tls_command,
         "parse_observations": _parse_tls_observations,
         "suggest_confidence": _suggest_confidence_tls,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         # tls_cert_check.py now makes 6 handshake attempts (the original 2 plus
         # 4 forced-protocol-version probes) instead of 2 - real headroom above
         # job_runner.py's 30s default, same precedent as TEST-NET-DISCOVERY.
@@ -1096,6 +1118,7 @@ SCAN_CATALOG = {
         "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _packet_capture_command,
         "parse_observations": _parse_packet_capture_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-FW-VERSION": {
         "label": "Version file",
@@ -1105,6 +1128,7 @@ SCAN_CATALOG = {
         "applicable_service_types": (),
         "build_command": _firmware_command("version"),
         "parse_observations": _parse_fw_version_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-FW-CONFIG": {
         "label": "Configuration files",
@@ -1114,6 +1138,7 @@ SCAN_CATALOG = {
         "applicable_service_types": (),
         "build_command": _firmware_command("config"),
         "parse_observations": _parse_fw_config_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-FW-SECRETS": {
         "label": "Hard-coded password or secrets",
@@ -1123,6 +1148,7 @@ SCAN_CATALOG = {
         "applicable_service_types": (),
         "build_command": _firmware_command("secrets"),
         "parse_observations": _parse_fw_secrets_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-FW-APIKEY": {
         "label": "API keys",
@@ -1132,6 +1158,7 @@ SCAN_CATALOG = {
         "applicable_service_types": (),
         "build_command": _firmware_command("apikey"),
         "parse_observations": _parse_fw_apikey_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-FW-CERTKEY": {
         "label": "Certificate or key file",
@@ -1141,6 +1168,7 @@ SCAN_CATALOG = {
         "applicable_service_types": (),
         "build_command": _firmware_command("certkey"),
         "parse_observations": _parse_fw_certkey_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-FW-MANIFEST": {
         "label": "Packet manifest",
@@ -1151,6 +1179,7 @@ SCAN_CATALOG = {
         "build_command": _firmware_command("manifest"),
         "parse_observations": _parse_fw_manifest_observations,
         "suggest_confidence": _suggest_confidence_fw_manifest,
+        "pipeline_phase": PIPELINE_PHASE_VULN_INTELLIGENCE,
     },
     "TEST-FW-UPDATESCRIPT": {
         "label": "Update script",
@@ -1160,6 +1189,7 @@ SCAN_CATALOG = {
         "applicable_service_types": (),
         "build_command": _firmware_command("updatescript"),
         "parse_observations": _parse_fw_updatescript_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
 }
 
