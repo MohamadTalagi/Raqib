@@ -413,6 +413,67 @@ def test_parse_tls_observations_reports_unknown_expiry_when_no_dates_present():
     assert any("Could not determine" in n for n in obs["notes"])
 
 
+def test_parse_tls_observations_reports_supported_tls_versions_from_the_probe_block():
+    # Real shape tls_cert_check.py's 3rd phase prints: a modern-only server
+    # that has TLSv1/1.1 genuinely disabled and only accepts 1.2/1.3.
+    output = (
+        "CONNECTION ESTABLISHED\nProtocol version: TLSv1.3\nDONE\n"
+        "notAfter=Jul  8 00:00:00 2036 GMT\n"
+        "PROTOCOL_PROBE_START\n"
+        "TLSv1=rejected\n"
+        "TLSv1.1=rejected\n"
+        "TLSv1.2=accepted\n"
+        "TLSv1.3=accepted\n"
+        "PROTOCOL_PROBE_END\n"
+    )
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs["protocol_probe"] == {"TLSv1": False, "TLSv1.1": False, "TLSv1.2": True, "TLSv1.3": True}
+    assert sorted(obs["supported_tls_versions"]) == ["TLSv1.2", "TLSv1.3"]
+    assert obs["deprecated_tls_versions_supported"] is False
+
+
+def test_parse_tls_observations_flags_a_deprecated_version_confirmed_accepted():
+    # A server that negotiates TLSv1.3 by default but still accepts a forced
+    # TLSv1.1 handshake - the exact "not just left unused, must be disabled"
+    # scenario the brief's "supported TLS versions" check is meant to catch.
+    output = (
+        "CONNECTION ESTABLISHED\nProtocol version: TLSv1.3\nDONE\n"
+        "notAfter=Jul  8 00:00:00 2036 GMT\n"
+        "PROTOCOL_PROBE_START\n"
+        "TLSv1=rejected\n"
+        "TLSv1.1=accepted\n"
+        "TLSv1.2=accepted\n"
+        "TLSv1.3=accepted\n"
+        "PROTOCOL_PROBE_END\n"
+    )
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs["deprecated_tls_versions_supported"] is True
+    assert "TLSv1.1" in obs["supported_tls_versions"]
+    assert any("forced handshake at a deprecated protocol version" in n for n in obs["notes"])
+
+
+def test_parse_tls_observations_never_guesses_an_untestable_protocol_version():
+    # This scanning host's own OpenSSL build refuses to offer TLSv1/1.1 at
+    # all (confirmed live against the real auditor-worker image) - that must
+    # surface as "unknown", never as a guessed accepted/rejected value.
+    output = (
+        "CONNECTION ESTABLISHED\nProtocol version: TLSv1.3\nDONE\n"
+        "notAfter=Jul  8 00:00:00 2036 GMT\n"
+        "PROTOCOL_PROBE_START\n"
+        "TLSv1=untestable\n"
+        "TLSv1.1=untestable\n"
+        "TLSv1.2=accepted\n"
+        "TLSv1.3=accepted\n"
+        "PROTOCOL_PROBE_END\n"
+    )
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    assert obs["protocol_probe"]["TLSv1"] is None
+    assert obs["protocol_probe"]["TLSv1.1"] is None
+    assert "TLSv1" not in obs["supported_tls_versions"]
+    assert obs["deprecated_tls_versions_supported"] is False
+    assert any("not confirmed absent" in n for n in obs["notes"])
+
+
 # --- TEST-NET-PKTCAPTURE ---
 
 def test_pktcapture_command_invokes_helper_script():

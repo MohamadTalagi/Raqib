@@ -589,6 +589,17 @@ def _tls_command(target: dict) -> list[str]:
 
 DEPRECATED_TLS_VERSIONS = {"SSLv2", "SSLv3", "TLSv1", "TLSv1.1"}
 
+PROTOCOL_PROBE_RE = re.compile(r"^(TLSv1(?:\.[123])?)=(accepted|rejected|untestable)$", re.MULTILINE)
+
+
+def _parse_protocol_probe(output: str) -> dict[str, bool | None]:
+    """Parses tls_cert_check.py's PROTOCOL_PROBE_START/...END block into
+    {"TLSv1": False, "TLSv1.1": None, "TLSv1.2": True, "TLSv1.3": True} -
+    True/False only for a real accepted/rejected handshake outcome, None
+    when this host's own OpenSSL build couldn't even attempt that version
+    (never guessed as True or False)."""
+    return {label: ({"accepted": True, "rejected": False}.get(outcome)) for label, outcome in PROTOCOL_PROBE_RE.findall(output)}
+
 
 def _parse_tls_observations(target: dict, output: str) -> dict:
     version = re.search(r"Protocol version:\s*(\S+)", output)
@@ -614,6 +625,11 @@ def _parse_tls_observations(target: dict, output: str) -> dict:
         except ValueError:
             cert_expired = None
 
+    protocol_probe = _parse_protocol_probe(output)
+    supported_tls_versions = [label for label, accepted in protocol_probe.items() if accepted]
+    deprecated_accepted = any(protocol_probe.get(v) for v in DEPRECATED_TLS_VERSIONS if v in protocol_probe)
+    untestable_versions = [label for label, accepted in protocol_probe.items() if accepted is None]
+
     notes = []
     if weak_cipher:
         notes.append(
@@ -626,16 +642,33 @@ def _parse_tls_observations(target: dict, output: str) -> dict:
             f"{tls_version} is deprecated and should be disabled in favor of "
             "TLS 1.2 or 1.3.",
         )
+    if deprecated_accepted:
+        notes.append(
+            "This server accepted a forced handshake at a deprecated protocol "
+            "version (TLSv1/TLSv1.1), even if a stronger version is what "
+            "gets negotiated by default - deprecated versions should be "
+            "disabled server-side, not just left unused.",
+        )
     if cert_expired:
         notes.append("The certificate has expired - reissue it before it is used to accept a real connection.")
     elif cert_expired is None:
         notes.append("Could not determine certificate expiry from the handshake output.")
+    if untestable_versions:
+        notes.append(
+            f"Could not determine whether the server accepts {', '.join(untestable_versions)} - "
+            "this scanning host's own OpenSSL build refuses to offer that "
+            "version at all, so its real availability on the server is unknown, "
+            "not confirmed absent.",
+        )
     if not notes:
         notes.append("No weak key or deprecated protocol version detected.")
     return {
         "tls_version": tls_version,
         "weak_cipher": weak_cipher,
         "cert_expired": cert_expired,
+        "protocol_probe": protocol_probe,
+        "supported_tls_versions": supported_tls_versions,
+        "deprecated_tls_versions_supported": deprecated_accepted,
         "notes": notes,
     }
 
@@ -995,6 +1028,10 @@ SCAN_CATALOG = {
         "applicable_service_types": TLS_SERVICE_TYPES,
         "build_command": _tls_command,
         "parse_observations": _parse_tls_observations,
+        # tls_cert_check.py now makes 6 handshake attempts (the original 2 plus
+        # 4 forced-protocol-version probes) instead of 2 - real headroom above
+        # job_runner.py's 30s default, same precedent as TEST-NET-DISCOVERY.
+        "timeout_seconds": 90,
     },
     "TEST-NET-PKTCAPTURE": {
         "label": "Packet capture",
