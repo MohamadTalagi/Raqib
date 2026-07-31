@@ -1,8 +1,15 @@
 import { EmptyState } from "@/components/ui/state";
-import type { Device } from "@/lib/types";
+
+// Only device_id/display_name are ever read here - a Pick, not the full
+// Device shape, so this can be reused with narrower per-page row types
+// (e.g. NCACompliancePage's NCADeviceComplianceRow) without adapting them.
+interface CohortDevice {
+  device_id: string;
+  display_name: string;
+}
 
 interface DeviceCohortPickerProps {
-  devices: Device[];
+  devices: CohortDevice[];
   selected: Set<string>;
   onChange: (selected: Set<string>) => void;
 }

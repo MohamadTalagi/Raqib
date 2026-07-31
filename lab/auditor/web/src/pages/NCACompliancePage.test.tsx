@@ -123,7 +123,7 @@ describe("NCACompliancePage", () => {
     setup();
     renderPage();
 
-    await screen.findByText("Smart Camera — Hardened");
+    await screen.findAllByText("Smart Camera — Hardened");
     const table = screen.getByRole("table");
     expect(within(table).getByText("Smart Camera — Hardened")).toBeInTheDocument();
     expect(within(table).getByText("Smart Camera — Insecure")).toBeInTheDocument();
@@ -136,7 +136,7 @@ describe("NCACompliancePage", () => {
     setup();
     renderPage();
 
-    await screen.findByText("Smart Camera — Hardened");
+    await screen.findAllByText("Smart Camera — Hardened");
     await user.click(screen.getByRole("tab", { name: /Failed/i }));
 
     const table = screen.getByRole("table");
@@ -149,12 +149,39 @@ describe("NCACompliancePage", () => {
     setup();
     renderPage();
 
-    await screen.findByText("Smart Camera — Hardened");
+    await screen.findAllByText("Smart Camera — Hardened");
     await user.selectOptions(screen.getByLabelText(/filter by device type/i), "insecure");
 
     const table = screen.getByRole("table");
     expect(within(table).queryByText("Smart Camera — Hardened")).not.toBeInTheDocument();
     expect(within(table).getByText("Smart Camera — Insecure")).toBeInTheDocument();
+  });
+
+  it("opens each selected device's assessment workspace, in turn, when Assess selected is clicked", async () => {
+    setup();
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findAllByText("Smart Camera — Hardened");
+    const assessButton = screen.getByRole("button", { name: /assess selected/i });
+    expect(assessButton).toBeDisabled();
+
+    await user.click(screen.getByRole("checkbox", { name: /select all \(2\)/i }));
+    expect(screen.getByRole("button", { name: /assess selected \(2\)/i })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: /assess selected \(2\)/i }));
+
+    expect(openSpy).toHaveBeenCalledWith(
+      "/nca-compliance/devices/device-hardened",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    expect(openSpy).toHaveBeenCalledWith(
+      "/nca-compliance/devices/device-insecure",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    expect(openSpy).toHaveBeenCalledTimes(2);
   });
 
   it("links to the organizational compliance view", async () => {

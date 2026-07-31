@@ -23,6 +23,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ComplianceGauge } from "@/components/charts/ComplianceGauge";
 import { NCADomainBarChart } from "@/components/charts/NCADomainBarChart";
 import { DomainSummaryGrid } from "@/components/nca/DomainSummaryGrid";
+import { DeviceCohortPicker } from "@/components/pipeline/DeviceCohortPicker";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { applicableDomains } from "@/lib/nca";
@@ -59,6 +60,16 @@ export function NCACompliancePage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [tierFilter, setTierFilter] = useState<string>("all");
   const [vendorFilter, setVendorFilter] = useState<string>("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function handleAssessSelected() {
+    // No single workspace spans multiple devices - each selected device's
+    // existing per-device assessment workspace opens in its own tab, in
+    // turn, rather than building a new bulk-assessment page.
+    for (const deviceId of selected) {
+      window.open(`/nca-compliance/devices/${encodeURIComponent(deviceId)}`, "_blank", "noopener,noreferrer");
+    }
+  }
 
   async function handleRecompute() {
     setRecomputing(true);
@@ -334,6 +345,29 @@ export function NCACompliancePage() {
               </CardContent>
             </Card>
           </div>
+
+          {!loading && (devices.data?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader className="flex-col items-start gap-2">
+                <CardTitle>Assess a cohort</CardTitle>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  Select one, some, or all devices to open their assessment workspace, in turn.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3 pt-2">
+                <DeviceCohortPicker devices={devices.data ?? []} selected={selected} onChange={setSelected} />
+                <button
+                  type="button"
+                  onClick={handleAssessSelected}
+                  disabled={selected.size === 0}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ClipboardCheck className="h-4 w-4" />
+                  Assess selected ({selected.size})
+                </button>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader className="flex-col items-start gap-3">
