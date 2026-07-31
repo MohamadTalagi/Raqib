@@ -185,6 +185,9 @@ export interface Assessment {
   // Present on POST /assessments and GET /assessments/{id}; absent on the
   // GET /assessments list endpoint, which returns assessment summaries only.
   jobs?: ScanJob[];
+  // Same availability as jobs - derived live from the assessment's own
+  // scan_jobs, empty until job_runner.py actually executes a collector.
+  collector_versions?: { tool: string; tool_version: string }[];
 }
 
 export interface CreateAssessmentResult extends Assessment {

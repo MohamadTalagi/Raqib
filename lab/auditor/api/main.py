@@ -331,6 +331,22 @@ def _next_assessment_id(conn) -> str:
     return f"{prefix}{len(existing) + 1:04d}"
 
 
+def _collector_versions_for_assessment(conn, assessment_id: str) -> list[dict]:
+    """Derived live from the assessment's own child scan_jobs, never stored
+    as its own column - the same "compute from the current source of truth
+    on read" rule this codebase already applies to risk scores, compliance
+    percentages, and NCA domain summaries, so this can never drift out of
+    sync with the real evidence a collector produced. tool is NULL until
+    job_runner.py actually executes a job, so a just-created assessment
+    honestly returns an empty list rather than a guessed one."""
+    rows = conn.execute(
+        "SELECT DISTINCT tool, tool_version FROM scan_jobs "
+        "WHERE assessment_id = %s AND tool IS NOT NULL ORDER BY tool",
+        (assessment_id,),
+    ).fetchall()
+    return [{"tool": r[0], "tool_version": r[1]} for r in rows]
+
+
 @app.post("/assessments", status_code=201)
 def create_assessment(payload: dict):
     """Groups a batch of scan_jobs (e.g. Run Scan's "Run selected") under one
@@ -369,6 +385,7 @@ def create_assessment(payload: dict):
         assessment_row = conn.execute(
             f"SELECT {ASSESSMENT_COLUMNS} FROM assessments WHERE id = %s", (assessment_id,)
         ).fetchone()
+        collector_versions = _collector_versions_for_assessment(conn, assessment_id)
         conn.commit()
     finally:
         conn.close()
@@ -376,6 +393,7 @@ def create_assessment(payload: dict):
     assessment = _row_to_assessment(assessment_row)
     assessment["jobs"] = jobs
     assessment["errors"] = errors
+    assessment["collector_versions"] = collector_versions
     return assessment
 
 
@@ -407,10 +425,12 @@ def get_assessment(assessment_id: str):
         job_rows = conn.execute(
             f"SELECT {SCAN_JOB_COLUMNS} FROM scan_jobs WHERE assessment_id = %s ORDER BY id", (assessment_id,)
         ).fetchall()
+        collector_versions = _collector_versions_for_assessment(conn, assessment_id)
     finally:
         conn.close()
     assessment = _row_to_assessment(row)
     assessment["jobs"] = [_row_to_scan_job(r) for r in job_rows]
+    assessment["collector_versions"] = collector_versions
     return assessment
 
 

@@ -95,7 +95,9 @@ export function DeviceDetailPage() {
   const scanTests = useFetch(api.scanTests, []);
   const [activeTab, setActiveTab] = useState<"overview" | "compliance">("overview");
   const [expandedAssessmentId, setExpandedAssessmentId] = useState<string | null>(null);
-  const [assessmentJobs, setAssessmentJobs] = useState<Record<string, ScanJob[]>>({});
+  const [assessmentDetail, setAssessmentDetail] = useState<
+    Record<string, { jobs: ScanJob[]; collectorVersions: { tool: string; tool_version: string }[] }>
+  >({});
   const [loadingJobsFor, setLoadingJobsFor] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deregistering, setDeregistering] = useState(false);
@@ -122,22 +124,25 @@ export function DeviceDetailPage() {
   }
 
   // The assessment list (GET /assessments?device_id=...) returns summaries
-  // only - the child scan_jobs come from GET /assessments/{id}, fetched
-  // lazily the first time a row is expanded and cached here so re-collapsing
-  // and re-expanding a row doesn't refetch it.
+  // only - the child scan_jobs and collector_versions come from
+  // GET /assessments/{id}, fetched lazily the first time a row is expanded
+  // and cached here so re-collapsing and re-expanding a row doesn't refetch it.
   async function handleToggleAssessment(assessmentId: string) {
     if (expandedAssessmentId === assessmentId) {
       setExpandedAssessmentId(null);
       return;
     }
     setExpandedAssessmentId(assessmentId);
-    if (assessmentJobs[assessmentId]) return;
+    if (assessmentDetail[assessmentId]) return;
     setLoadingJobsFor(assessmentId);
     try {
       const full = await api.getAssessment(assessmentId);
-      setAssessmentJobs((prev) => ({ ...prev, [assessmentId]: full.jobs ?? [] }));
+      setAssessmentDetail((prev) => ({
+        ...prev,
+        [assessmentId]: { jobs: full.jobs ?? [], collectorVersions: full.collector_versions ?? [] },
+      }));
     } catch {
-      setAssessmentJobs((prev) => ({ ...prev, [assessmentId]: [] }));
+      setAssessmentDetail((prev) => ({ ...prev, [assessmentId]: { jobs: [], collectorVersions: [] } }));
     } finally {
       setLoadingJobsFor(null);
     }
@@ -611,7 +616,9 @@ export function DeviceDetailPage() {
                     <ul className="divide-y divide-[var(--color-border)]">
                       {assessments.data.map((assessment) => {
                         const isOpen = expandedAssessmentId === assessment.id;
-                        const jobs = assessmentJobs[assessment.id];
+                        const detail = assessmentDetail[assessment.id];
+                        const jobs = detail?.jobs;
+                        const collectorVersions = detail?.collectorVersions ?? [];
                         return (
                           <li key={assessment.id}>
                             <button
@@ -640,6 +647,12 @@ export function DeviceDetailPage() {
                                   Started {assessment.started_at ?? "—"} · Completed{" "}
                                   {assessment.completed_at ?? "—"}
                                 </p>
+                                {loadingJobsFor !== assessment.id && collectorVersions.length > 0 && (
+                                  <p className="text-[11px] text-[var(--color-text-muted)]">
+                                    Collectors:{" "}
+                                    {collectorVersions.map((c) => `${c.tool} ${c.tool_version}`).join(" · ")}
+                                  </p>
+                                )}
                                 {loadingJobsFor === assessment.id ? (
                                   <Skeleton className="h-10" />
                                 ) : !jobs || jobs.length === 0 ? (

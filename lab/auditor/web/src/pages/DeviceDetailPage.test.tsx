@@ -608,4 +608,52 @@ describe("DeviceDetailPage", () => {
     await user.click(row);
     expect(getAssessmentSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("shows the collector versions used by an expanded assessment", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    vi.spyOn(api, "listAssessments").mockResolvedValue([
+      {
+        id: "ASMT-2026-07-31-0001", device_id: "device-insecure", status: "completed",
+        policy_version: "1.0.0", started_at: "2026-07-31T10:00:00+00:00",
+        completed_at: "2026-07-31T10:01:00+00:00", error: null, created_at: "2026-07-31T10:00:00+00:00",
+      },
+    ]);
+    vi.spyOn(api, "getAssessment").mockResolvedValue({
+      id: "ASMT-2026-07-31-0001", device_id: "device-insecure", status: "completed",
+      policy_version: "1.0.0", started_at: "2026-07-31T10:00:00+00:00",
+      completed_at: "2026-07-31T10:01:00+00:00", error: null, created_at: "2026-07-31T10:00:00+00:00",
+      jobs: [],
+      collector_versions: [{ tool: "nmap", tool_version: "7.94" }, { tool: "curl", tool_version: "8.14.1" }],
+    });
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /ASMT-2026-07-31-0001/ }));
+
+    expect(await screen.findByText(/nmap 7\.94/)).toBeInTheDocument();
+    expect(screen.getByText(/curl 8\.14\.1/)).toBeInTheDocument();
+  });
+
+  it("doesn't show a collectors line when an assessment has no collector versions yet", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    vi.spyOn(api, "listAssessments").mockResolvedValue([
+      {
+        id: "ASMT-2026-07-31-0002", device_id: "device-insecure", status: "queued",
+        policy_version: null, started_at: null, completed_at: null, error: null,
+        created_at: "2026-07-31T10:00:00+00:00",
+      },
+    ]);
+    vi.spyOn(api, "getAssessment").mockResolvedValue({
+      id: "ASMT-2026-07-31-0002", device_id: "device-insecure", status: "queued",
+      policy_version: null, started_at: null, completed_at: null, error: null,
+      created_at: "2026-07-31T10:00:00+00:00", jobs: [], collector_versions: [],
+    });
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /ASMT-2026-07-31-0002/ }));
+
+    await screen.findByText(/No collector jobs recorded/);
+    expect(screen.queryByText(/Collectors:/)).not.toBeInTheDocument();
+  });
 });

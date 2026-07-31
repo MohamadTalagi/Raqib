@@ -80,6 +80,38 @@ def test_get_unknown_assessment_is_404(client):
     assert client.get("/assessments/no-such-id").status_code == 404
 
 
+def test_create_assessment_response_has_no_collector_versions_before_anything_runs(client):
+    # tool/tool_version are only set once job_runner.py actually executes a
+    # collector - honestly empty at creation time, never guessed.
+    _register_device(client)
+    created = client.post(
+        "/assessments", json={"device_id": "cam-1", "test_ids": ["TEST-AUTH-DEFAULT-CREDS"]},
+    ).json()
+    assert created["collector_versions"] == []
+
+
+def test_get_assessment_includes_deduplicated_collector_versions_once_jobs_have_run(client):
+    _register_device(client)
+    created = client.post(
+        "/assessments",
+        json={"device_id": "cam-1", "test_ids": ["TEST-AUTH-DEFAULT-CREDS", "TEST-HTTP-HEADERS"]},
+    ).json()
+    job_ids = [job["id"] for job in created["jobs"]]
+
+    client.patch(
+        f"/scan-jobs/{job_ids[0]}",
+        json={"status": "awaiting_finding", "observations": {}, "tool": "curl", "tool_version": "8.5.0", "command": "curl ..."},
+    )
+    client.patch(
+        f"/scan-jobs/{job_ids[1]}",
+        json={"status": "awaiting_finding", "observations": {}, "tool": "curl", "tool_version": "8.5.0", "command": "curl ..."},
+    )
+
+    assessment = client.get(f"/assessments/{created['id']}").json()
+    # Both jobs ran the same tool/version - deduplicated to one entry, not two.
+    assert assessment["collector_versions"] == [{"tool": "curl", "tool_version": "8.5.0"}]
+
+
 def test_assessment_status_becomes_completed_once_its_only_job_is_recorded(client):
     _register_device(client)
     created = client.post(
