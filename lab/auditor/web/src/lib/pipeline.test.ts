@@ -1,0 +1,140 @@
+import { describe, expect, it } from "vitest";
+import { PIPELINE_PHASES, devicePipelineStatus, furthestReachedPhase } from "./pipeline";
+import type { DeviceRiskDetail, NCADeviceDetail, ScanTestSpec, VulnDeviceSummary } from "./types";
+
+const SCAN_TESTS: ScanTestSpec[] = [
+  { test_id: "TEST-NET-PORTSCAN", label: "Nmap service/port scan", category: "network-and-protocol", applicable_service_types: ["http"], pipeline_phase: "fingerprinting" },
+  { test_id: "TEST-AUTH-DEFAULT-CREDS", label: "Default credentials", category: "web-and-auth", applicable_service_types: ["http"], pipeline_phase: "sa_iot_compliance" },
+  { test_id: "TEST-FW-MANIFEST", label: "Packet manifest", category: "firmware", applicable_service_types: [], pipeline_phase: "vuln_intelligence" },
+];
+
+const NO_NCA: NCADeviceDetail | null = null;
+const NOT_ASSESSED_NCA: NCADeviceDetail = {
+  device_id: "d", display_name: "d", tier: "unknown", overall_status: "not_tested", score: null,
+  domain_summary: {}, readiness: {
+    classification: "failed", score: 0, reasons: [], blocking_control_ids: [],
+    critical_failure_control_ids: [], not_tested_control_ids: [], review_required_control_ids: [],
+    pass_threshold: 85, partial_threshold: 50,
+  },
+  controls: [], exceptions: [],
+};
+const ASSESSED_NCA: NCADeviceDetail = { ...NOT_ASSESSED_NCA, overall_status: "partial" };
+
+const NO_VULN: VulnDeviceSummary | null = null;
+const VULN_NO_DATA: VulnDeviceSummary = {
+  device_id: "d", has_data: false, evidence_id: null, observed_at: null, packages: [],
+  total_packages: 0, outdated_packages: 0, total_cves: 0, kev_listed_cves: 0, highest_cvss: null,
+};
+const VULN_WITH_DATA: VulnDeviceSummary = { ...VULN_NO_DATA, has_data: true };
+
+const NO_RISK: DeviceRiskDetail | null = null;
+const RISK_UNKNOWN: DeviceRiskDetail = { device_id: "d", known: false };
+const RISK_KNOWN: DeviceRiskDetail = { device_id: "d", known: true, risk_score: 40, risk_category: "medium" };
+
+describe("devicePipelineStatus", () => {
+  it("is all-false past devices for a freshly registered device with no data anywhere", () => {
+    const status = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: NO_RISK,
+    });
+    expect(status).toEqual({
+      devices: true, fingerprinting: false, sa_iot_compliance: false,
+      nca_compliance: false, vuln_intelligence: false, risk_assessment: false,
+    });
+  });
+
+  it("marks fingerprinting reached only from a fingerprinting-tagged test_id, not any evidence", () => {
+    const status = devicePipelineStatus({
+      evidenceTestIds: ["TEST-AUTH-DEFAULT-CREDS"], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: NO_RISK,
+    });
+    expect(status.fingerprinting).toBe(false);
+
+    const status2 = devicePipelineStatus({
+      evidenceTestIds: ["TEST-NET-PORTSCAN"], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: NO_RISK,
+    });
+    expect(status2.fingerprinting).toBe(true);
+  });
+
+  it("marks sa_iot_compliance reached once any verdict exists", () => {
+    const status = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: true, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: NO_RISK,
+    });
+    expect(status.sa_iot_compliance).toBe(true);
+  });
+
+  it("does not mark nca_compliance reached while the device is only not_tested", () => {
+    const status = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NOT_ASSESSED_NCA, vuln: NO_VULN, risk: NO_RISK,
+    });
+    expect(status.nca_compliance).toBe(false);
+  });
+
+  it("marks nca_compliance reached once a real assessment status exists", () => {
+    const status = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: ASSESSED_NCA, vuln: NO_VULN, risk: NO_RISK,
+    });
+    expect(status.nca_compliance).toBe(true);
+  });
+
+  it("distinguishes vuln_intelligence fetched-but-empty from real data", () => {
+    const empty = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: VULN_NO_DATA, risk: NO_RISK,
+    });
+    expect(empty.vuln_intelligence).toBe(false);
+
+    const withData = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: VULN_WITH_DATA, risk: NO_RISK,
+    });
+    expect(withData.vuln_intelligence).toBe(true);
+  });
+
+  it("distinguishes risk fetched-but-unknown from a real computed score", () => {
+    const unknown = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: RISK_UNKNOWN,
+    });
+    expect(unknown.risk_assessment).toBe(false);
+
+    const known = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: RISK_KNOWN,
+    });
+    expect(known.risk_assessment).toBe(true);
+  });
+});
+
+describe("furthestReachedPhase", () => {
+  it("returns devices when nothing past it has been reached", () => {
+    const status = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: NO_RISK,
+    });
+    expect(furthestReachedPhase(status)?.id).toBe("devices");
+  });
+
+  it("returns the last reached phase in pipeline order, not just any true one", () => {
+    const status = devicePipelineStatus({
+      evidenceTestIds: ["TEST-NET-PORTSCAN"], hasSaIotVerdict: true, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: RISK_KNOWN,
+    });
+    // fingerprinting + sa_iot_compliance + risk_assessment are true, but not
+    // nca_compliance/vuln_intelligence in between - furthest must still be
+    // risk_assessment (the true entry latest in PIPELINE_PHASES order), not
+    // sa_iot_compliance (the true entry with no gaps before it).
+    expect(furthestReachedPhase(status)?.id).toBe("risk_assessment");
+  });
+
+  it("PIPELINE_PHASES stays in the agreed pipeline order", () => {
+    expect(PIPELINE_PHASES.map((p) => p.id)).toEqual([
+      "devices", "fingerprinting", "sa_iot_compliance",
+      "nca_compliance", "vuln_intelligence", "risk_assessment",
+    ]);
+  });
+});

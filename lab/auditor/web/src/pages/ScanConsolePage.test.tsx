@@ -36,6 +36,7 @@ const TEST: ScanTestSpec = {
   label: "Port scan",
   category: "network-and-protocol",
   applicable_service_types: ["http"],
+  pipeline_phase: "fingerprinting",
 };
 
 const DONE_JOB: ScanJob = {

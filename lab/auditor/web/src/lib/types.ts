@@ -90,11 +90,33 @@ export type ScanTestCategory =
   | "firmware"
   | "network-discovery";
 
+// -- Dashboard-overhaul guided pipeline --------------------------------------
+// Which of the ordered pipeline phases (see lib/pipeline.ts) a scan test
+// belongs to - null for tests that aren't part of any per-device phase (e.g.
+// TEST-NET-DISCOVERY, the standalone subnet sweep).
+export type PipelinePhaseId =
+  | "devices"
+  | "fingerprinting"
+  | "sa_iot_compliance"
+  | "nca_compliance"
+  | "vuln_intelligence"
+  | "risk_assessment";
+
+// A scan test can only ever belong to one of the 3 phases that are actually
+// driven by running a SCAN_CATALOG test - Devices/NCA Compliance/Risk
+// Assessment are reached through other mechanisms entirely (registration, a
+// separate NCA assessment workspace, live risk computation), never a test_id.
+export type ScanTestPipelinePhase = Extract<
+  PipelinePhaseId,
+  "fingerprinting" | "sa_iot_compliance" | "vuln_intelligence"
+>;
+
 export interface ScanTestSpec {
   test_id: string;
   label: string;
   category: ScanTestCategory;
   applicable_service_types: ServiceType[];
+  pipeline_phase: ScanTestPipelinePhase | null;
 }
 
 // -- Network discovery (discovery-first device onboarding) -----------------

@@ -1,0 +1,83 @@
+import type {
+  DeviceRiskDetail,
+  NCADeviceDetail,
+  PipelinePhaseId,
+  ScanTestSpec,
+  VulnDeviceSummary,
+} from "./types";
+
+export interface PipelinePhaseDef {
+  id: PipelinePhaseId;
+  label: string;
+}
+
+/**
+ * The single source of truth for pipeline order - drives both the sidebar's
+ * top-to-bottom grouping and every phase-status badge. Devices is always
+ * "reached" once a device is registered; Discovery isn't listed here since
+ * it's a pre-registration, fleet-wide activity with no per-device status of
+ * its own (see the Discovery page).
+ */
+export const PIPELINE_PHASES: PipelinePhaseDef[] = [
+  { id: "devices", label: "Devices" },
+  { id: "fingerprinting", label: "Fingerprinting" },
+  { id: "sa_iot_compliance", label: "SA-IOT Compliance" },
+  { id: "nca_compliance", label: "NCA Compliance" },
+  { id: "vuln_intelligence", label: "Vulnerability Intelligence" },
+  { id: "risk_assessment", label: "Risk Assessment" },
+];
+
+/**
+ * Per-device inputs to devicePipelineStatus() - deliberately pre-scoped to
+ * one device by the caller (a device's own evidence/verdicts arrays, its own
+ * NCA/vuln/risk detail), not raw fleet-wide tables this function would have
+ * to filter itself. Every page that needs this already fetches all of these
+ * for other reasons (Device Detail, the new phase pages) - nothing new to
+ * fetch just for status computation.
+ */
+export interface DevicePipelineData {
+  /** This device's own evidence records (only .test_id is used). */
+  evidenceTestIds: string[];
+  /** True once this device has at least one recorded SA-IOT verdict. */
+  hasSaIotVerdict: boolean;
+  /** The full scan test catalog, used to classify evidenceTestIds by phase. */
+  scanTests: ScanTestSpec[];
+  nca: NCADeviceDetail | null;
+  vuln: VulnDeviceSummary | null;
+  risk: DeviceRiskDetail | null;
+}
+
+export type PipelinePhaseStatus = Record<PipelinePhaseId, boolean>;
+
+/**
+ * Computed live from whatever data already exists - never a stored "current
+ * phase" pointer. Matches this project's own rule elsewhere (risk score,
+ * compliance %, collector_versions): a device that gets re-scanned looks
+ * current again everywhere at once, with no explicit "reset" action needed.
+ */
+export function devicePipelineStatus(data: DevicePipelineData): PipelinePhaseStatus {
+  const fingerprintingTestIds = new Set(
+    data.scanTests.filter((t) => t.pipeline_phase === "fingerprinting").map((t) => t.test_id),
+  );
+  const hasFingerprintingEvidence = data.evidenceTestIds.some((id) => fingerprintingTestIds.has(id));
+
+  return {
+    devices: true,
+    fingerprinting: hasFingerprintingEvidence,
+    sa_iot_compliance: data.hasSaIotVerdict,
+    nca_compliance: data.nca !== null && data.nca.overall_status !== "not_tested",
+    vuln_intelligence: data.vuln !== null && data.vuln.has_data,
+    risk_assessment: data.risk !== null && data.risk.known,
+  };
+}
+
+/** The furthest phase (in pipeline order) this device has reached, for a
+ * single summary badge - null only if somehow not even "devices" is true
+ * (shouldn't happen for a registered device, since that phase is always true). */
+export function furthestReachedPhase(status: PipelinePhaseStatus): PipelinePhaseDef | null {
+  let furthest: PipelinePhaseDef | null = null;
+  for (const phase of PIPELINE_PHASES) {
+    if (status[phase.id]) furthest = phase;
+  }
+  return furthest;
+}

@@ -17,7 +17,10 @@ function control(id: string, testIds: string[]): ControlRecord {
 }
 
 function test(id: string): ScanTestSpec {
-  return { test_id: id, label: id, category: "network-and-protocol", applicable_service_types: [] };
+  return {
+    test_id: id, label: id, category: "network-and-protocol", applicable_service_types: [],
+    pipeline_phase: null,
+  };
 }
 
 const CATALOG = [test("TEST-NET-PORTSCAN"), test("TEST-AUTH-DEFAULT-CREDS")];

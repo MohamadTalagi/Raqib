@@ -106,24 +106,28 @@ const SCAN_TESTS: ScanTestSpec[] = [
     label: "Nmap service/port scan",
     category: "network-and-protocol",
     applicable_service_types: ["http", "https", "mqtt", "mqtts", "telnet", "ssh"],
+    pipeline_phase: "fingerprinting",
   },
   {
     test_id: "TEST-FW-VERSION",
     label: "Version file",
     category: "firmware",
     applicable_service_types: [],
+    pipeline_phase: "sa_iot_compliance",
   },
   {
     test_id: "TEST-FW-UPDATESCRIPT",
     label: "Update script",
     category: "firmware",
     applicable_service_types: [],
+    pipeline_phase: "sa_iot_compliance",
   },
   {
     test_id: "TEST-AUTH-DEFAULT-CREDS",
     label: "Default credentials",
     category: "web-and-auth",
     applicable_service_types: ["http", "https"],
+    pipeline_phase: "sa_iot_compliance",
   },
 ];
 
