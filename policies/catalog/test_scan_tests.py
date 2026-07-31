@@ -6,6 +6,7 @@ from policies.catalog.scan_tests import (
     is_applicable,
     is_firmware_test,
     is_network_discovery_test,
+    suggest_finding_and_confidence,
 )
 
 HTTP_TARGET = {
@@ -1005,3 +1006,122 @@ def test_parse_network_discovery_notes_explain_docker_environment_limitation():
     )
     obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
     assert any("mac" in note.lower() or "docker" in note.lower() for note in obs["notes"])
+
+
+# --- suggest_finding_and_confidence ---
+
+def test_suggested_finding_joins_the_notes():
+    finding, _ = suggest_finding_and_confidence(
+        "TEST-HTTP-HEADERS", {"notes": ["First sentence.", "Second sentence."]},
+    )
+    assert finding == "First sentence. Second sentence."
+
+
+def test_suggested_finding_falls_back_when_there_are_no_notes():
+    finding, _ = suggest_finding_and_confidence("TEST-HTTP-HEADERS", {"notes": []})
+    assert finding == "No automated notes were recorded for this test."
+
+
+def test_suggested_confidence_defaults_to_high_for_a_test_with_no_rule():
+    # TEST-HTTP-HEADERS never registers a suggest_confidence function -
+    # the safe default is "high", never a guessed-worse "medium"/"low".
+    _, confidence = suggest_finding_and_confidence("TEST-HTTP-HEADERS", {"notes": []})
+    assert confidence == "high"
+
+
+def test_suggested_confidence_default_creds_is_high_when_every_pair_was_tried():
+    obs = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["parse_observations"](
+        HTTP_TARGET, _chained_login_output(set()),
+    )
+    assert obs["chunks_received"] == 10
+    _, confidence = suggest_finding_and_confidence("TEST-AUTH-DEFAULT-CREDS", obs)
+    assert confidence == "high"
+
+
+def test_suggested_confidence_default_creds_is_medium_when_the_chain_was_cut_short():
+    obs = SCAN_CATALOG["TEST-AUTH-DEFAULT-CREDS"]["parse_observations"](
+        HTTP_TARGET, _chained_login_output(set(), total=6),
+    )
+    assert obs["chunks_received"] == 6
+    _, confidence = suggest_finding_and_confidence("TEST-AUTH-DEFAULT-CREDS", obs)
+    assert confidence == "medium"
+
+
+def test_suggested_confidence_session_is_high_with_both_responses():
+    output = (
+        "HTTP/1.1 200 OK\r\nSet-Cookie: session=abc123\r\n\r\n{}"
+        "HTTP/1.1 401 Unauthorized\r\n\r\n"
+    )
+    obs = SCAN_CATALOG["TEST-AUTH-SESSION"]["parse_observations"](HTTP_TARGET, output)
+    assert obs["chunks_received"] == 2
+    _, confidence = suggest_finding_and_confidence("TEST-AUTH-SESSION", obs)
+    assert confidence == "high"
+
+
+def test_suggested_confidence_session_is_medium_when_the_dashboard_response_never_came_back():
+    output = "HTTP/1.1 200 OK\r\nSet-Cookie: session=abc123\r\n\r\n{}"
+    obs = SCAN_CATALOG["TEST-AUTH-SESSION"]["parse_observations"](HTTP_TARGET, output)
+    assert obs["chunks_received"] == 1
+    _, confidence = suggest_finding_and_confidence("TEST-AUTH-SESSION", obs)
+    assert confidence == "medium"
+
+
+def test_suggested_confidence_http_inspect_is_medium_with_no_server_header():
+    obs = SCAN_CATALOG["TEST-NET-HTTP-INSPECT"]["parse_observations"](HTTP_TARGET, "HTTP/1.1 200 OK\r\n")
+    assert obs["server_banner"] is None
+    _, confidence = suggest_finding_and_confidence("TEST-NET-HTTP-INSPECT", obs)
+    assert confidence == "medium"
+
+
+def test_suggested_confidence_http_inspect_is_high_with_a_real_banner():
+    obs = SCAN_CATALOG["TEST-NET-HTTP-INSPECT"]["parse_observations"](
+        HTTP_TARGET, "HTTP/1.1 200 OK\r\nServer: nginx/1.18.0\r\nHTTP_VERSION:1.1\r\n",
+    )
+    assert obs["server_banner"] is not None
+    _, confidence = suggest_finding_and_confidence("TEST-NET-HTTP-INSPECT", obs)
+    assert confidence == "high"
+
+
+def test_suggested_confidence_tls_is_medium_when_a_protocol_version_is_untestable():
+    output = (
+        "CONNECTION ESTABLISHED\nProtocol version: TLSv1.3\nDONE\n"
+        "notAfter=Jul  8 00:00:00 2036 GMT\n"
+        "PROTOCOL_PROBE_START\nTLSv1=untestable\nTLSv1.1=untestable\n"
+        "TLSv1.2=accepted\nTLSv1.3=accepted\nPROTOCOL_PROBE_END\n"
+    )
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    _, confidence = suggest_finding_and_confidence("TEST-TLS-CONFIG", obs)
+    assert confidence == "medium"
+
+
+def test_suggested_confidence_tls_is_high_when_every_version_was_confirmed():
+    output = (
+        "CONNECTION ESTABLISHED\nProtocol version: TLSv1.3\nDONE\n"
+        "notAfter=Jul  8 00:00:00 2036 GMT\n"
+        "PROTOCOL_PROBE_START\nTLSv1=rejected\nTLSv1.1=rejected\n"
+        "TLSv1.2=accepted\nTLSv1.3=accepted\nPROTOCOL_PROBE_END\n"
+    )
+    obs = SCAN_CATALOG["TEST-TLS-CONFIG"]["parse_observations"](HTTPS_TARGET, output)
+    _, confidence = suggest_finding_and_confidence("TEST-TLS-CONFIG", obs)
+    assert confidence == "high"
+
+
+def test_suggested_confidence_fw_manifest_is_medium_when_grype_did_not_run():
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"](
+        {"device_id": "device-insecure"}, "manifest_present=True\npackages=openssl:1.0.1e\n",
+    )
+    assert "vuln_db_built_at" not in obs
+    _, confidence = suggest_finding_and_confidence("TEST-FW-MANIFEST", obs)
+    assert confidence == "medium"
+
+
+def test_suggested_confidence_fw_manifest_is_high_when_grype_ran():
+    output = (
+        "manifest_present=True\npackages=openssl:1.0.1e\n"
+        "grype_result=[]\n"
+        "grype_db_built_at=2026-07-01T00:00:00Z\ngrype_db_checksum=abc123\n"
+    )
+    obs = SCAN_CATALOG["TEST-FW-MANIFEST"]["parse_observations"]({"device_id": "device-insecure"}, output)
+    assert obs["vuln_db_built_at"] == "2026-07-01T00:00:00Z"
+    _, confidence = suggest_finding_and_confidence("TEST-FW-MANIFEST", obs)
+    assert confidence == "high"

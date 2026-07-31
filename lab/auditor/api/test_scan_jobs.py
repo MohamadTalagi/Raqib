@@ -246,6 +246,68 @@ def test_get_scan_job_by_id_404_when_missing(client):
     assert response.status_code == 404
 
 
+def test_get_scan_job_has_no_suggestion_while_still_pending(client):
+    _register_device(client, "device-insecure")
+    job = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"}).json()
+
+    fetched = client.get(f"/scan-jobs/{job['id']}").json()
+    assert fetched["status"] == "pending"
+    assert fetched["suggested_finding"] is None
+    assert fetched["suggested_confidence"] is None
+
+
+def test_get_scan_job_suggests_a_finding_and_confidence_once_awaiting_finding(client):
+    _register_device(client, "device-insecure")
+    job = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-HTTP-HEADERS"}).json()
+    client.patch(
+        f"/scan-jobs/{job['id']}",
+        json={
+            "status": "awaiting_finding", "tool": "curl", "tool_version": "8.5.0",
+            "command": "curl -I http://device-insecure/",
+            "observations": {
+                "missing_security_headers": ["X-Frame-Options"],
+                "notes": ["Missing X-Frame-Options - the page can be embedded in a hidden iframe."],
+            },
+        },
+    )
+
+    fetched = client.get(f"/scan-jobs/{job['id']}").json()
+    assert fetched["suggested_finding"] == "Missing X-Frame-Options - the page can be embedded in a hidden iframe."
+    assert fetched["suggested_confidence"] == "high"
+
+
+def test_get_scan_job_suggests_medium_confidence_for_an_uncertain_tls_result(client):
+    _register_device(client, "device-hardened", service_type="https", port=443)
+    job = client.post("/scan-jobs", json={"device_id": "device-hardened", "test_id": "TEST-TLS-CONFIG"}).json()
+    client.patch(
+        f"/scan-jobs/{job['id']}",
+        json={
+            "status": "awaiting_finding", "tool": "openssl", "tool_version": "3.5.6",
+            "command": "python3 tls_cert_check.py device-hardened 443",
+            "observations": {
+                "tls_version": "TLSv1.3", "weak_cipher": False, "cert_expired": False,
+                "protocol_probe": {"TLSv1": None, "TLSv1.1": None, "TLSv1.2": True, "TLSv1.3": True},
+                "supported_tls_versions": ["TLSv1.2", "TLSv1.3"],
+                "deprecated_tls_versions_supported": False,
+                "notes": ["Could not determine whether the server accepts TLSv1, TLSv1.1."],
+            },
+        },
+    )
+
+    fetched = client.get(f"/scan-jobs/{job['id']}").json()
+    assert fetched["suggested_confidence"] == "medium"
+
+
+def test_get_scan_job_has_no_suggestion_once_recorded(client):
+    job_id = _make_awaiting_finding_job(client)
+    client.post(f"/scan-jobs/{job_id}/record", json={"finding": "Only HTTP open", "confidence": "high"})
+
+    fetched = client.get(f"/scan-jobs/{job_id}").json()
+    assert fetched["status"] == "recorded"
+    assert fetched["suggested_finding"] is None
+    assert fetched["suggested_confidence"] is None
+
+
 def test_patch_scan_job_updates_fields(client):
     _register_device(client, "device-insecure")
     job = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"}).json()

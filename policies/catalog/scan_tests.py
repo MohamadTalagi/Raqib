@@ -368,8 +368,22 @@ def _parse_login_observations(target: dict, output: str) -> dict:
         "default_creds": default_creds,
         "credentials_tried": tried,
         "working_credentials": working,
+        # How many of the chained --next responses actually came back - a
+        # dropped connection mid-chain would silently truncate `chunks`
+        # below len(tried), under-reporting which pairs were even tried.
+        # credentials_tried is always the full static list regardless, so
+        # this is the only signal that lets suggest_confidence tell "we
+        # tried all 10" from "the chain got cut short" apart.
+        "chunks_received": len(chunks),
         "notes": notes,
     }
+
+
+def _suggest_confidence_default_creds(observations: dict) -> str:
+    tried = observations.get("credentials_tried") or []
+    if observations.get("chunks_received", len(tried)) < len(tried):
+        return "medium"
+    return "high"
 
 
 def _headers_command(target: dict) -> list[str]:
@@ -470,8 +484,19 @@ def _parse_session_observations(target: dict, output: str) -> dict:
     return {
         "session_cookie_issued": session_cookie_issued,
         "dashboard_accessible_without_session": dashboard_accessible_without_session,
+        # Same rationale as _parse_login_observations: a dropped connection
+        # mid-chain would leave chunks short of 2, silently defaulting
+        # dashboard_accessible_without_session to False rather than
+        # genuinely observing it - suggest_confidence needs to see this.
+        "chunks_received": len(chunks),
         "notes": notes,
     }
+
+
+def _suggest_confidence_session(observations: dict) -> str:
+    if observations.get("chunks_received", 2) < 2:
+        return "medium"
+    return "high"
 
 
 def _admin_unauth_command(target: dict) -> list[str]:
@@ -539,6 +564,15 @@ def _parse_http_inspect_observations(target: dict, output: str) -> dict:
         "component_advisory": component_advisory,
         "notes": notes,
     }
+
+
+def _suggest_confidence_http_inspect(observations: dict) -> str:
+    # A genuinely absent Server header and a request that failed to get any
+    # response back look identical here (both leave server_banner None) -
+    # can't tell "the header just isn't set" from "we didn't get anything".
+    if observations.get("server_banner") is None:
+        return "medium"
+    return "high"
 
 
 def _mqtt_command(target: dict) -> list[str]:
@@ -671,6 +705,14 @@ def _parse_tls_observations(target: dict, output: str) -> dict:
         "deprecated_tls_versions_supported": deprecated_accepted,
         "notes": notes,
     }
+
+
+def _suggest_confidence_tls(observations: dict) -> str:
+    if observations.get("cert_expired") is None or observations.get("tls_version") is None:
+        return "medium"
+    if any(accepted is None for accepted in (observations.get("protocol_probe") or {}).values()):
+        return "medium"
+    return "high"
 
 
 def _packet_capture_command(target: dict) -> list[str]:
@@ -900,6 +942,15 @@ def _parse_fw_manifest_observations(target: dict, output: str) -> dict:
     return result
 
 
+def _suggest_confidence_fw_manifest(observations: dict) -> str:
+    # Absence means Grype didn't run and the result fell back to this
+    # project's own small static reference table - the same "less complete"
+    # signal vuln_routes.py/the dashboard already treat as real, not new.
+    if "vuln_db_built_at" not in observations:
+        return "medium"
+    return "high"
+
+
 def _parse_fw_updatescript_observations(target: dict, output: str) -> dict:
     present = "update_script_present=True" in output
     first_line = re.search(r"^first_line=(.*)$", output, re.MULTILINE)
@@ -965,6 +1016,7 @@ SCAN_CATALOG = {
         "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _login_command,
         "parse_observations": _parse_login_observations,
+        "suggest_confidence": _suggest_confidence_default_creds,
     },
     "TEST-HTTP-HEADERS": {
         "label": "HTTP security headers",
@@ -992,6 +1044,7 @@ SCAN_CATALOG = {
         "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _session_command,
         "parse_observations": _parse_session_observations,
+        "suggest_confidence": _suggest_confidence_session,
     },
     "TEST-ADMIN-UNAUTH": {
         "label": "Unprotected administrative endpoint",
@@ -1010,6 +1063,7 @@ SCAN_CATALOG = {
         "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _http_inspect_command,
         "parse_observations": _parse_http_inspect_observations,
+        "suggest_confidence": _suggest_confidence_http_inspect,
     },
     "TEST-MQTT-OPEN": {
         "label": "MQTT anonymous access",
@@ -1028,6 +1082,7 @@ SCAN_CATALOG = {
         "applicable_service_types": TLS_SERVICE_TYPES,
         "build_command": _tls_command,
         "parse_observations": _parse_tls_observations,
+        "suggest_confidence": _suggest_confidence_tls,
         # tls_cert_check.py now makes 6 handshake attempts (the original 2 plus
         # 4 forced-protocol-version probes) instead of 2 - real headroom above
         # job_runner.py's 30s default, same precedent as TEST-NET-DISCOVERY.
@@ -1095,6 +1150,7 @@ SCAN_CATALOG = {
         "applicable_service_types": (),
         "build_command": _firmware_command("manifest"),
         "parse_observations": _parse_fw_manifest_observations,
+        "suggest_confidence": _suggest_confidence_fw_manifest,
     },
     "TEST-FW-UPDATESCRIPT": {
         "label": "Update script",
@@ -1106,6 +1162,35 @@ SCAN_CATALOG = {
         "parse_observations": _parse_fw_updatescript_observations,
     },
 }
+
+
+def _default_suggested_finding(observations: dict) -> str:
+    """Every parse_observations function above already builds a `notes`
+    array that, in the clean/default case, reads as a plain factual finding
+    sentence (e.g. "None of the 10 tried default credential pairs were
+    accepted.") - joining it is a good suggested finding for every test, no
+    per-test finding-text generator needed."""
+    notes = observations.get("notes") or []
+    return " ".join(notes) or "No automated notes were recorded for this test."
+
+
+def suggest_finding_and_confidence(test_id: str, observations: dict) -> tuple[str, str]:
+    """A suggestion only, computed fresh from already-parsed observations -
+    never persisted, never itself written into an evidence record (see
+    main.py's record_scan_job_evidence, which still only ever stores what
+    the auditor actually submitted). The auditor reviews/edits/confirms
+    before anything becomes permanent - this never decides a finding or
+    confidence on its own.
+
+    Confidence defaults to "high" for any test with no suggest_confidence
+    entry - the least presumptuous default is never guessing a *worse*
+    signal than what's actually known, only ever a more honest "medium"
+    when a specific field is known to be uncertain."""
+    finding = _default_suggested_finding(observations)
+    spec = SCAN_CATALOG.get(test_id) or {}
+    confidence_fn = spec.get("suggest_confidence")
+    confidence = confidence_fn(observations) if confidence_fn else "high"
+    return finding, confidence
 
 
 def is_applicable(target: dict, test_id: str) -> bool:

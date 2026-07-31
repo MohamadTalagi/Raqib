@@ -31,6 +31,7 @@ from policies.catalog.scan_tests import (
     is_applicable,
     is_firmware_test,
     is_network_discovery_test,
+    suggest_finding_and_confidence,
 )
 from policies.risk.risk_engine import CRITICALITY_LEVELS, EXPOSURE_LEVELS
 from report import build_report_model, render_report_html, render_report_pdf
@@ -552,7 +553,20 @@ def get_scan_job(job_id: int):
         conn.close()
     if row is None:
         raise HTTPException(status_code=404, detail="scan job not found")
-    return _row_to_scan_job(row)
+    job = _row_to_scan_job(row)
+    # Computed fresh at read time, never persisted - a suggestion only, so
+    # improving the rules in suggest_finding_and_confidence never needs a
+    # backfill. Only meaningful once a collector has actually produced
+    # observations for a human to review; record_scan_job_evidence still
+    # only ever stores what the auditor actually submits, never these.
+    if job["status"] == "awaiting_finding":
+        finding, confidence = suggest_finding_and_confidence(job["test_id"], job["observations"] or {})
+        job["suggested_finding"] = finding
+        job["suggested_confidence"] = confidence
+    else:
+        job["suggested_finding"] = None
+        job["suggested_confidence"] = None
+    return job
 
 
 SCAN_JOB_PATCHABLE_FIELDS = {
