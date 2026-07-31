@@ -53,6 +53,7 @@ export function DeviceAssessmentReportPage() {
   const nca = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
   const vulnSummary = useFetch(() => api.vulnIntelDevice(deviceId ?? ""), [deviceId]);
   const riskDetail = useFetch(() => api.riskDevice(deviceId ?? ""), [deviceId]);
+  const reportHistory = useFetch(() => api.reportHistory(deviceId ?? ""), [deviceId]);
 
   if (detail.error) {
     return (
@@ -117,6 +118,26 @@ export function DeviceAssessmentReportPage() {
         </div>
 
         <p className="text-xs text-[var(--color-text-muted)]">Generated {generatedAt}</p>
+
+        {/* Report history - an append-only log of past exports, not a cache
+            of what any of them said (report content is always assembled
+            fresh; see report_records in init.sql). */}
+        {reportHistory.data && reportHistory.data.length > 0 && (
+          <Card className="print:hidden">
+            <CardHeader>
+              <CardTitle>Report history</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-text-muted)]">
+                {reportHistory.data.slice(0, 8).map((r) => (
+                  <li key={r.id} className="font-mono">
+                    {r.format.toUpperCase()} · {r.generated_at}
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Device profile + inventory */}
         <Card>

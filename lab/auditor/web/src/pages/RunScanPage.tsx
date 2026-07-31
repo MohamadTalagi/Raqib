@@ -73,6 +73,7 @@ function ScanJobCard({ jobId, testLabel, onStatusChange }: ScanJobCardProps) {
   const [job, setJob] = useScanJob(jobId);
   const [finding, setFinding] = useState("");
   const [confidence, setConfidence] = useState<"high" | "medium" | "low">("high");
+  const [confidenceReason, setConfidenceReason] = useState("");
   const [recordError, setRecordError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -83,7 +84,7 @@ function ScanJobCard({ jobId, testLabel, onStatusChange }: ScanJobCardProps) {
     if (job === null) return;
     setRecordError(null);
     try {
-      await api.recordScanJob(job.id, finding, confidence);
+      await api.recordScanJob(job.id, finding, confidence, confidenceReason.trim() || undefined);
       const latest = await api.getScanJob(job.id);
       setJob(latest);
       showToast(`Evidence recorded for ${testLabel}.`, "success");
@@ -192,6 +193,22 @@ function ScanJobCard({ jobId, testLabel, onStatusChange }: ScanJobCardProps) {
               >
                 Record evidence
               </button>
+            </div>
+            <div>
+              <label
+                htmlFor={`confidence-reason-input-${job.id}`}
+                className="mb-1 block text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase"
+              >
+                Why this confidence level? (optional)
+              </label>
+              <input
+                id={`confidence-reason-input-${job.id}`}
+                type="text"
+                value={confidenceReason}
+                onChange={(e) => setConfidenceReason(e.target.value)}
+                placeholder="Left blank, a default reason is recorded automatically"
+                className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+              />
             </div>
             {recordError && <p className="text-sm text-[var(--color-critical)]">{recordError}</p>}
           </div>

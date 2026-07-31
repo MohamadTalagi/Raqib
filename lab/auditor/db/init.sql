@@ -278,3 +278,15 @@ CREATE TABLE compliance_audit_events (
 );
 
 CREATE INDEX idx_compliance_audit_events_entity ON compliance_audit_events(entity_type, entity_id);
+
+-- Append-only audit trail of report generation events (Week 1 gap-closure:
+-- "Report records" in the storage list) - never a snapshot of report
+-- content, which report.py always assembles fresh from live data instead.
+CREATE TABLE report_records (
+    id           TEXT PRIMARY KEY,
+    device_id    TEXT NOT NULL,
+    format       TEXT NOT NULL CHECK (format IN ('pdf', 'html', 'json')),
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_report_records_device_id ON report_records(device_id);

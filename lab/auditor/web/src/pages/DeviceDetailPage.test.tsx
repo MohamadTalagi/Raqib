@@ -128,6 +128,7 @@ const DETAIL: DeviceDetail = {
       finding: "Telnet exposed",
       confidence: "high",
       timestamp: "2026-07-08T10:00:00+00:00",
+      confidence_reason: null,
     },
   ],
   verdicts: [

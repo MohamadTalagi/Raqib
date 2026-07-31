@@ -152,3 +152,34 @@ def test_json_report_includes_methodology_and_disclaimer(client, postgres_url):
     assert "deterministic rule evaluator" in body["methodology"]
     assert "not an official certification" in body["disclaimer"]
     assert isinstance(body["controls_not_assessed"], list)
+
+
+def test_generating_a_report_records_it_in_report_history(client, postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register(conn)
+    finally:
+        conn.close()
+
+    assert client.get("/devices/route-cam/report.json").status_code == 200
+    assert client.get("/devices/route-cam/report.html").status_code == 200
+
+    history = client.get("/devices/route-cam/report-history").json()
+    assert [entry["format"] for entry in history] == ["html", "json"]  # newest first
+    assert all(entry["id"].startswith("RPT-") for entry in history)
+    assert all(entry["generated_at"] for entry in history)
+
+
+def test_a_404_report_request_is_not_recorded_in_report_history(client):
+    assert client.get("/devices/no-such-device/report.json").status_code == 404
+    assert client.get("/devices/no-such-device/report-history").json() == []
+
+
+def test_report_history_is_empty_for_a_device_that_was_never_exported(client, postgres_url):
+    conn = psycopg.connect(postgres_url)
+    try:
+        _register(conn)
+    finally:
+        conn.close()
+
+    assert client.get("/devices/route-cam/report-history").json() == []

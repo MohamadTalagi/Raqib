@@ -49,7 +49,7 @@ def clean_tables(postgres_url):
     conn = psycopg.connect(postgres_url)
     conn.execute(
         "TRUNCATE evidence, verdicts, scan_jobs, assessments, device_services, devices, "
-        "network_scans, "
+        "network_scans, report_records, "
         "compliance_audit_events, compliance_exceptions, compliance_evidence, "
         "compliance_assessments, compliance_finding_mappings, compliance_controls "
         "RESTART IDENTITY CASCADE"

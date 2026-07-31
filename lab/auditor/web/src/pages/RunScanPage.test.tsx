@@ -345,6 +345,90 @@ describe("RunScanPage", () => {
     expect(await screen.findByText(/1 new verdict generated/i)).toBeInTheDocument();
   });
 
+  it("passes an explicit confidence reason through to recordScanJob when the auditor fills it in", async () => {
+    const jobState = makeJob({
+      id: 2, test_id: "TEST-NET-PORTSCAN", status: "awaiting_finding",
+      tool: "nmap", tool_version: "7.95", command: "nmap -sV -p- device-insecure",
+      raw_output: "80/tcp open http\n", observations: { open_ports: [80] },
+    });
+    vi.spyOn(api, "createAssessment").mockImplementation(async () => makeAssessmentResult([jobState]));
+    vi.spyOn(api, "getScanJob").mockImplementation(async () => jobState);
+    const recordSpy = vi.spyOn(api, "recordScanJob").mockResolvedValue({
+      evidence_id: "EV-1", device_id: "device-insecure", test_id: "TEST-NET-PORTSCAN",
+      tool: "nmap", tool_version: "7.95", command: "nmap -sV -p- device-insecure",
+      timestamp: "2026-07-31T00:00:00Z", finding: "Only HTTP open",
+      observations: {}, raw_output_path: "x", confidence: "high", sha256: "a".repeat(64),
+      assessment_id: null, source_type: "automated", confidence_reason: "manual", error_state: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+    await user.click(await screen.findByRole("checkbox", { name: "Nmap service/port scan" }));
+    await user.click(screen.getByRole("button", { name: /run selected \(1\)/i }));
+
+    await screen.findByText(/Awaiting your finding/i);
+    await user.type(screen.getByLabelText(/your finding/i), "Only HTTP open");
+    await user.type(
+      screen.getByLabelText(/why this confidence level/i),
+      "Cross-checked against a second scan",
+    );
+    await user.click(screen.getByRole("button", { name: /record evidence/i }));
+
+    await waitFor(() =>
+      expect(recordSpy).toHaveBeenCalledWith(
+        jobState.id, "Only HTTP open", "high", "Cross-checked against a second scan",
+      ),
+    );
+  });
+
+  it("omits the confidence reason from recordScanJob when left blank", async () => {
+    const jobState = makeJob({
+      id: 3, test_id: "TEST-NET-PORTSCAN", status: "awaiting_finding",
+      tool: "nmap", tool_version: "7.95", command: "nmap -sV -p- device-insecure",
+      raw_output: "80/tcp open http\n", observations: { open_ports: [80] },
+    });
+    vi.spyOn(api, "createAssessment").mockImplementation(async () => makeAssessmentResult([jobState]));
+    vi.spyOn(api, "getScanJob").mockImplementation(async () => jobState);
+    const recordSpy = vi.spyOn(api, "recordScanJob").mockResolvedValue({
+      evidence_id: "EV-1", device_id: "device-insecure", test_id: "TEST-NET-PORTSCAN",
+      tool: "nmap", tool_version: "7.95", command: "nmap -sV -p- device-insecure",
+      timestamp: "2026-07-31T00:00:00Z", finding: "Only HTTP open",
+      observations: {}, raw_output_path: "x", confidence: "high", sha256: "a".repeat(64),
+      assessment_id: null, source_type: "automated", confidence_reason: null, error_state: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+    await user.click(await screen.findByRole("checkbox", { name: "Nmap service/port scan" }));
+    await user.click(screen.getByRole("button", { name: /run selected \(1\)/i }));
+
+    await screen.findByText(/Awaiting your finding/i);
+    await user.type(screen.getByLabelText(/your finding/i), "Only HTTP open");
+    await user.click(screen.getByRole("button", { name: /record evidence/i }));
+
+    await waitFor(() =>
+      expect(recordSpy).toHaveBeenCalledWith(jobState.id, "Only HTTP open", "high", undefined),
+    );
+  });
+
   it("disables Run selected while the launched scan is still pending/running, re-enabling once it finishes", async () => {
     let jobState = makeJob({ id: 9, test_id: "TEST-NET-PORTSCAN", status: "pending" });
     vi.spyOn(api, "createAssessment").mockImplementation(async () => makeAssessmentResult([jobState]));

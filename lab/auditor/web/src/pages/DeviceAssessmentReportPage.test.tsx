@@ -42,7 +42,7 @@ const DETAIL: DeviceDetail = {
   },
   services: [{ id: 1, service_type: "http", port: 80, published_port: 8081, enabled: true }],
   evidence: [
-    { evidence_id: "EV-1", test_id: "TEST-AUTH-DEFAULT-CREDS", tool: "curl", finding: "Default creds accepted", confidence: "high", timestamp: "2026-07-08T00:00:00Z" },
+    { evidence_id: "EV-1", test_id: "TEST-AUTH-DEFAULT-CREDS", tool: "curl", finding: "Default creds accepted", confidence: "high", timestamp: "2026-07-08T00:00:00Z", confidence_reason: null },
   ],
   verdicts: [
     { verdict_id: "VD-1", control_id: "SA-IOT-002", status: "FAIL", severity: "critical", reason: "default_creds true", timestamp: "2026-07-08T00:00:00Z" },
@@ -90,6 +90,25 @@ describe("DeviceAssessmentReportPage", () => {
     vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(NO_VULN_DATA);
     vi.spyOn(api, "vulnIntelStatus").mockResolvedValue(vulnIntelStatusFixture);
     vi.spyOn(api, "riskDevice").mockResolvedValue({ device_id: "device-insecure", known: false });
+    vi.spyOn(api, "reportHistory").mockResolvedValue([]);
+  });
+
+  it("shows a report history list once reports have been generated", async () => {
+    vi.spyOn(api, "reportHistory").mockResolvedValue([
+      { id: "RPT-2026-07-31-0002", format: "html", generated_at: "2026-07-31T14:32:00+00:00" },
+      { id: "RPT-2026-07-31-0001", format: "pdf", generated_at: "2026-07-31T10:00:00+00:00" },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("Report history")).toBeInTheDocument();
+    expect(screen.getByText(/HTML · 2026-07-31T14:32:00\+00:00/)).toBeInTheDocument();
+    expect(screen.getByText(/PDF · 2026-07-31T10:00:00\+00:00/)).toBeInTheDocument();
+  });
+
+  it("shows no report history section when nothing has been exported yet", async () => {
+    renderPage();
+    await screen.findByText("Device profile");
+    expect(screen.queryByText("Report history")).not.toBeInTheDocument();
   });
 
   it("consolidates profile, firmware, verdicts, evidence, and NCA readiness", async () => {

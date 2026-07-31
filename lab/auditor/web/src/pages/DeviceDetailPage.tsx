@@ -511,7 +511,15 @@ export function DeviceDetailPage() {
                             </span>
                             <span className="truncate text-[var(--color-text)]">{e.finding}</span>
                             {isConfidence(e.confidence) ? (
-                              <ConfidenceLabel confidence={e.confidence} />
+                              e.confidence_reason ? (
+                                <Tooltip content={e.confidence_reason}>
+                                  <span tabIndex={0}>
+                                    <ConfidenceLabel confidence={e.confidence} />
+                                  </span>
+                                </Tooltip>
+                              ) : (
+                                <ConfidenceLabel confidence={e.confidence} />
+                              )
                             ) : (
                               <span className="font-mono text-xs text-[var(--color-text-muted)]">{e.confidence}</span>
                             )}

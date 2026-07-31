@@ -322,6 +322,42 @@ def test_record_scan_job_requires_finding_and_confidence(client):
     assert response.status_code == 422
 
 
+def test_record_scan_job_auto_fills_a_confidence_reason_when_none_is_given(client):
+    job_id = _make_awaiting_finding_job(client)
+    evidence = client.post(
+        f"/scan-jobs/{job_id}/record",
+        json={"finding": "Only HTTP open, no unnecessary Telnet", "confidence": "high"},
+    ).json()
+    assert evidence["confidence_reason"] is not None
+    assert "High confidence" in evidence["confidence_reason"]
+    assert "TEST-NET-PORTSCAN" in evidence["confidence_reason"]
+    assert "nmap" in evidence["confidence_reason"]
+
+
+def test_record_scan_job_keeps_an_explicit_confidence_reason_from_the_auditor(client):
+    job_id = _make_awaiting_finding_job(client)
+    evidence = client.post(
+        f"/scan-jobs/{job_id}/record",
+        json={
+            "finding": "Only HTTP open, no unnecessary Telnet", "confidence": "high",
+            "confidence_reason": "Cross-checked against a manual nmap run from a second host.",
+        },
+    ).json()
+    assert evidence["confidence_reason"] == "Cross-checked against a manual nmap run from a second host."
+
+
+def test_record_scan_job_failure_always_carries_a_confidence_reason(client):
+    _register_device(client, "device-insecure")
+    job = client.post(
+        "/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"},
+    ).json()
+    evidence = client.post(
+        f"/scan-jobs/{job['id']}/record-failure", json={"error_detail": "connection timed out"},
+    ).json()
+    assert evidence["confidence"] == "low"
+    assert evidence["confidence_reason"] == "Automated collector execution failed; confidence fixed at low."
+
+
 def test_record_scan_job_rejects_wrong_status(client):
     _register_device(client, "device-insecure")
     job = client.post("/scan-jobs", json={"device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"}).json()

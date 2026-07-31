@@ -759,6 +759,17 @@ def record_scan_job_evidence(job_id: int, payload: dict):
         evidence_id = _next_evidence_id(conn, now)
         raw_output_path, sha256 = _write_raw_output(evidence_id, job["raw_output"])
 
+        # confidence_reason is optional from the auditor (mirrors POST
+        # /evidence's own confidence_reason handling) - when they don't give
+        # one, fall back to a fixed, deterministic template referencing only
+        # stored facts (never model-generated, matching this project's "AI-
+        # assisted, not AI-decided" rule) so the field is never silently null
+        # on the automated recording path.
+        confidence_reason = payload.get("confidence_reason") or (
+            f"{confidence.capitalize()} confidence set by the recording auditor for "
+            f"{job['test_id']} output from {job['tool'] or 'the collector'}."
+        )
+
         evidence = {
             "evidence_id": evidence_id,
             "device_id": job["device_id"],
@@ -771,6 +782,7 @@ def record_scan_job_evidence(job_id: int, payload: dict):
             "observations": job["observations"] or {},
             "raw_output_path": raw_output_path,
             "confidence": confidence,
+            "confidence_reason": confidence_reason,
             "sha256": sha256,
             "assessment_id": job["assessment_id"],
             "source_type": "automated",
@@ -827,6 +839,7 @@ def record_scan_job_failure(job_id: int, payload: dict):
             "observations": {"collector_error": True, "error_detail": error_detail},
             "raw_output_path": raw_output_path,
             "confidence": "low",
+            "confidence_reason": "Automated collector execution failed; confidence fixed at low.",
             "sha256": sha256,
             "assessment_id": job["assessment_id"],
             "source_type": "automated",
@@ -1487,6 +1500,45 @@ def _device_row(conn, device_id: str) -> dict | None:
     return device
 
 
+def _next_report_id(conn, now: datetime) -> str:
+    date_str = now.strftime("%Y-%m-%d")
+    prefix = f"RPT-{date_str}-"
+    existing = conn.execute(
+        "SELECT id FROM report_records WHERE id LIKE %s", (f"{prefix}%",)
+    ).fetchall()
+    return f"{prefix}{len(existing) + 1:04d}"
+
+
+def _record_report_generated(conn, device_id: str, fmt: str) -> None:
+    """An append-only log of *that* a report was generated, not a snapshot
+    of what it said - see init.sql's report_records comment. Only ever
+    called once a device is confirmed to exist (model is not None), and
+    only from these 3 GET handlers - all 3 report URLs are plain <a href>
+    links in the dashboard, confirmed by grep, never fetched from JS, so
+    this only logs a real human export/view, not page-load noise."""
+    now = datetime.now(timezone.utc)
+    report_id = _next_report_id(conn, now)
+    conn.execute(
+        "INSERT INTO report_records (id, device_id, format, generated_at) VALUES (%s, %s, %s, %s)",
+        (report_id, device_id, fmt, now),
+    )
+
+
+@app.get("/devices/{device_id}/report-history")
+def get_device_report_history(device_id: str):
+    validate_device_id(device_id)
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, format, generated_at FROM report_records "
+            "WHERE device_id = %s ORDER BY generated_at DESC",
+            (device_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [{"id": r[0], "format": r[1], "generated_at": r[2].isoformat()} for r in rows]
+
+
 @app.get("/devices/{device_id}/report.pdf")
 def get_device_report(device_id: str):
     # validate_device_id raises ValidationError, which the global handler turns
@@ -1498,6 +1550,9 @@ def get_device_report(device_id: str):
     conn = get_connection()
     try:
         model = build_report_model(conn, device_id)
+        if model is not None:
+            _record_report_generated(conn, device_id, "pdf")
+            conn.commit()
     finally:
         conn.close()
 
@@ -1519,6 +1574,9 @@ def get_device_report_html(device_id: str):
     conn = get_connection()
     try:
         model = build_report_model(conn, device_id)
+        if model is not None:
+            _record_report_generated(conn, device_id, "html")
+            conn.commit()
     finally:
         conn.close()
     if model is None:
@@ -1532,6 +1590,9 @@ def get_device_report_json(device_id: str):
     conn = get_connection()
     try:
         model = build_report_model(conn, device_id)
+        if model is not None:
+            _record_report_generated(conn, device_id, "json")
+            conn.commit()
     finally:
         conn.close()
     if model is None:
@@ -1550,7 +1611,7 @@ def get_device_detail(device_id: str) -> dict:
 
         evidence = conn.execute(
             """
-            SELECT evidence_id, test_id, tool, finding, confidence, timestamp
+            SELECT evidence_id, test_id, tool, finding, confidence, timestamp, confidence_reason
             FROM evidence WHERE device_id = %s ORDER BY timestamp DESC
             """,
             (device_id,),
@@ -1580,6 +1641,7 @@ def get_device_detail(device_id: str) -> dict:
             {
                 "evidence_id": r[0], "test_id": r[1], "tool": r[2],
                 "finding": r[3], "confidence": r[4], "timestamp": r[5].isoformat(),
+                "confidence_reason": r[6],
             }
             for r in evidence
         ],

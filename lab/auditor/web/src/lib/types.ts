@@ -190,6 +190,14 @@ export interface Assessment {
   collector_versions?: { tool: string; tool_version: string }[];
 }
 
+export type ReportFormat = "pdf" | "html" | "json";
+
+export interface ReportRecord {
+  id: string;
+  format: ReportFormat;
+  generated_at: string;
+}
+
 export interface CreateAssessmentResult extends Assessment {
   jobs: ScanJob[];
   errors: Record<string, string>;
@@ -276,6 +284,7 @@ export interface DeviceDetail {
     finding: string;
     confidence: string;
     timestamp: string;
+    confidence_reason: string | null;
   }>;
   verdicts: Array<{
     verdict_id: string;

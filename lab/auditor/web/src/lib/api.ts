@@ -23,6 +23,7 @@ import type {
   NCAStatus,
   NCASummary,
   RecomputeVerdictsResult,
+  ReportRecord,
   ScanJob,
   ScanTestSpec,
   Severity,
@@ -180,8 +181,17 @@ export const api = {
   createScanJob: (device_id: string, test_id: string): Promise<ScanJob> =>
     postJson<ScanJob>("/scan-jobs", { device_id, test_id }),
   getScanJob: (id: number): Promise<ScanJob> => getJson<ScanJob>(`/scan-jobs/${id}`),
-  recordScanJob: (id: number, finding: string, confidence: string): Promise<EvidenceRecord> =>
-    postJson<EvidenceRecord>(`/scan-jobs/${id}/record`, { finding, confidence }),
+  recordScanJob: (
+    id: number,
+    finding: string,
+    confidence: string,
+    confidenceReason?: string,
+  ): Promise<EvidenceRecord> =>
+    postJson<EvidenceRecord>(`/scan-jobs/${id}/record`, {
+      finding,
+      confidence,
+      ...(confidenceReason ? { confidence_reason: confidenceReason } : {}),
+    }),
   recomputeVerdicts: (): Promise<RecomputeVerdictsResult> =>
     postJson<RecomputeVerdictsResult>("/verdicts/recompute", {}),
 
@@ -238,6 +248,8 @@ export const api = {
     `${API_BASE_URL}/devices/${encodeURIComponent(deviceId)}/report.html`,
   deviceReportJsonUrl: (deviceId: string): string =>
     `${API_BASE_URL}/devices/${encodeURIComponent(deviceId)}/report.json`,
+  reportHistory: (deviceId: string): Promise<ReportRecord[]> =>
+    getJson<ReportRecord[]>(`/devices/${encodeURIComponent(deviceId)}/report-history`),
 
   // Points directly at document-store's raw output file, served statically
   // by auditor-api - lets the UI's "view raw artefact" link open the exact
