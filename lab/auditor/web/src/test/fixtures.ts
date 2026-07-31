@@ -3,8 +3,10 @@ import type {
   Device,
   DeviceRiskDetail,
   EvidenceRecord,
+  NCADeviceComplianceRow,
   RiskDevicesResponse,
   RiskFleetSummary,
+  ScanTestSpec,
   Summary,
   VerdictRecord,
   VulnDeviceSummary,
@@ -283,6 +285,44 @@ export const riskFleetSummaryFixture: RiskFleetSummary = {
   by_category: { low: 1, medium: 0, high: 0, critical: 1 },
 };
 
+export const scanTestsFixture: ScanTestSpec[] = [
+  {
+    test_id: "TEST-NET-PORTSCAN",
+    label: "Port scan",
+    category: "network-and-protocol",
+    pipeline_phase: "fingerprinting",
+    applicable_service_types: ["http", "https", "mqtt", "mqtts"],
+  },
+  {
+    test_id: "TEST-AUTH-DEFAULT-CREDS",
+    label: "Default credentials",
+    category: "web-and-auth",
+    pipeline_phase: "sa_iot_compliance",
+    applicable_service_types: ["http", "https"],
+  },
+  {
+    test_id: "TEST-FW-MANIFEST",
+    label: "Firmware manifest",
+    category: "firmware",
+    pipeline_phase: "vuln_intelligence",
+    applicable_service_types: [],
+  },
+];
+
+export const ncaDevicesFixture: NCADeviceComplianceRow[] = [
+  {
+    device_id: "device-insecure",
+    display_name: "Smart Camera — Insecure",
+    tier: "insecure",
+    vendor: "KAUST Labs",
+    model: "SC-1000",
+    overall_status: "fail",
+    score: 0,
+    domain_summary: {},
+    readiness_classification: "failed",
+  },
+];
+
 export function mockFetchImplementation(path: string): Promise<Response> {
   const routes: Record<string, unknown> = {
     "/summary": summaryFixture,
@@ -290,6 +330,8 @@ export function mockFetchImplementation(path: string): Promise<Response> {
     "/evidence": evidenceFixture,
     "/verdicts": verdictsFixture,
     "/controls": controlsFixture,
+    "/scan-tests": scanTestsFixture,
+    "/nca/devices": ncaDevicesFixture,
     "/vuln-intel/status": vulnIntelStatusFixture,
     "/vuln-intel/fleet-summary": vulnFleetSummaryFixture,
     "/vuln-intel/devices/device-insecure": vulnDeviceSummaryFixture,
