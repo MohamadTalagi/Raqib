@@ -5,7 +5,6 @@ import {
   HardDrive,
   FileSearch,
   Gavel,
-  PlayCircle,
   Terminal,
   SquareTerminal,
   ShieldCheck,
@@ -14,6 +13,11 @@ import {
   Building2,
   Network,
   Flame,
+  Radar,
+  Fingerprint,
+  BadgeCheck,
+  Bug,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,33 +26,51 @@ interface NavGroup {
   items: Array<{ to: string; label: string; icon: typeof LayoutGrid; end: boolean }>;
 }
 
+// Order matches lib/pipeline.ts's PIPELINE_PHASES exactly for the "Pipeline"
+// group - the sidebar literally reads top to bottom as the guided flow
+// (Devices -> Fingerprinting -> SA-IOT Compliance -> NCA Compliance ->
+// Vulnerability Intelligence -> Risk Assessment -> Remediation). Discovery
+// sits above Devices since it's the pre-registration, fleet-wide activity
+// that feeds into Devices, but has no per-device pipeline status of its own.
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Monitoring",
+    label: "Home",
+    items: [{ to: "/", label: "Overview", icon: LayoutGrid, end: true }],
+  },
+  {
+    label: "Pipeline",
     items: [
-      { to: "/", label: "Overview", icon: LayoutGrid, end: true },
+      { to: "/discovery", label: "Discovery", icon: Radar, end: false },
       { to: "/devices", label: "Devices", icon: HardDrive, end: false },
-      { to: "/network-map", label: "Network Map", icon: Network, end: false },
+      { to: "/fingerprinting", label: "Fingerprinting", icon: Fingerprint, end: false },
+      { to: "/sa-iot-compliance", label: "SA-IOT Compliance", icon: BadgeCheck, end: false },
+      { to: "/nca-compliance", label: "NCA Compliance", icon: ClipboardCheck, end: true },
+      { to: "/vulnerability-intelligence", label: "Vulnerability Intelligence", icon: Bug, end: false },
+      { to: "/risk", label: "Risk Assessment", icon: Flame, end: false },
+      { to: "/remediation", label: "Remediation", icon: Wrench, end: false },
+    ],
+  },
+  {
+    label: "Records",
+    items: [
       { to: "/evidence", label: "Evidence", icon: FileSearch, end: false },
       { to: "/verdicts", label: "Verdicts", icon: Gavel, end: false },
       { to: "/controls", label: "Controls", icon: ShieldCheck, end: false },
+      { to: "/nca-compliance/controls", label: "NCA Controls", icon: ListChecks, end: false },
+      { to: "/network-map", label: "Network Map", icon: Network, end: false },
     ],
   },
   {
-    label: "Assessment",
+    label: "Organization-wide",
     items: [
-      { to: "/run-scan", label: "Run Scan", icon: PlayCircle, end: false },
-      { to: "/risk", label: "Risk Assessment", icon: Flame, end: false },
+      { to: "/nca-compliance/organization", label: "Organizational Compliance", icon: Building2, end: true },
+    ],
+  },
+  {
+    label: "Advanced Tools",
+    items: [
       { to: "/scan-console", label: "Scan Console", icon: SquareTerminal, end: false },
       { to: "/console", label: "Device Console", icon: Terminal, end: false },
-    ],
-  },
-  {
-    label: "Compliance",
-    items: [
-      { to: "/nca-compliance", label: "NCA Compliance", icon: ClipboardCheck, end: true },
-      { to: "/nca-compliance/controls", label: "NCA Controls", icon: ListChecks, end: false },
-      { to: "/nca-compliance/organization", label: "Organizational Compliance", icon: Building2, end: true },
     ],
   },
 ];
