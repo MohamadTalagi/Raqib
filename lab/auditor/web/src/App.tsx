@@ -3,6 +3,7 @@ import { OverviewPage } from "@/pages/OverviewPage";
 import { DiscoveryPage } from "@/pages/DiscoveryPage";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { FingerprintingPage } from "@/pages/FingerprintingPage";
+import { SAIOTCompliancePage } from "@/pages/SAIOTCompliancePage";
 import { NetworkMapPage } from "@/pages/NetworkMapPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { DeviceAssessmentReportPage } from "@/pages/DeviceAssessmentReportPage";
@@ -37,16 +38,7 @@ export default function App() {
             <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
             <Route path="/devices/:deviceId/assessment" element={<DeviceAssessmentReportPage />} />
             <Route path="/fingerprinting" element={<FingerprintingPage />} />
-            <Route
-              path="/sa-iot-compliance"
-              element={
-                <ComingSoonPage
-                  title="SA-IOT Compliance"
-                  phaseLabel="Pipeline"
-                  description="The 5-control pilot assessment, run against the selected devices - lands here in a later phase. Use Verdicts/Controls in the meantime."
-                />
-              }
-            />
+            <Route path="/sa-iot-compliance" element={<SAIOTCompliancePage />} />
             <Route path="/nca-compliance" element={<NCACompliancePage />} />
             <Route path="/nca-compliance/devices/:deviceId" element={<DeviceAssessmentPage />} />
             <Route
