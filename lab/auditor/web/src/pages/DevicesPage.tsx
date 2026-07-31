@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, X, CheckCircle2, CircleDashed, ArrowUpRight, HardDrive, RadioTower } from "lucide-react";
+import { Plus, X, CheckCircle2, CircleDashed, ArrowUpRight, HardDrive } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { RegisterDeviceForm } from "@/components/devices/RegisterDeviceForm";
-import { NetworkDiscoveryPanel, type DeviceRegistrationPrefill } from "@/components/devices/NetworkDiscoveryPanel";
+import type { DeviceRegistrationPrefill } from "@/components/devices/NetworkDiscoveryPanel";
 import { serviceIcon } from "@/lib/serviceIcons";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
@@ -105,7 +105,6 @@ export function DevicesPage() {
   const devices = useFetch(api.devices, [refreshKey]);
   const verdicts = useFetch(api.verdicts, []);
   const [showForm, setShowForm] = useState(false);
-  const [showDiscovery, setShowDiscovery] = useState(false);
   const [prefill, setPrefill] = useState<DeviceRegistrationPrefill | null>(null);
 
   const loading = devices.loading || verdicts.loading;
@@ -113,17 +112,6 @@ export function DevicesPage() {
 
   function openForm(deviceId?: string) {
     setPrefill(deviceId ? { device_id: deviceId, display_name: "", host: "", services: [] } : null);
-    setShowForm(true);
-  }
-
-  // Deliberately does NOT hide the discovery panel: its scan results live in
-  // its own local state, so closing it here would force a full rescan just
-  // to register a second discovered host. Keeping both open lets the user
-  // register every host they care about from one completed scan, and each
-  // one flips from "Register" to "Already registered" inline as soon as
-  // handleRegistered() below refreshes the device list - no rescan needed.
-  function openFormWithPrefill(fromHost: DeviceRegistrationPrefill) {
-    setPrefill(fromHost);
     setShowForm(true);
   }
 
@@ -139,15 +127,13 @@ export function DevicesPage() {
 
   return (
     <Shell title="Devices" subtitle="Simulated IoT device profiles in the lab">
-      <div className="mb-4 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={() => setShowDiscovery((v) => !v)}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)]"
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <Link
+          to="/discovery"
+          className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-brand)] hover:underline"
         >
-          {showDiscovery ? <X className="h-4 w-4" /> : <RadioTower className="h-4 w-4" />}
-          {showDiscovery ? "Hide discovery" : "Discover devices"}
-        </button>
+          Looking for devices to register? Try Discovery →
+        </Link>
         <button
           type="button"
           onClick={() => (showForm ? closeForm() : openForm())}
@@ -157,10 +143,6 @@ export function DevicesPage() {
           {showForm ? "Cancel" : "Register device"}
         </button>
       </div>
-
-      {showDiscovery && (
-        <NetworkDiscoveryPanel devices={devices.data ?? []} onRegisterHost={openFormWithPrefill} />
-      )}
 
       {showForm && (
         <Card className="mb-6">

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { OverviewPage } from "@/pages/OverviewPage";
+import { DiscoveryPage } from "@/pages/DiscoveryPage";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { NetworkMapPage } from "@/pages/NetworkMapPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
@@ -30,16 +31,7 @@ export default function App() {
             <Route path="/" element={<OverviewPage />} />
 
             {/* Pipeline, in order - see lib/pipeline.ts's PIPELINE_PHASES */}
-            <Route
-              path="/discovery"
-              element={
-                <ComingSoonPage
-                  title="Discovery"
-                  phaseLabel="Pipeline"
-                  description="Sweep the network for candidate devices - lands here in a later phase of the dashboard reorder. Use Devices in the meantime."
-                />
-              }
-            />
+            <Route path="/discovery" element={<DiscoveryPage />} />
             <Route path="/devices" element={<DevicesPage />} />
             <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
             <Route path="/devices/:deviceId/assessment" element={<DeviceAssessmentReportPage />} />

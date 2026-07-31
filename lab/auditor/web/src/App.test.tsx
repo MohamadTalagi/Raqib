@@ -40,7 +40,6 @@ describe("App", () => {
 
   it("shows a not-built-yet placeholder for each new pipeline page not yet implemented", async () => {
     for (const [path, title] of [
-      ["/discovery", "Discovery"],
       ["/fingerprinting", "Fingerprinting"],
       ["/sa-iot-compliance", "SA-IOT Compliance"],
       ["/vulnerability-intelligence", "Vulnerability Intelligence"],

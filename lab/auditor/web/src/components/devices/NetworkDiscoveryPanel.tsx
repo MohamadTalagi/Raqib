@@ -130,19 +130,25 @@ function useNetworkScan(scanId: number | null): [NetworkScan | null, (scan: Netw
 interface NetworkDiscoveryPanelProps {
   devices: Device[];
   onRegisterHost: (prefill: DeviceRegistrationPrefill) => void;
+  /** Raises the selected not-yet-registered hosts up to the page, which owns
+   * the bulk-confirm dialog and the actual registration calls - this panel
+   * only ever handles scanning and selection. */
+  onRegisterSelected: (hosts: DiscoveredHost[]) => void;
 }
 
-export function NetworkDiscoveryPanel({ devices, onRegisterHost }: NetworkDiscoveryPanelProps) {
+export function NetworkDiscoveryPanel({ devices, onRegisterHost, onRegisterSelected }: NetworkDiscoveryPanelProps) {
   const [scanId, setScanId] = useState<number | null>(null);
   const [scan, setScan] = useNetworkScan(scanId);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const inFlight = scan !== null && (scan.status === "pending" || scan.status === "running");
 
   async function handleScan() {
     setLaunchError(null);
     setLaunching(true);
+    setSelected(new Set());
     try {
       const created = await api.createNetworkScan();
       setScan(created);
@@ -152,6 +158,27 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost }: NetworkDiscov
     } finally {
       setLaunching(false);
     }
+  }
+
+  const registerableHosts = (scan?.observations?.hosts ?? []).filter(
+    (host) => !isAlreadyRegistered(host, devices),
+  );
+  const allSelected = registerableHosts.length > 0 && registerableHosts.every((h) => selected.has(h.ip));
+
+  function toggleAll(checked: boolean) {
+    setSelected(checked ? new Set(registerableHosts.map((h) => h.ip)) : new Set());
+  }
+
+  function toggleOne(ip: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(ip);
+      } else {
+        next.delete(ip);
+      }
+      return next;
+    });
   }
 
   return (
@@ -191,12 +218,45 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost }: NetworkDiscov
               {scan.observations.iot_device_count} IoT device(s), {scan.observations.uncertain_count} uncertain,{" "}
               {scan.observations.unknown_count} unknown.
             </p>
+            {registerableHosts.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--color-brand)]"
+                  />
+                  Select all registerable ({registerableHosts.length})
+                </label>
+                {selected.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onRegisterSelected(registerableHosts.filter((h) => selected.has(h.ip)))
+                    }
+                    className="ml-auto inline-flex cursor-pointer items-center rounded-md bg-[var(--color-brand)] px-3 py-1.5 text-xs font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
+                  >
+                    Register selected ({selected.size})
+                  </button>
+                )}
+              </div>
+            )}
             <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
               <div className="divide-y divide-[var(--color-border)]">
                 {scan.observations.hosts.map((host) => {
                   const alreadyRegistered = isAlreadyRegistered(host, devices);
                   return (
                     <div key={host.ip} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                      {!alreadyRegistered && (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${host.ip}`}
+                          checked={selected.has(host.ip)}
+                          onChange={(e) => toggleOne(host.ip, e.target.checked)}
+                          className="h-4 w-4 shrink-0 accent-[var(--color-brand)]"
+                        />
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="font-mono text-xs text-[var(--color-text)]">{host.ip}</p>
                         {host.hostname && (

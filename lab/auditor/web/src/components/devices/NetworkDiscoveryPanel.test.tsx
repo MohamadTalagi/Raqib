@@ -78,7 +78,7 @@ describe("NetworkDiscoveryPanel", () => {
     vi.spyOn(api, "getNetworkScan").mockResolvedValue(makeScan());
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={() => {}} />);
+    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={() => {}} onRegisterSelected={() => {}} />);
 
     await user.click(screen.getByRole("button", { name: /scan network/i }));
 
@@ -94,7 +94,7 @@ describe("NetworkDiscoveryPanel", () => {
     const onRegisterHost = vi.fn();
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={onRegisterHost} />);
+    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={onRegisterHost} onRegisterSelected={() => {}} />);
     await user.click(screen.getByRole("button", { name: /scan network/i }));
     await screen.findByText("172.30.0.6");
 
@@ -104,6 +104,73 @@ describe("NetworkDiscoveryPanel", () => {
     expect(onRegisterHost).toHaveBeenCalledWith(
       expect.objectContaining({ device_id: "device-insecure", host: "172.30.0.6" }),
     );
+  });
+
+  it("supports selecting multiple registerable hosts and registering them as a batch", async () => {
+    vi.spyOn(api, "createNetworkScan").mockResolvedValue(makeScan({ status: "pending", observations: null }));
+    vi.spyOn(api, "getNetworkScan").mockResolvedValue(makeScan());
+    const onRegisterSelected = vi.fn();
+
+    const user = userEvent.setup();
+    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={() => {}} onRegisterSelected={onRegisterSelected} />);
+    await user.click(screen.getByRole("button", { name: /scan network/i }));
+    await screen.findByText("172.30.0.6");
+
+    await user.click(screen.getByRole("checkbox", { name: /select all registerable/i }));
+    await user.click(screen.getByRole("button", { name: /register selected \(2\)/i }));
+
+    expect(onRegisterSelected).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ ip: "172.30.0.6" }),
+        expect.objectContaining({ ip: "172.30.0.3" }),
+      ]),
+    );
+  });
+
+  it("only offers a select-all/register-selected control for hosts that aren't already registered", async () => {
+    vi.spyOn(api, "createNetworkScan").mockResolvedValue(makeScan({ status: "pending", observations: null }));
+    vi.spyOn(api, "getNetworkScan").mockResolvedValue(makeScan());
+    const onRegisterSelected = vi.fn();
+
+    const existingDevice: Device = {
+      device_id: "device-insecure",
+      display_name: "Smart Camera — Insecure",
+      description: "",
+      tier: "insecure",
+      host: "device-insecure",
+      vendor: null,
+      model: null,
+      location: null,
+      owner: null,
+      notes: null,
+      source: "seeded",
+      firmware_filename: null,
+      firmware_sha256: null,
+      firmware_uploaded_at: null,
+      criticality: "medium",
+      exposure: "internal_only",
+      registered: true,
+      evidence_count: 0,
+      verdict_count: 0,
+      services: [],
+    };
+
+    const user = userEvent.setup();
+    render(
+      <NetworkDiscoveryPanel
+        devices={[existingDevice]}
+        onRegisterHost={() => {}}
+        onRegisterSelected={onRegisterSelected}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /scan network/i }));
+    await screen.findByText("172.30.0.6");
+
+    expect(screen.getByRole("checkbox", { name: /select all registerable \(1\)/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: /select all registerable/i }));
+    await user.click(screen.getByRole("button", { name: /register selected \(1\)/i }));
+
+    expect(onRegisterSelected).toHaveBeenCalledWith([expect.objectContaining({ ip: "172.30.0.3" })]);
   });
 
   it("shows 'Already registered' instead of a Register button for a host that matches an existing device", async () => {
@@ -134,7 +201,7 @@ describe("NetworkDiscoveryPanel", () => {
     };
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[existingDevice]} onRegisterHost={() => {}} />);
+    render(<NetworkDiscoveryPanel devices={[existingDevice]} onRegisterHost={() => {}} onRegisterSelected={() => {}} />);
     await user.click(screen.getByRole("button", { name: /scan network/i }));
     await screen.findByText("172.30.0.6");
 
@@ -173,7 +240,7 @@ describe("NetworkDiscoveryPanel", () => {
     };
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[existingDevice]} onRegisterHost={() => {}} />);
+    render(<NetworkDiscoveryPanel devices={[existingDevice]} onRegisterHost={() => {}} onRegisterSelected={() => {}} />);
     await user.click(screen.getByRole("button", { name: /scan network/i }));
     await screen.findByText("172.30.0.6");
 
@@ -188,7 +255,7 @@ describe("NetworkDiscoveryPanel", () => {
     );
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={() => {}} />);
+    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={() => {}} onRegisterSelected={() => {}} />);
     await user.click(screen.getByRole("button", { name: /scan network/i }));
 
     expect(await screen.findByText("nmap: command not found")).toBeInTheDocument();
