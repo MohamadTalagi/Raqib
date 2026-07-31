@@ -1,0 +1,243 @@
+ Here is Claude's plan:
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Reorder the dashboard into a guided, cohort-based pipeline
+
+ Context
+
+ Across this conversation we worked out that the current dashboard (13 flat nav items
+ across Monitoring/Assessment/Compliance) is a powerful but undiscoverable "tool cabinet" -
+ a new user has no way to know they need to visit Devices, then Run Scan, then separately
+ NCA Compliance, then separately Risk Assessment to get a full picture of one device. We
+ agreed on a hybrid: keep the current pages as real, permanent pages (nothing is a
+ disposable wizard step), but reorder the sidebar top-to-bottom to literally read as the
+ pipeline, and let the auditor select 1/some/all devices to advance at every phase
+ boundary rather than forcing fleet-wide lockstep. We also corrected a real gap in the
+ first draft - Vulnerability Intelligence (real CVE/CVSS/CISA-KEV data, already built,
+ today only visible buried in the Device Detail Firmware card) is a third input to Risk
+ Assessment alongside SA-IOT and NCA, and needs to be its own visible phase, not folded
+ into either compliance system.
+
+ Confirmed with the owner: Remediation reserves its sidebar slot with a clearly-labeled
+ "not yet built" page in this pass - the real AI-remediation engine is a substantially
+ larger, separate piece of work (this project's first actual LLM-generation feature,
+ needing a real human-review gate to match the "AI-assisted, not AI-decided" rule every
+ other feature here holds) and gets its own dedicated plan later.
+
+ Verified before writing this plan (not assumed):
+ - The 18 real SCAN_CATALOG entries' exact category values - network-and-protocol
+ contains a mix of pure identification tests (reachability, portscan, http-inspect) and
+ actual compliance-relevant protocol tests (MQTT, TLS, packet capture) - the existing
+ category field can't be reused to split Fingerprinting from SA-IOT Compliance without
+ breaking is_firmware_test()/is_network_discovery_test(), which key off it.
+ - NetworkDiscoveryPanel today has a "Register" button per discovered host, one at a
+ time, opening the pre-fill form - there is no multi-select/bulk-register UI yet, so
+ "select devices to advance" is real new interaction work, not just a label change.
+
+ Design decisions
+
+ Cohort "advance" is a frontend orchestration, not a new backend primitive. No new
+ "batch of devices" concept in the database. Selecting 3 devices and advancing them to
+ Fingerprinting just fires 3 independent, already-existing per-device operations
+ (POST /assessments once per device) and aggregates their progress in one UI. This
+ avoids inventing new backend schema for something the existing per-device Assessment
+ entity already models correctly - the "batch" is purely a UI convenience.
+
+ A device's furthest-reached phase is computed live, never stored. Matches this
+ project's own repeated rule this session (risk score, compliance %, collector_versions -
+ never persisted, always derived from the real current data). A new frontend utility,
+ lib/pipeline.ts::devicePipelineStatus(device, evidence, verdicts, ncaSummary, vulnSummary), derives each phase's status from data that already exists:
+ - Devices: always "reached" once registered.
+ - Fingerprinting: reached once evidence exists for any fingerprinting-tagged test_id.
+ - SA-IOT Compliance: reached once any verdict exists for the device.
+ - NCA Compliance: reached once an NCA assessment exists (ncaSummary.overall_status !== "not_assessed").
+ - Vulnerability Intelligence: reached once vulnSummary.has_data is true.
+ - Risk Assessment: reached once riskDevice(id).known is true.
+ No new column, no new endpoint - this is why a device that gets re-scanned automatically
+ looks current again everywhere at once, with no explicit "reset" action needed anywhere.
+
+ New additive backend field: pipeline_phase per SCAN_CATALOG entry. Exposed on
+ the existing GET /scan-tests. Keeps the test->phase mapping in the one place tests are
+ already defined, instead of duplicating a test_id list in the frontend that could drift.
+ Assignment (a judgment call, flag for review):
+ - fingerprinting: TEST-NET-REACHABILITY, TEST-NET-PORTSCAN, TEST-NET-HTTP-INSPECT
+ (identify what the device is).
+ - sa_iot_compliance: TEST-AUTH-DEFAULT-CREDS, TEST-HTTP-HEADERS,
+ TEST-AUTH-ANON-ACCESS, TEST-AUTH-SESSION, TEST-ADMIN-UNAUTH, TEST-MQTT-OPEN,
+ TEST-TLS-CONFIG, TEST-NET-PKTCAPTURE, plus the firmware misconfig checks
+ (TEST-FW-VERSION/CONFIG/SECRETS/APIKEY/CERTKEY/UPDATESCRIPT) - these are the same
+ flavor of binary security-posture check as the network/auth tests, not CVE data.
+ - vuln_intelligence: TEST-FW-MANIFEST only - the one test that actually produces
+ CVE/CVSS/CISA-KEV data, kept tightly scoped so the phase's name means what it says.
+ - TEST-NET-DISCOVERY gets no phase tag - it's the standalone subnet sweep, already
+ its own thing, becomes the Discovery page's engine directly.
+
+ Device Detail stays exactly what it is - a single-device reference page, reached by
+ clicking a device from the Devices registry or any phase page's per-device row. The new
+ phase pages are cohort/multi-device operate views; Device Detail remains the "everything
+ about this one device" depth view. It loses only the Firmware/vulnerability card
+ (moves to the new Vulnerability Intelligence page) - Assessment history, Evidence,
+ Verdicts, Risk profile editor all stay exactly where they are today.
+
+ Target sidebar/route structure
+
+ ┌───────────────────┬────────────────────┬──────────────────────────────┬────────────────────────────────────────────────────────────┐
+ │       Group       │        Page        │            Route             │                           Status                           │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Home              │ Overview           │ /                            │ existing, gains a "Start a new audit" CTA                  │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Pipeline          │ Discovery          │ /discovery                   │ new page - promotes NetworkDiscoveryPanel out of Devices,  │
+ │                   │                    │                              │ adds multi-select bulk register                            │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Pipeline          │ Devices            │ /devices                     │ existing - gains phase-status badges + "advance selected"  │
+ │                   │                    │                              │ action                                                     │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Pipeline          │ Fingerprinting     │ /fingerprinting              │ new page                                                   │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Pipeline          │ SA-IOT Compliance  │ /sa-iot-compliance           │ new page, replaces old Run Scan's                          │
+ │                   │                    │                              │ web-auth/network-protocol sections                         │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Pipeline          │ NCA Compliance     │ /nca-compliance              │ existing, gains cohort awareness                           │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Pipeline          │ Vulnerability      │ /vulnerability-intelligence  │ new page, extracted from Device Detail's Firmware card     │
+ │                   │ Intelligence       │                              │                                                            │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Pipeline          │ Risk Assessment    │ /risk                        │ existing, minor copy update to name its 3 real inputs      │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Pipeline          │ Remediation        │ /remediation                 │ new stub page - "not yet available," shows each finding's  │
+ │                   │                    │                              │ existing static remediation text as a placeholder          │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Records           │ Evidence           │ /evidence                    │ unchanged                                                  │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Records           │ Verdicts           │ /verdicts                    │ unchanged                                                  │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Records           │ Controls           │ /controls                    │ unchanged                                                  │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Records           │ NCA Controls       │ /nca-compliance/controls     │ unchanged                                                  │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Records           │ Network Map        │ /network-map                 │ unchanged                                                  │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Organization-wide │ Organizational     │ /nca-compliance/organization │ unchanged, pulled into its own group since it isn't        │
+ │                   │ Compliance         │                              │ per-device                                                 │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Advanced Tools    │ Scan Console       │ /scan-console                │ unchanged, visually set apart                              │
+ ├───────────────────┼────────────────────┼──────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Advanced Tools    │ Device Console     │ /console                     │ unchanged, visually set apart                              │
+ └───────────────────┴────────────────────┴──────────────────────────────┴────────────────────────────────────────────────────────────┘
+
+ /run-scan redirects to /devices (its functionality is now split across
+ Fingerprinting + SA-IOT Compliance).
+
+ New shared components
+
+ - components/pipeline/DeviceCohortPicker.tsx - the one "select 1/some/all" checkbox
+ list + select-all, used identically on Devices, Fingerprinting, SA-IOT Compliance,
+ Vulnerability Intelligence. Built once, not four times.
+ - components/pipeline/PhaseStatusBadge.tsx - a small "reached / not yet" indicator
+ driven by devicePipelineStatus(), shown on Devices and reused across every phase page.
+ - lib/pipeline.ts - devicePipelineStatus() plus the pipeline's own ordered phase list
+ (single source of truth for sidebar order and badge rendering).
+
+ Page-by-page plan
+
+ Discovery (pages/DiscoveryPage.tsx, new) - lifts NetworkDiscoveryPanel wholesale
+ out of DevicesPage.tsx. Adds checkboxes per discovered host + "Register selected"
+ triggering a lightweight bulk-confirm dialog (still a real confirm step, not silent
+ auto-registration) that calls POST /devices once per selected host. DevicesPage.tsx
+ loses the discovery toggle/panel entirely - its only entry point now.
+
+ Devices (pages/DevicesPage.tsx, existing) - keeps manual registration form. Adds
+ DeviceCohortPicker + phase-status badges per row + an "Advance to Fingerprinting"
+ action for the selection, which just navigates to /fingerprinting with the selected
+ device ids in route state (no new persistence needed - the next page re-derives status
+ live regardless of how you got there).
+
+ Fingerprinting (pages/FingerprintingPage.tsx, new) - DeviceCohortPicker at top,
+ then for each selected device: the existing ScanJobCard UI (auto-suggested finding/
+ confidence already built) scoped to pipeline_phase == "fingerprinting" tests only.
+ Reuses api.createAssessment/api.recordScanJob as-is - this page is a filtered,
+ cohort-aware skin on the same real backend calls Run Scan already made.
+
+ SA-IOT Compliance (pages/SAIOTCompliancePage.tsx, new) - same cohort pattern,
+ scoped to pipeline_phase == "sa_iot_compliance" tests, plus the existing "Recompute
+ verdicts" action and a compact per-device verdict summary (full history stays on the
+ Records-group Verdicts page, not duplicated here).
+
+ Vulnerability Intelligence (pages/VulnerabilityIntelligencePage.tsx, new) -
+ firmware upload + TEST-FW-MANIFEST trigger + the existing VulnAdvisoryPanel/
+ VulnFreshnessNote components, moved here verbatim from DeviceDetailPage.tsx's
+ Firmware card, cohort-aware for multiple devices at once.
+
+ NCA Compliance (existing) - add the same DeviceCohortPicker above its device table
+ so "assess selected" opens each selected device's existing assessment workspace in turn,
+ rather than one at a time from a plain table row.
+
+ Risk Assessment (existing) - copy-only change: name its three real inputs explicitly
+ (SA-IOT, NCA, Vulnerability Intelligence) instead of the current generic framing.
+
+ Remediation (pages/RemediationPage.tsx, new stub) - per the owner's decision: a
+ clearly-labeled "not yet available" state, showing each control's existing static
+ remediation string per finding as a preview of what this page will eventually generate
+ from, not inventing any new generated content.
+
+ Backend changes (small, additive, no migration)
+
+ - SCAN_CATALOG entries gain "pipeline_phase" (matches the existing optional-key
+ pattern already used for timeout_seconds/suggest_confidence).
+ - GET /scan-tests includes it in its response.
+ - Nothing else - cohort advancement, phase status, and every new page are built entirely
+ from endpoints that already exist.
+
+ Delivery order (each phase its own commit, tested and verified before the next)
+
+ 1. Backend: pipeline_phase field + GET /scan-tests exposure + tests.
+ 2. Frontend: lib/pipeline.ts (phase list + devicePipelineStatus()) + unit tests -
+ no visible UI change yet, safe to land alone.
+ 3. Sidebar/route restructure (Sidebar.tsx, App.tsx, redirects) - the one "everything
+ moves at once" commit; expect to update every existing test that asserts a sidebar
+ link or navigates by route path (a real, known cost, not hidden in this plan).
+ 4. DeviceCohortPicker + PhaseStatusBadge shared components + tests.
+ 5. Discovery page (promote panel out of Devices, add multi-select bulk register).
+ 6. Devices page cohort picker + advance action.
+ 7. Fingerprinting page.
+ 8. SA-IOT Compliance page.
+ 9. Vulnerability Intelligence page + Device Detail Firmware-card removal.
+ 10. NCA Compliance cohort-picker addition.
+ 11. Risk Assessment copy update.
+ 12. Remediation stub page.
+ 13. Remove old Run Scan page/route, final full-suite regression, live rebuild/redeploy
+ of auditor-web (backend images only need rebuilding for step 1), and a real
+ end-to-end walk of the new flow against the live stack.
+
+ Verification (every step, matching this session's established pattern)
+                                                                                                                                            tsc -b (not bare --noEmit) + oxlint + vitest run --no-file-parallelism after                                                               each frontend phase; pytest after the one backend phase. Final step: rebuild/redeploy                                                   auditor-web (and auditor-api only for the pipeline_phase field), then live-verify
+ by actually discovering the real lab devices, selecting a subset, and walking them
+ through Fingerprinting -> SA-IOT Compliance -> Vulnerability Intelligence -> Risk on the
+ real running stack.
+                                                                                                                                             Explicitly out of scope
+
+ The real AI-remediation engine (model choice, prompting, generated-content review gate)
+ - reserved a sidebar slot and a stub page only, per the owner's decision above.
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+
+
+Delivery order (each phase its own commit, tested and verified before the next)
+
+1. Backend: pipeline_phase field + GET /scan-tests exposure + tests.
+2. Frontend: lib/pipeline.ts (phase list + devicePipelineStatus()) + unit tests -
+no visible UI change yet, safe to land alone.
+3. Sidebar/route restructure (Sidebar.tsx, App.tsx, redirects) - the one "everything
+moves at once" commit; expect to update every existing test that asserts a sidebar
+link or navigates by route path (a real, known cost, not hidden in this plan).
+4. DeviceCohortPicker + PhaseStatusBadge shared components + tests.
+5. Discovery page (promote panel out of Devices, add multi-select bulk register).
+6. Devices page cohort picker + advance action.
+7. Fingerprinting page.
+8. SA-IOT Compliance page.
+9. Vulnerability Intelligence page + Device Detail Firmware-card removal.
+10. NCA Compliance cohort-picker addition.
+11. Risk Assessment copy update.
+12. Remediation stub page.
+13. Remove old Run Scan page/route, final full-suite regression, live rebuild/redeploy
+of auditor-web (backend images only need rebuilding for step 1), and a real
+end-to-end walk of the new flow against the live stack.
