@@ -1,5 +1,5 @@
-import { ClipboardCheck, FileDown, Trash2, Upload } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ClipboardCheck, FileDown, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,8 +20,6 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
 import { DomainSummaryGrid } from "@/components/nca/DomainSummaryGrid";
-import { VulnAdvisoryPanel } from "@/components/devices/VulnAdvisoryPanel";
-import { VulnFreshnessNote } from "@/components/devices/VulnFreshnessNote";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError, type UpdateDevicePayload } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
@@ -68,19 +66,6 @@ function deregisterErrorMessage(caught: unknown): string {
   return "Could not deregister the device.";
 }
 
-function firmwareErrorMessage(caught: unknown): string {
-  if (caught instanceof ApiError || caught instanceof Error) {
-    return caught.message;
-  }
-  return "Could not update firmware for this device.";
-}
-
-interface FirmwareState {
-  firmware_filename: string | null;
-  firmware_sha256: string | null;
-  firmware_uploaded_at: string | null;
-}
-
 export function DeviceDetailPage() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
@@ -88,7 +73,6 @@ export function DeviceDetailPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const detail = useFetch(() => api.device(deviceId ?? ""), [deviceId, refreshKey]);
   const ncaDetail = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
-  const vulnSummary = useFetch(() => api.vulnIntelDevice(deviceId ?? ""), [deviceId, refreshKey]);
   const riskDetail = useFetch(() => api.riskDevice(deviceId ?? ""), [deviceId, refreshKey]);
   const assessments = useFetch(() => api.listAssessments(deviceId ?? ""), [deviceId, refreshKey]);
   const controls = useFetch(api.controls, []);
@@ -101,9 +85,6 @@ export function DeviceDetailPage() {
   const [loadingJobsFor, setLoadingJobsFor] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deregistering, setDeregistering] = useState(false);
-  const [firmwareOverride, setFirmwareOverride] = useState<FirmwareState | null>(null);
-  const [pendingFirmwareFile, setPendingFirmwareFile] = useState<File | null>(null);
-  const [firmwareBusy, setFirmwareBusy] = useState(false);
   const [assessControlId, setAssessControlId] = useState("");
   const [assessSeverity, setAssessSeverity] = useState<Severity | "">("");
   const [assessBusy, setAssessBusy] = useState(false);
@@ -162,47 +143,6 @@ export function DeviceDetailPage() {
     }
   }
 
-  // A device switch (navigating from one detail page to another without a
-  // full remount) must not carry over the previous device's upload state.
-  useEffect(() => {
-    setFirmwareOverride(null);
-    setPendingFirmwareFile(null);
-    setFirmwareBusy(false);
-  }, [deviceId]);
-
-  async function handleUploadFirmware() {
-    if (!deviceId || !pendingFirmwareFile) return;
-    setFirmwareBusy(true);
-    try {
-      const result = await api.uploadFirmware(deviceId, pendingFirmwareFile);
-      setFirmwareOverride({
-        firmware_filename: result.firmware_filename,
-        firmware_sha256: result.firmware_sha256,
-        firmware_uploaded_at: result.firmware_uploaded_at,
-      });
-      setPendingFirmwareFile(null);
-      showToast("Firmware uploaded.", "success");
-    } catch (caught) {
-      showToast(firmwareErrorMessage(caught), "error");
-    } finally {
-      setFirmwareBusy(false);
-    }
-  }
-
-  async function handleRemoveFirmware() {
-    if (!deviceId) return;
-    setFirmwareBusy(true);
-    try {
-      await api.deleteFirmware(deviceId);
-      setFirmwareOverride({ firmware_filename: null, firmware_sha256: null, firmware_uploaded_at: null });
-      showToast("Firmware removed.", "success");
-    } catch (caught) {
-      showToast(firmwareErrorMessage(caught), "error");
-    } finally {
-      setFirmwareBusy(false);
-    }
-  }
-
   async function handleConfirmDeregister() {
     if (!deviceId) return;
     setDeregistering(true);
@@ -238,7 +178,6 @@ export function DeviceDetailPage() {
   }
 
   const { device, evidence, verdicts, scan_jobs, compliance } = detail.data;
-  const firmware: FirmwareState = firmwareOverride ?? device;
 
   return (
     <Shell title={device.display_name} subtitle={device.description}>
@@ -402,79 +341,20 @@ export function DeviceDetailPage() {
               </Card>
 
               <Card>
-                <CardHeader>
-                  <CardTitle>Firmware</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 pt-2">
-                  {firmware.firmware_filename ? (
-                    <>
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                        <MetaField label="Filename" value={firmware.firmware_filename} />
-                        <MetaField label="Uploaded" value={firmware.firmware_uploaded_at} />
-                      </div>
-                      <p className="text-xs">
-                        <span className="text-[var(--color-text-muted)]">SHA-256: </span>
-                        <span className="font-mono text-[var(--color-text-secondary)]">
-                          {firmware.firmware_sha256?.slice(0, 16)}…
-                        </span>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleRemoveFirmware}
-                        disabled={firmwareBusy}
-                        className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-critical)] hover:text-[var(--color-critical)] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Remove firmware
-                      </button>
-
-                      <div className="border-t border-[var(--color-border)] pt-3">
-                        <p className="mb-2 text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
-                          Vulnerability intelligence
-                        </p>
-                        {vulnSummary.loading ? (
-                          <Skeleton className="h-16" />
-                        ) : !vulnSummary.data?.has_data ? (
-                          <p className="text-xs text-[var(--color-text-muted)]">
-                            No firmware manifest scan (TEST-FW-MANIFEST) has run for this device
-                            yet - run it from the Run Scan page to see real CVE/KEV data here.
-                          </p>
-                        ) : (
-                          <>
-                            <VulnAdvisoryPanel packages={vulnSummary.data.packages} />
-                            <div className="mt-2">
-                              <VulnFreshnessNote />
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <input
-                        type="file"
-                        aria-label="Firmware archive"
-                        // Accept .tar.gz/.tgz and .zip. Windows' file picker maps
-                        // only the final extension of a compound name, so a bare
-                        // ".tar.gz" filter greys out real .tar.gz files - include
-                        // ".gz" and the gzip/tar/zip MIME types so the archive is
-                        // selectable. The API still gates on the real filename +
-                        // magic bytes (see upload_device_firmware).
-                        accept=".tar.gz,.tgz,.gz,.zip,application/gzip,application/x-gzip,application/x-compressed-tar,application/x-tar,application/zip,application/x-zip-compressed"
-                        onChange={(e) => setPendingFirmwareFile(e.target.files?.[0] ?? null)}
-                        className="text-sm text-[var(--color-text-secondary)]"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleUploadFirmware}
-                        disabled={!pendingFirmwareFile || firmwareBusy}
-                        className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <Upload className="h-4 w-4" />
-                        Upload firmware
-                      </button>
-                    </div>
-                  )}
+                <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-5">
+                  <div>
+                    <p className="text-sm font-medium text-[var(--color-text)]">Firmware & vulnerability intelligence</p>
+                    <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
+                      Upload firmware, run the manifest scan, and view real CVE/CVSS/CISA-KEV data on the
+                      Vulnerability Intelligence page.
+                    </p>
+                  </div>
+                  <Link
+                    to="/vulnerability-intelligence"
+                    className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-brand)] hover:text-[var(--color-brand)]"
+                  >
+                    Open Vulnerability Intelligence →
+                  </Link>
                 </CardContent>
               </Card>
 

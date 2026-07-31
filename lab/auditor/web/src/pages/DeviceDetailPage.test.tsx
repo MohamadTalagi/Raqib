@@ -5,21 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeviceDetailPage } from "./DeviceDetailPage";
 import { api, ApiError } from "@/lib/api";
 import { ToastProvider } from "@/lib/useToast";
-import type { DeviceDetail, NCADeviceDetail, VulnDeviceSummary } from "@/lib/types";
-import { vulnDeviceSummaryFixture, vulnIntelStatusFixture } from "@/test/fixtures";
-
-const NO_VULN_DATA: VulnDeviceSummary = {
-  device_id: "device-insecure",
-  has_data: false,
-  evidence_id: null,
-  observed_at: null,
-  packages: [],
-  total_packages: 0,
-  outdated_packages: 0,
-  total_cves: 0,
-  kev_listed_cves: 0,
-  highest_cvss: null,
-};
+import type { DeviceDetail, NCADeviceDetail } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -160,8 +146,6 @@ function renderPage() {
 describe("DeviceDetailPage", () => {
   beforeEach(() => {
     vi.spyOn(api, "ncaDevice").mockResolvedValue(NCA_DETAIL);
-    vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(NO_VULN_DATA);
-    vi.spyOn(api, "vulnIntelStatus").mockResolvedValue(vulnIntelStatusFixture);
     vi.spyOn(api, "riskDevice").mockResolvedValue({ device_id: "device-insecure", known: false });
     vi.spyOn(api, "listAssessments").mockResolvedValue([]);
   });
@@ -298,75 +282,17 @@ describe("DeviceDetailPage", () => {
     expect(within(dialog).getByText(/evidence.*(kept|preserved|retained|not deleted)/i)).toBeInTheDocument();
   });
 
-  it("shows an upload control when no firmware has been uploaded yet", async () => {
+  it("points to the Vulnerability Intelligence page instead of embedding the Firmware card itself", async () => {
+    // Firmware upload/removal and the real CVE/CVSS/CISA-KEV display moved
+    // to their own cohort-aware pipeline page (Phase 9) - this page only
+    // links there now.
     vi.spyOn(api, "device").mockResolvedValue(DETAIL);
     renderPage();
 
-    expect(await screen.findByLabelText(/firmware archive/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /upload firmware/i })).toBeDisabled();
-  });
-
-  it("uploads firmware and then shows its filename and hash", async () => {
-    const user = userEvent.setup();
-    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
-    const uploadSpy = vi.spyOn(api, "uploadFirmware").mockResolvedValue({
-      ...DETAIL.device,
-      firmware_filename: "cam-fw-1.2.0.tar.gz",
-      firmware_sha256: "b".repeat(64),
-      firmware_uploaded_at: "2026-07-21T12:00:00+00:00",
-      services: DETAIL.services,
-    });
-    renderPage();
-
-    const file = new File(["dummy"], "cam-fw-1.2.0.tar.gz", { type: "application/gzip" });
-    const input = await screen.findByLabelText(/firmware archive/i);
-    await user.upload(input, file);
-
-    const uploadButton = screen.getByRole("button", { name: /upload firmware/i });
-    expect(uploadButton).toBeEnabled();
-    await user.click(uploadButton);
-
-    await waitFor(() => expect(uploadSpy).toHaveBeenCalledWith("device-insecure", file));
-    expect(await screen.findByText("cam-fw-1.2.0.tar.gz")).toBeInTheDocument();
-    expect(screen.getByText(/b{16}…/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /remove firmware/i })).toBeInTheDocument();
-  });
-
-  it("surfaces the API's error message when a firmware upload is rejected", async () => {
-    const user = userEvent.setup();
-    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
-    vi.spyOn(api, "uploadFirmware").mockRejectedValue(
-      new ApiError("not a valid .tar.gz archive", 400),
-    );
-    renderPage();
-
-    const file = new File(["dummy"], "cam-fw.tar.gz", { type: "application/gzip" });
-    const input = await screen.findByLabelText(/firmware archive/i);
-    await user.upload(input, file);
-    await user.click(screen.getByRole("button", { name: /upload firmware/i }));
-
-    expect(await screen.findByText(/not a valid \.tar\.gz archive/i)).toBeInTheDocument();
-  });
-
-  it("removes firmware and reverts to the upload control", async () => {
-    const user = userEvent.setup();
-    const withFirmware: DeviceDetail = {
-      ...DETAIL,
-      device: {
-        ...DETAIL.device,
-        firmware_filename: "cam-fw-1.2.0.tar.gz",
-        firmware_sha256: "b".repeat(64),
-        firmware_uploaded_at: "2026-07-21T12:00:00+00:00",
-      },
-    };
-    vi.spyOn(api, "device").mockResolvedValue(withFirmware);
-    const deleteSpy = vi.spyOn(api, "deleteFirmware").mockResolvedValue(undefined);
-    renderPage();
-
-    await user.click(await screen.findByRole("button", { name: /remove firmware/i }));
-
-    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("device-insecure"));
-    expect(await screen.findByLabelText(/firmware archive/i)).toBeInTheDocument();
+    await screen.findByText("Smart Camera — Insecure");
+    expect(screen.queryByLabelText(/firmware archive/i)).not.toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /open vulnerability intelligence/i });
+    expect(link).toHaveAttribute("href", "/vulnerability-intelligence");
   });
 
   it("excludes organization-scope-only domains with zero device-scope controls from the Compliance tab", async () => {
@@ -403,36 +329,6 @@ describe("DeviceDetailPage", () => {
     // NCA_DETAIL's one control has blocking: true - its failure alone forces
     // the device's readiness to Failed, so the Controls list must flag it.
     expect(screen.getByText("blocking")).toBeInTheDocument();
-  });
-
-  it("prompts to run TEST-FW-MANIFEST when firmware is uploaded but never scanned", async () => {
-    vi.spyOn(api, "device").mockResolvedValue({
-      ...DETAIL,
-      device: { ...DETAIL.device, firmware_filename: "camera-fw.tar.gz", firmware_sha256: "a".repeat(64) },
-    });
-    renderPage();
-
-    expect(await screen.findByText(/no firmware manifest scan/i)).toBeInTheDocument();
-  });
-
-  it("shows real CVE/KEV data in the Firmware card once a manifest scan has run", async () => {
-    vi.spyOn(api, "device").mockResolvedValue({
-      ...DETAIL,
-      device: { ...DETAIL.device, firmware_filename: "camera-fw.tar.gz", firmware_sha256: "a".repeat(64) },
-    });
-    vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(vulnDeviceSummaryFixture);
-    renderPage();
-
-    expect(await screen.findByText("openssl@1.0.1e")).toBeInTheDocument();
-    expect(screen.getByText("CVE-2014-0160")).toBeInTheDocument();
-    expect(screen.getByText("KEV")).toBeInTheDocument();
-    // The freshness note's sentence is split across inline <span>s (the
-    // built-at date rendered in its own font-mono span) - assert on that
-    // span directly rather than the whole sentence, which RTL's default
-    // text matcher won't bridge across element boundaries.
-    // VulnFreshnessNote fetches independently of the page's own data - wait
-    // for it rather than asserting synchronously, or this races and flakes.
-    expect(await screen.findByText(vulnIntelStatusFixture.vuln_db_built_at!)).toBeInTheDocument();
   });
 
   it("shows the device's current criticality and exposure", async () => {

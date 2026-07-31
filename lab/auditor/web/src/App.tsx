@@ -4,6 +4,7 @@ import { DiscoveryPage } from "@/pages/DiscoveryPage";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { FingerprintingPage } from "@/pages/FingerprintingPage";
 import { SAIOTCompliancePage } from "@/pages/SAIOTCompliancePage";
+import { VulnerabilityIntelligencePage } from "@/pages/VulnerabilityIntelligencePage";
 import { NetworkMapPage } from "@/pages/NetworkMapPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { DeviceAssessmentReportPage } from "@/pages/DeviceAssessmentReportPage";
@@ -41,16 +42,7 @@ export default function App() {
             <Route path="/sa-iot-compliance" element={<SAIOTCompliancePage />} />
             <Route path="/nca-compliance" element={<NCACompliancePage />} />
             <Route path="/nca-compliance/devices/:deviceId" element={<DeviceAssessmentPage />} />
-            <Route
-              path="/vulnerability-intelligence"
-              element={
-                <ComingSoonPage
-                  title="Vulnerability Intelligence"
-                  phaseLabel="Pipeline"
-                  description="Real CVE/CVSS/CISA-KEV data from a firmware manifest scan - lands here in a later phase. Still available on a device's own Firmware card today."
-                />
-              }
-            />
+            <Route path="/vulnerability-intelligence" element={<VulnerabilityIntelligencePage />} />
             <Route path="/risk" element={<RiskAssessmentPage />} />
             <Route
               path="/remediation"
