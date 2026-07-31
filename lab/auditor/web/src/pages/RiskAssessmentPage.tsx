@@ -81,7 +81,7 @@ export function RiskAssessmentPage() {
   return (
     <Shell
       title="Risk Assessment"
-      subtitle="Org-wide priority ranking, combining compliance, CVE, and device-context data"
+      subtitle="Org-wide priority ranking, combining SA-IOT verdicts, NCA CGIoT-1:2024 compliance, and Vulnerability Intelligence (CVE/CVSS/CISA-KEV) with device context"
     >
       {devices.error ? (
         <ErrorState message={devices.error} />

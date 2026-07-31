@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,19 @@ import { mockFetchImplementation } from "@/test/fixtures";
 describe("RiskAssessmentPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn((url: string) => mockFetchImplementation(url)));
+  });
+
+  it("names its three real inputs explicitly in the page subtitle", async () => {
+    render(
+      <MemoryRouter>
+        <RiskAssessmentPage />
+      </MemoryRouter>,
+    );
+
+    const banner = await screen.findByRole("banner");
+    expect(within(banner).getByText(/SA-IOT verdicts/)).toBeInTheDocument();
+    expect(within(banner).getByText(/NCA CGIoT-1:2024 compliance/)).toBeInTheDocument();
+    expect(within(banner).getByText(/Vulnerability Intelligence/)).toBeInTheDocument();
   });
 
   it("lists every device worst-first with its score, category, and rank", async () => {
