@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { DiscoveryPage } from "@/pages/DiscoveryPage";
 import { DevicesPage } from "@/pages/DevicesPage";
+import { FingerprintingPage } from "@/pages/FingerprintingPage";
 import { NetworkMapPage } from "@/pages/NetworkMapPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { DeviceAssessmentReportPage } from "@/pages/DeviceAssessmentReportPage";
@@ -35,16 +36,7 @@ export default function App() {
             <Route path="/devices" element={<DevicesPage />} />
             <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
             <Route path="/devices/:deviceId/assessment" element={<DeviceAssessmentReportPage />} />
-            <Route
-              path="/fingerprinting"
-              element={
-                <ComingSoonPage
-                  title="Fingerprinting"
-                  phaseLabel="Pipeline"
-                  description="Reachability, ports, and service identification for the selected devices - lands here in a later phase. Use a device's own page in the meantime."
-                />
-              }
-            />
+            <Route path="/fingerprinting" element={<FingerprintingPage />} />
             <Route
               path="/sa-iot-compliance"
               element={
