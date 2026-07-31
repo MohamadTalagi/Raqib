@@ -7,9 +7,16 @@ REAL_CONTROLS_DIR = str(Path(__file__).resolve().parents[3] / "policies" / "cont
 
 
 @pytest.fixture
-def client(postgres_url, monkeypatch):
+def client(postgres_url, monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", postgres_url)
     monkeypatch.setenv("CONTROLS_DIR", REAL_CONTROLS_DIR)
+    # Without this, record-failure/record tests write real raw-output files
+    # into the real document-store/raw/ directory (via the /work -> C:\work
+    # junction) even though the database side is fully isolated to an
+    # ephemeral test Postgres - confirmed live this session: it silently
+    # overwrote a real evidence file's content. test_scan_jobs.py already
+    # isolates this the same way; this file just hadn't caught up.
+    monkeypatch.setenv("DOCUMENT_STORE_DIR", str(tmp_path))
     from main import app
     return TestClient(app)
 
