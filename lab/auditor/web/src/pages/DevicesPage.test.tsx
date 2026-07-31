@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DevicesPage } from "./DevicesPage";
 import { mockFetchImplementation } from "@/test/fixtures";
 import { ToastProvider } from "@/lib/useToast";
+import { api } from "@/lib/api";
 
 describe("DevicesPage", () => {
   beforeEach(() => {
@@ -132,6 +133,47 @@ describe("DevicesPage", () => {
     // device-insecure has real evidence/verdict/NCA/vuln/risk fixture data
     // reaching every phase, so its furthest badge is the pipeline's last step.
     expect(within(main).getAllByText("Risk Assessment").length).toBeGreaterThan(0);
+  });
+
+  // Regression: caught live. GET /risk/devices/{id}'s `known` flag and a
+  // NOT_APPLICABLE verdict (created by the fleet-wide recompute for every
+  // device regardless of whether any test ever ran) are both trivially true
+  // the instant a device is registered - neither means "a real assessment
+  // happened." device-hardened in this fixture has zero evidence and only a
+  // NOT_APPLICABLE verdict, so its badge must stay "Devices," not jump ahead
+  // to "SA-IOT Compliance" or "Risk Assessment."
+  it("does not advance a device's phase badge from a NOT_APPLICABLE-only verdict", async () => {
+    vi.spyOn(api, "verdicts").mockResolvedValue([
+      {
+        verdict_id: "VD-2026-07-31-0005",
+        control_id: "SA-IOT-004",
+        device_id: "device-hardened",
+        status: "NOT_APPLICABLE",
+        severity: "high",
+        evidence_ids: [],
+        matched: "not_applicable",
+        reason: "no required_evidence test_id applies to this device's registered services",
+        saudi_source: "CGIoT-1:2024 §2-4-3",
+        remediation: "Route all MQTT telemetry through the TLS-secured, authenticated broker; retire the plaintext broker.",
+        timestamp: "2026-07-31T21:55:06Z",
+        assessment_id: null,
+        policy_version: "1.0.0",
+        conflict_detected: false,
+        conflict_reason: null,
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <DevicesPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findAllByText("device-hardened");
+    const hardenedCard = screen.getByRole("link", { name: /device-hardened/i });
+    expect(within(hardenedCard).getByText("Devices")).toBeInTheDocument();
   });
 
   it("lets the auditor select registered devices and advance them to Fingerprinting", async () => {

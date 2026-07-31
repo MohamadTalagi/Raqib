@@ -159,4 +159,36 @@ describe("SAIOTCompliancePage", () => {
 
     expect(await screen.findByText(/2 new verdicts generated/i)).toBeInTheDocument();
   });
+
+  // Regression: caught live — recomputing verdicts through the real API
+  // genuinely created new verdict rows (confirmed via GET /verdicts), but
+  // this page's own "current verdicts" count kept showing the pre-recompute
+  // numbers, since api.verdicts was only ever fetched once on mount with no
+  // refetch afterward. Every other page in this codebase bumps a refreshKey
+  // included in useFetch's deps after a mutation; this page didn't.
+  it("refetches verdicts after a successful recompute, so the displayed counts update without a page reload", async () => {
+    vi.spyOn(api, "recomputeVerdicts").mockResolvedValue({ created: 1, verdicts: [] });
+    const verdictsSpy = vi.spyOn(api, "verdicts").mockResolvedValueOnce(VERDICTS).mockResolvedValueOnce([
+      ...VERDICTS,
+      { ...VERDICTS[0], verdict_id: "VD-2", control_id: "SA-IOT-003" },
+    ]);
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <SAIOTCompliancePage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("device-insecure");
+    await user.click(screen.getByRole("checkbox", { name: /select all \(2\)/i }));
+    expect(screen.getByText("1 fail")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /recompute verdicts/i }));
+    await screen.findByText(/1 new verdict generated/i);
+
+    expect(verdictsSpy).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("2 fail")).toBeInTheDocument();
+  });
 });

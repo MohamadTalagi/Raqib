@@ -147,7 +147,14 @@ export function DevicesPage() {
         evidenceTestIds: (evidence.data ?? [])
           .filter((e) => e.device_id === device.device_id)
           .map((e) => e.test_id),
-        hasSaIotVerdict: (verdicts.data ?? []).some((v) => v.device_id === device.device_id),
+        // NOT_APPLICABLE means "this control doesn't apply to this device's
+        // registered services," not "a real assessment happened" - the
+        // fleet-wide recompute synthesizes these for every device regardless
+        // of whether any test ever ran against it. Excluding it here matches
+        // nca_compliance's own "not_tested" exclusion just below.
+        hasSaIotVerdict: (verdicts.data ?? []).some(
+          (v) => v.device_id === device.device_id && v.status !== "NOT_APPLICABLE",
+        ),
         scanTests: scanTests.data ?? [],
         nca: ncaRow ? { overall_status: ncaRow.overall_status } : null,
         vuln: (vulnFleet.data?.devices ?? []).some((d) => d.device_id === device.device_id)

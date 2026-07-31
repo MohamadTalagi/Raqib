@@ -60,14 +60,34 @@ export function devicePipelineStatus(data: DevicePipelineData): PipelinePhaseSta
     data.scanTests.filter((t) => t.pipeline_phase === "fingerprinting").map((t) => t.test_id),
   );
   const hasFingerprintingEvidence = data.evidenceTestIds.some((id) => fingerprintingTestIds.has(id));
+  const hasNcaAssessment = data.nca !== null && data.nca.overall_status !== "not_tested";
+  const hasVulnData = data.vuln !== null && data.vuln.has_data;
+
+  // GET /risk/devices/{id}'s `known` flag is true for any device_id that
+  // exists in the devices table - not "a real assessment happened" - because
+  // risk_engine.py always computes a defensible worst-case score even with
+  // zero upstream evidence (a never-assessed device must never look safe).
+  // So `known` alone is trivially true the instant a device is registered,
+  // before any other phase has run. Require real signal that actually
+  // changes the risk score before calling this phase reached.
+  //
+  // Deliberately excludes fingerprinting: risk_routes.py's 7 inputs
+  // (compliance/CVSS/KEV/criticality/exposure/violation-count/
+  // insecure-service-count) are assembled from SA-IOT verdicts, NCA
+  // assessments, vuln-intel (firmware manifest) evidence, and device_services
+  // recorded at registration time - never from fingerprinting scan evidence
+  // (TEST-NET-PORTSCAN etc.). A device with only fingerprinting evidence
+  // produces the exact same risk score as one with none, so fingerprinting
+  // alone must not count as "reached" risk assessment.
+  const hasUpstreamPipelineData = data.hasSaIotVerdict || hasNcaAssessment || hasVulnData;
 
   return {
     devices: true,
     fingerprinting: hasFingerprintingEvidence,
     sa_iot_compliance: data.hasSaIotVerdict,
-    nca_compliance: data.nca !== null && data.nca.overall_status !== "not_tested",
-    vuln_intelligence: data.vuln !== null && data.vuln.has_data,
-    risk_assessment: data.risk !== null && data.risk.known,
+    nca_compliance: hasNcaAssessment,
+    vuln_intelligence: hasVulnData,
+    risk_assessment: data.risk !== null && data.risk.known && hasUpstreamPipelineData,
   };
 }
 

@@ -29,7 +29,8 @@ function verdictCounts(deviceVerdicts: VerdictRecord[]) {
 export function SAIOTCompliancePage() {
   const devices = useFetch(api.devices, []);
   const scanTests = useFetch(api.scanTests, []);
-  const verdicts = useFetch(api.verdicts, []);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const verdicts = useFetch(api.verdicts, [refreshKey]);
   const { showToast } = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [recomputing, setRecomputing] = useState(false);
@@ -48,6 +49,7 @@ export function SAIOTCompliancePage() {
           ? "No new verdicts (evidence didn't map to a new control result)."
           : `${result.created} new verdict${result.created === 1 ? "" : "s"} generated — check the Verdicts page.`;
       showToast(message, "success");
+      setRefreshKey((k) => k + 1);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "Could not recompute verdicts.", "error");
     } finally {

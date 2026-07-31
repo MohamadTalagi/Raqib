@@ -1,28 +1,61 @@
+HTTP/1.1 200 OK
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 44
+content-type: application/json
 
-Connecting to 172.30.0.6
-Can't use SSL_get_servername
-depth=0 CN=device-hardened
-verify error:num=20:unable to get local issuer certificate
-depth=0 CN=device-hardened
-verify error:num=21:unable to verify the first certificate
-CONNECTION ESTABLISHED
-Protocol version: TLSv1.3
-Ciphersuite: TLS_AES_256_GCM_SHA384
-Peer certificate: CN=device-hardened
-Hash used: SHA256
-Signature type: rsa_pss_rsae_sha256
-Verification error: unable to verify the first certificate
-Negotiated TLS1.3 group: X25519MLKEM768
-DONE
+{"status":"ok","message":"Login successful"}HTTP/1.1 401 Unauthorized
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
 
-cert_pem_found=True
-notBefore=Jul 31 15:16:13 2026 GMT
-notAfter=Jul 31 15:16:13 2027 GMT
-subject=CN=device-hardened
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
 
-PROTOCOL_PROBE_START
-TLSv1=untestable
-TLSv1.1=untestable
-TLSv1.2=accepted
-TLSv1.3=accepted
-PROTOCOL_PROBE_END
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Fri, 31 Jul 2026 21:54:25 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}

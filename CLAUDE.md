@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-07-31
+> **Last updated:** 2026-08-01
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,159 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **All 4 remaining Week 1 gaps closed — COMPLETE** (2026-07-31). The
+**Phase:** **Dashboard overhaul (guided pipeline) — all 13 planned phases COMPLETE
+and fully live-verified end to end, 3 real bugs found and fixed in that verification
+pass** (2026-08-01). The overhaul itself (Discovery → Devices → Fingerprinting →
+SA-IOT Compliance → NCA Compliance → Vulnerability Intelligence → Risk Assessment →
+Remediation, sidebar ordered top-to-bottom as the pipeline, cohort-select-and-advance
+at every step) was designed and built in a prior session ending 2026-07-31, but that
+session's own Phase 13 (final regression + live verification) was interrupted mid-way
+by a real Docker networking failure serious enough that the user rebooted the whole
+machine — this session picked up from a detailed handoff document
+(`handoff.txt`, now deleted per its own closing instruction once folded in here) and
+finished exactly the one thing that document said was still missing: a real, live,
+browser-driven proof that the new pipeline actually works against live data end to
+end, not just against mocks.
+- **Design recap** (already fully implemented before this session, only now written
+  up here for the first time): the user rejected the old flat 13-item sidebar as
+  undiscoverable and asked for a step-by-step guided pipeline where "after device
+  discovery you get the ability to either specify all device or some of the devices
+  to advance down the pipeline" — the "best of both worlds" between a wizard and this
+  project's existing real-permanent-pages architecture. Explicitly rejected cramming
+  compliance+risk into one page ("dont make any one page too complicated"), and
+  caught a real scope gap during design ("Where is CVE compliance? ... Risk
+  Assessment is a whole other thing" — promoted Vulnerability Intelligence, IoTGuard
+  Stage 05, out of Device Detail's Firmware card into its own full pipeline phase).
+  A device's furthest-reached pipeline phase (`lib/pipeline.ts::devicePipelineStatus()`/
+  `furthestReachedPhase()`) is, per this project's standing "never persist a derived
+  value" rule, computed live every render from real evidence/verdict/NCA/vuln/risk
+  data — no stored "current phase" column anywhere, so re-scanning a device makes
+  every page "catch up" automatically. New `pipeline_phase` field on every
+  `SCAN_CATALOG` entry (`policies/catalog/scan_tests.py`) drives which tests appear
+  on which phase page. New shared `components/pipeline/` modules
+  (`DeviceCohortPicker`, `PhaseStatusBadge`, `ScanJobCard`/`useScanJob` extracted
+  from the old Run Scan page, `PhaseRunnerCard`, `DeviceVulnerabilityCard`) so
+  Fingerprinting/SA-IOT/Vuln-Intel never hand-roll their own "run a test, watch it,
+  record a finding" flow. Old `RunScanPage`/`ComingSoonPage` deleted outright once
+  every call site had a real replacement page. Full per-phase file list and the
+  13-commit history (`1c30969`..`a0104ca`, each prefixed "dashboard overhaul: ") are
+  preserved in `ui-overhaul.txt` (the user's own pasted copy of the approved plan,
+  committed at `591d674`) rather than repeated here.
+- **What this session actually did, in order:** confirmed Docker Desktop was healthy
+  post-reboot but the lab stack wasn't running yet; brought it up with the dev
+  overlay; re-ran the exact same DNS check the prior session had left failing
+  (`getent hosts auditor-database` from inside `auditor-api`) and found the bug had
+  survived the full reboot. A deeper live diagnosis this session (raw UDP DNS
+  queries sent directly to `127.0.0.11:53`, bypassing `getent`) found something more
+  precise than "DNS is dead": the resolver was alive and answering, but with
+  **inconsistent per-name behavior** on `internal-network` only (`auditor-database`
+  got a clean fast NXDOMAIN, `auditor-api`/`auditor-worker`/`auditor-web` got total
+  silence/timeout) — ruling out a host firewall/VPN block (checked, neither present)
+  or a stale Windows virtual adapter (checked, only the one expected `vEthernet
+  (WSL)`) and pointing at corrupted internal state inside the Docker Desktop engine
+  itself. User ran Docker Desktop's Troubleshoot → Clean/Purge data (confirmed first
+  via `docker ps -a`/`images`/`volume ls` that every object on the machine belonged
+  to this project, current or a stale prior naming iteration, so nothing unrelated
+  was at risk) — DNS resolved correctly on the very first `up -d` afterward. Full
+  writeup: `docs/errors/032`.
+- **A purge wipes named volumes too, which surfaced two more one-time-setup gaps**,
+  neither specific to this session's own DNS bug: `lab/README.md`'s documented
+  "first-time setup" (cert-init + the mosquitto secure-broker password file) had to
+  be re-run against the fresh volumes before `mqtt-broker-secure` would even start;
+  and the NCA compliance catalog (81 guidelines + ~20 finding mappings) turned out to
+  be seeded **imperatively**, not via `init.sql`/migrations at all
+  (`python -m policies.nca.seed_catalog` / `seed_finding_mappings`, run inside
+  `auditor-api` since `auditor-worker` has no `psycopg` installed) — the NCA
+  Compliance page silently showed "0 controls in catalog" with no error until this
+  was run. Neither step is currently mentioned anywhere as needed after a fresh
+  Postgres volume specifically (only as "once per clone"); worth a README fix, noted
+  but not done this session since it's documentation-only and non-blocking.
+- **Full live walk, all real data, nothing mocked**: ran a real Discovery network
+  scan (found all 9 real lab hosts, correctly classified), used the bulk-select
+  "Register selected (3)" flow for the first time ever against a real backend
+  (confirmed a `ConfirmDialog` listing real suggested device ids/IPs, then all 3
+  flipped to "Already registered" inline with no page reload) — this flow had only
+  ever been unit-tested against mocks before. Advanced the new cohort to
+  Fingerprinting via route state, ran a real `nmap -sV -p-` against `device-insecure`
+  (172.30.0.5, real telnet/http ports), recorded real findings twice (a genuine
+  double-launch, both real jobs, both recorded — not a mistake to hide, evidence is
+  append-only). Confirmed the Devices page's furthest-phase badge picked up the new
+  evidence live with zero manual refresh. Ran a real 10-credential-pair chained
+  `curl` default-credentials test on SA-IOT Compliance (`admin:admin` genuinely
+  accepted), recorded the finding, clicked "Recompute verdicts" and got back real
+  `SA-IOT-002`/`SA-IOT-003` FAIL verdicts from the actual policy engine. Generated
+  real firmware (`generate_firmware.py`, real OpenSSL 1.0.1e / BusyBox 1.19.4),
+  uploaded it through the Vulnerability Intelligence page's own upload control (no
+  longer on Device Detail, per this overhaul's Phase 9), ran `TEST-FW-MANIFEST`, and
+  got back real Grype-scanned CVE data — 77 CVEs for openssl (exactly matching this
+  project's own historical expected count from when Grype was first wired in), 24
+  for busybox, Heartbleed correctly flagged CISA-KEV-listed. Selected `device-insecure`
+  on NCA Compliance's new "Assess a cohort" card and clicked "Assess selected" —
+  confirmed a real new browser tab opened to that device's own assessment workspace
+  (`window.open`, literally unverifiable via curl, needed a real browser context),
+  recorded a real assessment on the auto-suggested-FAIL blocking control `2-15-2`,
+  watched the device's readiness flip to `Failed`. Confirmed Risk Assessment's
+  7-factor breakdown for `device-insecure` sums to exactly its displayed score (82,
+  Critical) from real compliance/CVSS/KEV/criticality/exposure/violation/
+  insecure-service inputs. Confirmed Remediation's stub correctly shows only real,
+  already-recorded static remediation text for 2 real currently-failing controls,
+  with a clear "Not built yet" banner — never fake/previewed AI content.
+- **Three real bugs found by this live pass, not by the existing unit tests** (all
+  now fixed with regression tests, all three genuinely couldn't have been caught by
+  mocked fixtures alone since each depended on how a *real* backend response shapes
+  up for a device that exists but has no meaningful history yet):
+  1. **`devicePipelineStatus()`'s `risk_assessment` factor was trivially true the
+     instant a device was registered.** `GET /risk/devices/{id}`'s `known` flag
+     means "this device_id exists in the table," not "an assessment happened" —
+     `risk_engine.py` always computes a defensible worst-case score even with zero
+     evidence, by design (a never-assessed device must never look safe). Every
+     freshly-registered device showed "Risk Assessment" — the *last* pipeline
+     phase — as its furthest-reached phase with 0 evidence and 0 verdicts. Fixed in
+     `lib/pipeline.ts` to require real signal from an earlier phase too
+     (`hasSaIotVerdict || hasNcaAssessment || hasVulnData`) — **deliberately
+     excluding fingerprinting**, confirmed by reading `risk_routes.py`'s actual 7
+     inputs that none of them derive from `TEST-NET-PORTSCAN`-class evidence at
+     all (only from SA-IOT verdicts, NCA assessments, vuln-intel evidence, and
+     registration-time `device_services`), so a device with only fingerprinting
+     evidence produces the identical risk score to one with none. 3 new
+     `pipeline.test.ts` cases lock down both the general rule and the
+     fingerprinting-specific exclusion.
+  2. **`DevicesPage.tsx`'s `hasSaIotVerdict` counted a `NOT_APPLICABLE` verdict as
+     "SA-IOT Compliance reached."** The fleet-wide `POST /verdicts/recompute`
+     synthesizes a `NOT_APPLICABLE` placeholder for every device/control
+     combination it can evaluate from registered services alone, regardless of
+     whether any test ever ran against that device — caught live when running
+     recompute for `device-insecure` also silently gave `device-hardened`/
+     `device-partial` (0 evidence each) a `NOT_APPLICABLE` verdict, which then
+     satisfied the old check and jumped their badges straight to the end of the
+     pipeline. Fixed to exclude `NOT_APPLICABLE`, matching the exact same
+     principle `nca_compliance`'s own `overall_status !== "not_tested"` check
+     already used one line below it. New `DevicesPage.test.tsx` case.
+  3. **`SAIOTCompliancePage.tsx` never refetched verdicts after "Recompute
+     verdicts" succeeded** — `useFetch(api.verdicts, [])` only ever fetched once
+     on mount; the recompute handler called the endpoint and showed a success
+     toast, but the page's own "Current verdicts: 0 pass · 0 fail" counter stayed
+     frozen at its stale mount-time value even though `GET /verdicts` (confirmed
+     via direct curl) already had the real new rows. Fixed with the same
+     `refreshKey`-bumped-into-`useFetch`-deps pattern every other mutating page in
+     this codebase already uses (`DeviceDetailPage`, `DevicesPage`,
+     `DiscoveryPage`, `NCACompliancePage`, ...) — this page was simply missing it.
+     New regression test mocks two different `api.verdicts` responses across the
+     recompute call and asserts the displayed count actually changes.
+- **Verified**: `tsc -b --force` clean, `oxlint` clean (same 5 pre-existing
+  warnings), full Vitest suite green at 271/271 (was 266 before this session's 5 new
+  regression tests, +1 net after one fixture-collision test was rewritten as an
+  isolated per-test mock instead of a shared-fixture addition once it broke an
+  unrelated `VerdictsPage` test). Backend untouched this session (all 3 fixes were
+  frontend-only) — `policies`/`lab/auditor/api` suites not re-run since nothing
+  there changed. Rebuilt and redeployed `auditor-web` three times, once per fix,
+  each confirmed live in a real browser via Claude-in-Chrome before moving to the
+  next — not batched, so each fix was independently proven against real data before
+  trusting the next one. `docs/errors/032` written up for the Docker DNS saga.
+  `handoff.txt` deleted per its own closing instruction now that this write-up
+  exists.
+
+Before that: **All 4 remaining Week 1 gaps closed — COMPLETE** (2026-07-31). The
 task-by-task audit artifact (below) had found 10/10 brief tasks implemented but
 flagged 4 narrow gaps at file/line precision. Planned via plan mode (full plan
 preserved in the session; every design decision investigated live before being
@@ -1551,6 +1703,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-01 | **Dashboard overhaul (guided pipeline) — all 13 phases live-verified end to end, 3 real bugs found and fixed** — see §0 for the full breakdown. The 13-phase guided-pipeline overhaul itself was built in the prior session but never written up here since that session's final live-verification step was interrupted by a Docker Desktop networking failure serious enough to require a full OS reboot (`docker_networking_saga` preserved in the now-deleted `handoff.txt`). This session resumed after the reboot, found the DNS bug had survived it too, diagnosed it further via raw UDP queries to `127.0.0.11:53` (inconsistent per-name resolver behavior on `internal-network` only — not a compose config or host-firewall issue), and the user ran Docker Desktop's Troubleshoot → Clean/Purge data, which fixed it (`docs/errors/032`). Re-ran the lab's documented first-time setup (cert-init, mqtt secure-broker password) plus a previously-undocumented one — the NCA catalog's 81 guidelines/~20 finding mappings are seeded imperatively (`policies.nca.seed_catalog`/`seed_finding_mappings`), not via `init.sql`, and needed re-running against the purge-wiped volume. Then drove the entire pipeline live through a real browser (Claude-in-Chrome): Discovery's bulk-register flow (never exercised against a real backend before) registered 3 real devices from a real network scan; Fingerprinting ran a real `nmap` scan and recorded real evidence; SA-IOT Compliance ran a real 10-credential-pair default-creds test and recomputed real FAIL verdicts; Vulnerability Intelligence uploaded real generated firmware and got back real Grype-scanned CVE/KEV data (77 openssl CVEs, matching this project's own historical count); NCA Compliance's cohort "Assess selected" opened a real new browser tab and recorded a real blocking-control failure; Risk Assessment's 7-factor breakdown summed exactly to its displayed score; Remediation's stub correctly showed only real static remediation text. Found and fixed 3 real bugs this live pass exposed that mocked tests couldn't have caught: `risk_assessment` was trivially "reached" the instant any device was registered (`risk.known` means "device exists," not "assessed" — fixed to require real upstream SA-IOT/NCA/vuln signal, deliberately excluding fingerprinting since risk's own inputs never derive from it); `hasSaIotVerdict` counted a `NOT_APPLICABLE` placeholder verdict (created fleet-wide by any recompute) as "compliance reached" for devices that were never actually tested; and `SAIOTCompliancePage` never refetched verdicts after "Recompute verdicts" succeeded, leaving its own counts stale. All three fixed with regression tests (271/271 frontend passing, was 266), `tsc -b`/`oxlint` clean, `auditor-web` rebuilt/redeployed and re-verified live after each fix. |
 | 2026-07-31 | **Closed all 4 remaining Week 1 gaps found by the task-by-task audit** — see §0 for the full breakdown. (1) A real complete-assessment test for the partially-hardened profile, mixed 3-PASS/2-FAIL against the real controls. (2) `TEST-TLS-CONFIG` now forces a handshake at each of TLSv1/1.1/1.2/1.3 and reports a real 3-state (`accepted`/`rejected`/`untestable`) per-version enumeration instead of one default-negotiated value — confirmed live that this host's own OpenSSL genuinely can't offer TLSv1/1.1, a distinct honest state from a real server rejection. (3) `collector_versions` on an assessment, derived live from its child scan_jobs (never a new stored column, matching every other rollup in this codebase). (4) `confidence_reason` now auto-fills with a fixed template on both automated evidence-recording paths; new `report_records` audit-trail table + `GET /devices/{id}/report-history`, directly analogous to `compliance_audit_events`. Also fixed two real, unrelated bugs caught along the way: `test_assessments.py` was silently overwriting real evidence files on disk (fixed to isolate `DOCUMENT_STORE_DIR` like its sibling test file already does), and `tsc --noEmit` had been checking nothing all session because this project's root `tsconfig.json` needs `-b` to actually run its project references — `tsc -b --force` immediately caught 2 real errors, now fixed. 297 `policies` + 236 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 236 frontend tests passing, `tsc -b`/`oxlint` clean. Migration 009 applied live; all 3 changed images rebuilt/redeployed; verified live end to end for all 4 gaps at once against a real `device-hardened` HTTPS service (brought up for the first time this session via `cert-init`). |
 | 2026-07-31 | **Added the assessment history UI to the device detail page, closing the last real gap from a full Week 1 brief re-audit** — see §0 for the full breakdown and `docs/week1-completion-report.md` for the complete task-by-task verification against `week-1-tasks.txt`. 9 of the brief's 10 tasks were already done; the one real gap was that `GET /assessments?device_id=` had no UI caller at all. New "Assessment history" card lists every past Assessment for a device with status/policy version/timestamp, expanding in place to lazily fetch and cache its child collector jobs. New shared `AssessmentStatusBadge` (`severity-badge.tsx`) replaces `RunScanPage`'s own local status-label mapping, so the same Assessment status renders identically on both pages. No backend changes — the endpoint already existed and was already tested. `tsc`/`oxlint` clean, 3 new frontend tests, full suite green except the already-known pre-existing `RunScanPage.test.tsx` timing flake (reproduced identically on the unmodified code, confirmed unrelated). Not yet rebuilt/redeployed to the live images. |
 | 2026-07-31 | **Built out Dynamic Risk Assessment (IoTGuard Stage 06) fully** — see §0 for the complete breakdown and `docs/risk-assessment.md` for the full architecture writeup. New `policies/risk/risk_engine.py` (one pure, unit-tested `compute_device_risk()` combining compliance/CVSS/CISA-KEV-exploit-availability/device-criticality/internet-exposure/violation-count/insecure-service-count into a weighted 0-100 score + Low/Medium/High/Critical category, matching the architecture of every other scoring engine in this codebase); new `devices.criticality`/`devices.exposure` columns (migration 008) with computed defaults, editable via the pre-existing but previously-never-called `PATCH /devices/{id}`; new read-only `risk_routes.py` (`GET /risk/devices` worst-first = the org-wide priority ranking, `/risk/devices/{id}` full breakdown, `/risk/fleet-summary`), reusing NCA/vuln-intel functions rather than reimplementing them, never cached; a new dedicated `/risk` dashboard page plus an Overview card and a device-detail badge/edit panel; and a matching section on both the PDF/HTML report and the consolidated device assessment page. 373 backend + 228 API + 227 frontend tests passing (was 373/226/226 respectively before this session's API-suite additions), `tsc`/`oxlint` clean. Verified live end to end: `device-insecure`'s real `/risk/devices/{id}` breakdown hand-checked against the formula (score 39, medium), confirmed in the live report, the deployed dashboard bundle, and the `/risk` route. |

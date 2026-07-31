@@ -101,12 +101,45 @@ describe("devicePipelineStatus", () => {
       nca: NO_NCA, vuln: NO_VULN, risk: RISK_UNKNOWN,
     });
     expect(unknown.risk_assessment).toBe(false);
+  });
 
-    const known = devicePipelineStatus({
+  // Regression: GET /risk/devices/{id}'s `known` flag is true for any
+  // device_id that exists in the devices table, not "a real assessment
+  // happened" - risk_engine.py always computes a defensible worst-case score
+  // even with zero upstream evidence. Caught live: every freshly-registered
+  // device (0 evidence, 0 verdicts) showed "Risk Assessment" - the LAST
+  // pipeline phase - as its furthest reached phase immediately upon
+  // registration, since `risk.known` alone was trivially true from the
+  // moment the device row existed.
+  it("does not mark risk_assessment reached from a known-but-otherwise-untouched device", () => {
+    const freshlyRegistered = devicePipelineStatus({
       evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
       nca: NO_NCA, vuln: NO_VULN, risk: RISK_KNOWN,
     });
-    expect(known.risk_assessment).toBe(true);
+    expect(freshlyRegistered.risk_assessment).toBe(false);
+  });
+
+  // Regression: fingerprinting evidence alone must not count either. Caught
+  // live in the same pass: risk_routes.py's 7 inputs are assembled from
+  // SA-IOT verdicts, NCA assessments, vuln-intel evidence, and
+  // registration-time device_services - never from TEST-NET-PORTSCAN/etc.
+  // evidence - so a device with only fingerprinting evidence produces the
+  // identical risk score to one with none.
+  it("does not mark risk_assessment reached from fingerprinting evidence alone", () => {
+    const status = devicePipelineStatus({
+      evidenceTestIds: ["TEST-NET-PORTSCAN"], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: RISK_KNOWN,
+    });
+    expect(status.fingerprinting).toBe(true);
+    expect(status.risk_assessment).toBe(false);
+  });
+
+  it("marks risk_assessment reached once risk is known AND an earlier phase has real data", () => {
+    const status = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: true, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: NO_VULN, risk: RISK_KNOWN,
+    });
+    expect(status.risk_assessment).toBe(true);
   });
 });
 
