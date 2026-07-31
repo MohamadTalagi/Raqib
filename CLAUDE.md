@@ -12,7 +12,86 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Assessment history UI added to the device detail page — COMPLETE**
+**Phase:** **All 4 remaining Week 1 gaps closed — COMPLETE** (2026-07-31). The
+task-by-task audit artifact (below) had found 10/10 brief tasks implemented but
+flagged 4 narrow gaps at file/line precision. Planned via plan mode (full plan
+preserved in the session; every design decision investigated live before being
+written down, not assumed) and closed one gap per commit:
+- **Gap 1 (test-only)**: `test_generate_verdicts_produces_a_mixed_result_for_device_partial`
+  (`policies/engine/test_generate_verdicts.py`) - `device-insecure`/`device-hardened`
+  already had a full evidence-to-verdict test against the real 5 controls;
+  `device-partial` didn't, closing "one complete assessment test per device profile"
+  to 3/3. Real 3-PASS/2-FAIL mix, not a rubber-stamp all-one-way result.
+- **Gap 2**: `tls_cert_check.py` now forces a handshake at each of
+  TLSv1/1.1/1.2/1.3 and classifies each into `accepted`/`rejected`/`untestable` -
+  never conflated to two states. Confirmed live against the real worker image
+  before designing this that a real, distinct failure mode exists: this host's
+  own OpenSSL 3.5.6 refuses to even offer TLSv1/1.1 client-side (`no protocols
+  available`), which is a toolchain limit, not a server signal - an untestable
+  version is never reported as unsupported. New
+  `observations.protocol_probe`/`supported_tls_versions`/
+  `deprecated_tls_versions_supported`, purely additive (existing
+  `tls_version`/`weak_cipher`/`cert_expired` untouched, so `SA-IOT-005`'s
+  pass/fail condition needed no change). Deliberately **not** folded into that
+  condition - `policy_engine.py` only supports single-predicate conditions, and
+  extending its grammar is bigger scope than this gap (a collector completeness
+  fix, not a controls-engine redesign). `TEST-TLS-CONFIG`'s timeout bumped to 90s.
+- **Gap 3**: `collector_versions` on an assessment - derived **live** from the
+  assessment's own child `scan_jobs` (`_collector_versions_for_assessment()`,
+  a plain `SELECT DISTINCT`), not a new stored column, matching this codebase's
+  existing rule for every other rollup (risk score, compliance %, NCA domain
+  summary): compute from the current source of truth on read, never a value
+  that can drift out of sync. Wired into `GET /assessments/{id}` and
+  `POST /assessments`; shown in `DeviceDetailPage`'s assessment-history expand
+  panel next to Started/Completed.
+- **Gap 4**: two fields the schema/brief named but the automated path never
+  populated. `confidence_reason` now auto-fills with a fixed, deterministic
+  template (never model-generated) on both `record_scan_job_evidence` and
+  `record_scan_job_failure` when the auditor doesn't supply one - `RunScanPage`
+  gained an optional "Why this confidence level?" input, `DeviceDetailPage`
+  surfaces it as a tooltip. New `report_records` table (migration 009 +
+  `init.sql`) is an append-only log of *that* a report was generated - directly
+  analogous to the existing `compliance_audit_events` table, never a snapshot
+  of report *content* (which stays always-live-computed, same rule as risk/
+  compliance scores). Confirmed live via grep before designing this that the 3
+  report URLs are only ever plain `<a href>` links, never fetched from JS, so
+  this only logs a real human export. New `GET /devices/{id}/report-history` +
+  a small "Report history" list on `DeviceAssessmentReportPage`.
+- **A real, unrelated bug caught and fixed along the way**: `test_assessments.py`'s
+  `client` fixture didn't isolate `DOCUMENT_STORE_DIR` to `tmp_path` the way its
+  sibling `test_scan_jobs.py` already does - running it against this real dev
+  environment silently overwrote a real evidence file's raw output on disk
+  twice during this session (`EV-2026-07-31-0002.txt`, restored from git both
+  times). Fixed to match the sibling file's convention.
+- **A real, unrelated tooling gap caught and fixed**: `tsc --noEmit` alone had
+  been silently checking **nothing** all session (`tsconfig.json`'s root config
+  is `{"files": [], "references": [...]}` - project references need `tsc -b` to
+  actually run). Switched to `npx tsc -b --force`, the same command this
+  project's own `npm run build` script uses, which immediately caught 2 real
+  type errors in test fixtures missing the newly-required `confidence_reason`
+  field. Fixed. Every future frontend verification in this project should use
+  `tsc -b`, not bare `tsc --noEmit`.
+- **Verified**: `pytest` across `policies/` (297 passed) and `lab/auditor/api`
+  (236 passed, only the 2 pre-existing WeasyPrint gaps failing, unrelated) all
+  green; frontend `tsc -b` clean, `oxlint` clean (same 5 pre-existing warnings),
+  full Vitest suite green except the one already-known pre-existing
+  `RunScanPage.test.tsx` timing flake. Migration 009 applied to the live dev
+  Postgres; `auditor-api`/`auditor-worker`/`auditor-web` rebuilt and redeployed.
+  **Verified live end to end, all 4 gaps at once**: ran `cert-init` to generate
+  real TLS certs (never generated in this dev environment before) and brought
+  up `device-hardened` for the first time this session; created a real
+  assessment running `TEST-TLS-CONFIG` against its real HTTPS service and
+  confirmed the real live response showed `protocol_probe: {"TLSv1": null,
+  "TLSv1.1": null, "TLSv1.2": true, "TLSv1.3": true}` (TLSv1/1.1 genuinely
+  untestable on this host, not guessed) and real `collector_versions:
+  [{"tool": "openssl", "tool_version": "OpenSSL 3.5.6..."}]` on the same
+  assessment response; recorded a finding with no explicit confidence_reason
+  and confirmed the real auto-filled template came back; hit the real
+  report.html/.json endpoints and confirmed `GET .../report-history` returned
+  both real generation events. `docs/week1-completion-report.md` and the
+  published report artifact's "not yet implemented" list are both now closed.
+
+Before that: **Assessment history UI added to the device detail page — COMPLETE**
 (2026-07-31). Prompted by a fresh audit of the mentor's original Week 1 brief
 (`week-1-tasks.txt`, the owner added this file to the repo root this session) against
 the real codebase — every one of its 10 tasks was verified file-by-file (routes,
@@ -1472,6 +1551,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-31 | **Closed all 4 remaining Week 1 gaps found by the task-by-task audit** — see §0 for the full breakdown. (1) A real complete-assessment test for the partially-hardened profile, mixed 3-PASS/2-FAIL against the real controls. (2) `TEST-TLS-CONFIG` now forces a handshake at each of TLSv1/1.1/1.2/1.3 and reports a real 3-state (`accepted`/`rejected`/`untestable`) per-version enumeration instead of one default-negotiated value — confirmed live that this host's own OpenSSL genuinely can't offer TLSv1/1.1, a distinct honest state from a real server rejection. (3) `collector_versions` on an assessment, derived live from its child scan_jobs (never a new stored column, matching every other rollup in this codebase). (4) `confidence_reason` now auto-fills with a fixed template on both automated evidence-recording paths; new `report_records` audit-trail table + `GET /devices/{id}/report-history`, directly analogous to `compliance_audit_events`. Also fixed two real, unrelated bugs caught along the way: `test_assessments.py` was silently overwriting real evidence files on disk (fixed to isolate `DOCUMENT_STORE_DIR` like its sibling test file already does), and `tsc --noEmit` had been checking nothing all session because this project's root `tsconfig.json` needs `-b` to actually run its project references — `tsc -b --force` immediately caught 2 real errors, now fixed. 297 `policies` + 236 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 236 frontend tests passing, `tsc -b`/`oxlint` clean. Migration 009 applied live; all 3 changed images rebuilt/redeployed; verified live end to end for all 4 gaps at once against a real `device-hardened` HTTPS service (brought up for the first time this session via `cert-init`). |
 | 2026-07-31 | **Added the assessment history UI to the device detail page, closing the last real gap from a full Week 1 brief re-audit** — see §0 for the full breakdown and `docs/week1-completion-report.md` for the complete task-by-task verification against `week-1-tasks.txt`. 9 of the brief's 10 tasks were already done; the one real gap was that `GET /assessments?device_id=` had no UI caller at all. New "Assessment history" card lists every past Assessment for a device with status/policy version/timestamp, expanding in place to lazily fetch and cache its child collector jobs. New shared `AssessmentStatusBadge` (`severity-badge.tsx`) replaces `RunScanPage`'s own local status-label mapping, so the same Assessment status renders identically on both pages. No backend changes — the endpoint already existed and was already tested. `tsc`/`oxlint` clean, 3 new frontend tests, full suite green except the already-known pre-existing `RunScanPage.test.tsx` timing flake (reproduced identically on the unmodified code, confirmed unrelated). Not yet rebuilt/redeployed to the live images. |
 | 2026-07-31 | **Built out Dynamic Risk Assessment (IoTGuard Stage 06) fully** — see §0 for the complete breakdown and `docs/risk-assessment.md` for the full architecture writeup. New `policies/risk/risk_engine.py` (one pure, unit-tested `compute_device_risk()` combining compliance/CVSS/CISA-KEV-exploit-availability/device-criticality/internet-exposure/violation-count/insecure-service-count into a weighted 0-100 score + Low/Medium/High/Critical category, matching the architecture of every other scoring engine in this codebase); new `devices.criticality`/`devices.exposure` columns (migration 008) with computed defaults, editable via the pre-existing but previously-never-called `PATCH /devices/{id}`; new read-only `risk_routes.py` (`GET /risk/devices` worst-first = the org-wide priority ranking, `/risk/devices/{id}` full breakdown, `/risk/fleet-summary`), reusing NCA/vuln-intel functions rather than reimplementing them, never cached; a new dedicated `/risk` dashboard page plus an Overview card and a device-detail badge/edit panel; and a matching section on both the PDF/HTML report and the consolidated device assessment page. 373 backend + 228 API + 227 frontend tests passing (was 373/226/226 respectively before this session's API-suite additions), `tsc`/`oxlint` clean. Verified live end to end: `device-insecure`'s real `/risk/devices/{id}` breakdown hand-checked against the formula (score 39, medium), confirmed in the live report, the deployed dashboard bundle, and the `/risk` route. |
 | 2026-07-30/31 | **Built out Vulnerability Intelligence (IoTGuard Stage 05) fully** — see §0 for the complete breakdown and `docs/vulnerability-intelligence.md` for the full architecture writeup. Replaced the 6-entry hardcoded `vuln_reference.py` fallback table with real coverage by wiring in Grype (already installed in the worker image, never invoked) via a hybrid model: scan-time lookups stay 100% local, a scheduled `job_runner.py` check refreshes Grype's local DB and a new CISA KEV cache out of band. New `sbom.py` (manifest → CycloneDX), `cisa_kev.py` (KEV feed fetch/cache), a new read-only `vuln_routes.py` API surface, and dashboard UI (`VulnAdvisoryPanel`/`VulnFreshnessNote`/`KevBadge`) across Overview, the device detail page, the consolidated assessment report, and the PDF/HTML report. Real coverage jump confirmed live: openssl 1.0.1e went from 2 CVEs to 77, busybox 1.19.4 from 0 to 24, with real CISA KEV cross-referencing (Heartbleed confirmed genuinely KEV-listed). Caught and fixed two real bugs live (a staleness-check design flaw that would have re-triggered a DB update on every check forever, and a frontend test race condition) and caught-and-repaired one real, unrelated incident (a corrupted Grype DB from an earlier container restart, handled gracefully by the existing three-tier fallback with zero bad data reaching evidence). 333 backend + 214 frontend tests passing (was 290/193), `tsc`/`oxlint` clean. Verified live end to end through the real production pipeline (register → upload firmware → scan → evidence → dashboard/report), not just against test databases. |

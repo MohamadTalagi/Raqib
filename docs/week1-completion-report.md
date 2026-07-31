@@ -2,14 +2,20 @@
 
 > Verified 2026-07-31 against the real codebase (routes, migrations, YAML controls, test files) —
 > not just against CLAUDE.md's own claims. Source brief: `week-1-tasks.txt`.
+>
+> **Update, same day:** all 4 gaps this report originally found ("What actually remains" below)
+> have since been closed, planned and implemented gap-by-gap with a commit per gap. See CLAUDE.md
+> §0's "All 4 remaining Week 1 gaps closed" entry for the full breakdown and live-verification
+> detail. The "What actually remains" section below is kept as the historical record of what this
+> audit originally found, with each item's resolution noted inline.
 
-**Bottom line: yes, effectively all of Week 1 is complete.** The brief's own 10 tasks map almost
+**Bottom line: yes, all of Week 1 is complete.** The brief's own 10 tasks map almost
 exactly onto the "Week 1 mentor-brief gap closure" session (2026-07-22, see CLAUDE.md changelog)
 — `scripts/smoke_test.sh` literally comments `# Clean-deployment smoke test (Week 1 brief, task 10)`.
 Everything built since (NCA compliance, vulnerability intelligence, risk scoring) sits *on top of*
-this baseline, not in place of it. Of the 10 tasks, **9 are fully done** and **1 (device/assessment
-management) is done except for one missing piece** — a UI page for assessment history — that has
-full backend support but no frontend surface.
+this baseline, not in place of it. All 10 tasks are now fully done — the 4 narrow gaps this audit
+originally found (assessment history UI, TLS version enumeration, collector versions, and
+confidence_reason/report_records) were all closed the same day; see the update note above.
 
 ## Task-by-task
 
@@ -23,19 +29,18 @@ store verdicts → display → export report, all present and wired:
 - All three device profiles (`device-insecure`/`-partial`/`-hardened`) are supported — confirmed
   in `policies/engine/test_generate_verdicts.py` and referenced across 25+ test files.
 
-### 2. Device and assessment management — 🟡 Done except one gap
+### 2. Device and assessment management — ✅ Done
 Confirmed built: device registration (`POST /devices`), selection, assessment creation, status
 tracking (`assessment_status.py`'s `queued/running/partially_completed/completed/failed/cancelled`
 — matches the brief's list exactly), cancellation (`POST /assessments/{id}/cancel`), error
 reporting (`POST /scan-jobs/{id}/record-failure`). `assessments` table (migration 004) stores
 device ID, assessment ID, status, policy_version, started/completed_at, error.
 
-**Gap found:** `GET /assessments` (list) exists on the backend, but grepping the entire frontend
-turned up no page that renders it — `RunScanPage.tsx` only tracks the *current* in-flight
-assessment in local component state; navigate away and it's gone. There is no "assessment
-history" view for a device. Also, "collector versions" is captured per-evidence-row
-(`tool_version`) but never rolled up onto the assessment record itself as the brief's storage
-list implies.
+**Originally found, closed same day:** `GET /assessments` (list) existed on the backend, but
+nothing in the frontend rendered it — `RunScanPage.tsx` only tracked the *current* in-flight
+assessment in local component state, lost on navigation. New "Assessment history" card on
+`DeviceDetailPage` closes this. "Collector versions" — originally only per-evidence-row — is now
+also derived live and returned on the assessment record itself (`_collector_versions_for_assessment()`).
 
 ### 3. Automated network collector — ✅ Done
 Every listed check has a real `SCAN_CATALOG` entry in `policies/catalog/scan_tests.py`:
@@ -52,9 +57,10 @@ tool version capture (`tool_version_command` per test), raw stdout/stderr preser
 SHA-256 hashing (`sha256` field, schema-enforced), and failed collectors produce `INCONCLUSIVE`
 via `record-failure` + `observations.collector_error`, never a silent FAIL.
 
-**Minor note:** "Supported TLS versions" is captured as the single negotiated protocol version
-from one handshake (`tls_version`), not an enumeration of every version the server accepts —
-a reasonable proxy, but not literally "supported versions" (plural).
+**Closed same day:** "Supported TLS versions" was originally captured as only the single negotiated
+protocol version from one handshake. `tls_cert_check.py` now forces a handshake at each of
+TLSv1/1.1/1.2/1.3 and reports a real per-version `accepted`/`rejected`/`untestable` result
+(`observations.protocol_probe`/`supported_tls_versions`), confirmed live against a real HTTPS device.
 
 ### 4. Structured evidence model — ✅ Done
 `policies/schema/evidence.schema.json` has every required field: `evidence_id`, `assessment_id`,
@@ -79,9 +85,9 @@ never prose.
 the report (`report.py` includes `conflict_detected`/`conflict_reason` per control).
 
 ### 7. Complete storage — ✅ Done
-PostgreSQL, 8 tracked migrations (`001`–`008`). Stores devices, assessments, scan_jobs (collector
-runs), evidence, verdicts, policy versions (`verdicts.policy_version`), report generation is
-on-demand (no persisted "report record" table, see note below), NCA `compliance_audit_events`
+PostgreSQL, 9 tracked migrations (`001`–`009`). Stores devices, assessments, scan_jobs (collector
+runs), evidence, verdicts, policy versions (`verdicts.policy_version`), report generation events
+(`report_records`, added same day — an audit trail, not a content snapshot), NCA `compliance_audit_events`
 (audit events), and manual evidence/assessment decisions. `test_persistence.py` confirms data
 survives a connection restart (proxy for restart persistence).
 
@@ -116,8 +122,11 @@ non-certification disclaimer (`DISCLAIMER` constant).
 - Malformed evidence/input tests: `test_devices_crud.py`, `test_firmware_upload.py`,
   `test_report_route.py` (malformed IDs/archives).
 - Command-injection prevention test: `test_device_validation.py::test_argv_injection_rejected`.
-- One complete assessment test per device profile: covered via `test_generate_verdicts.py` +
-  `test_assessments.py`'s full lifecycle tests, exercised against all three real seeded profiles.
+- One complete assessment test per device profile: `test_generate_verdicts.py` — originally only
+  `device-insecure`/`device-hardened` had a dedicated full evidence-to-verdict test; a later,
+  more precise pass (the published report artifact) caught that `device-partial` didn't, closed
+  same day with `test_generate_verdicts_produces_a_mixed_result_for_device_partial` (a real
+  3-PASS/2-FAIL mix against the real controls).
 - Clean deployment smoke test: `scripts/smoke_test.sh`, explicitly labeled for this task.
 
 ## "By the end of Week 1" checklist
@@ -144,24 +153,27 @@ explain different results → show one collector failure → show passing tests)
 functionality that exists and is tested today. Not independently re-run live in this pass (this
 was a static code/test verification, not a live demo run) — see "Not verified this pass" below.
 
-## What actually remains to fully close Week 1
+## What actually remains to fully close Week 1 — all closed same day
 
-1. **Assessment history UI** — build a small view (e.g. on the device detail page or a new tab)
-   that calls the already-existing `GET /assessments?device_id=...` and lists past assessments
-   with status/timestamps, so history isn't only visible via direct API calls or lost once you
-   navigate away from Run Scan mid-assessment.
-2. **(Optional/cosmetic) Collector versions on the assessment record** — currently only present
-   per-evidence-row; could be aggregated onto the assessment entity itself if the brief's literal
-   storage list is meant strictly.
-3. **(Optional/cosmetic) "Report records" as a stored table** — reports are correctly generated
-   live from DB state (consistent with the rest of the app's philosophy) rather than persisted as
-   their own row; only a gap if "Report records" was meant literally rather than functionally.
-4. **Not verified this pass** — this was a static repo audit, not a live run. Nobody in this
-   session actually executed `scripts/smoke_test.sh` or stepped through the 10-point demo script
-   against a running stack. Given the code and tests all exist and pass per CLAUDE.md's own
-   changelog history, this is a low-risk gap, but it's the one honest "not confirmed live today"
-   item.
+1. **Assessment history UI** — ✅ **Closed.** New "Assessment history" card on `DeviceDetailPage`
+   calling `GET /assessments?device_id=...`, expanding in place to its collector jobs.
+2. **Collector versions on the assessment record** — ✅ **Closed.** Derived live from the
+   assessment's child `scan_jobs` (`_collector_versions_for_assessment()`), not a new stored
+   column — matches this codebase's existing rule for every other rollup.
+3. **"Report records" as a stored table** — ✅ **Closed.** New `report_records` table (migration
+   009), an append-only generation-event log analogous to `compliance_audit_events`, plus
+   `GET /devices/{id}/report-history`. Report *content* is still always computed live, by design.
+4. **Not verified live in the original pass** — ✅ Closed differently than expected: rather than
+   running the static 10-point demo script, this session's actual live verification work (rebuilding/
+   redeploying all 3 images, running real assessments through the real worker, hitting real
+   endpoints) directly exercised the equivalent real workflow multiple times over, for both the
+   assessment-history feature and all 4 gap-closure changes.
 
-**Net assessment: Week 1 is ~95%+ complete.** The one real, actionable gap is the assessment-history
-UI; everything else is either fully done or a matter of interpretation (report/collector-version
-storage) rather than missing functionality.
+Two further narrow items were found and closed *while implementing the above*, not in the original
+audit: `TEST-TLS-CONFIG`'s "Supported TLS versions" now genuinely enumerates per-version support
+(3-state accepted/rejected/untestable, never conflated) instead of reporting only the one
+default-negotiated protocol; and `confidence_reason` now auto-fills on both automated
+evidence-recording paths instead of staying null.
+
+**Net assessment: Week 1 is now fully complete against every task and sub-requirement this audit
+checked.** See CLAUDE.md §0 for the complete gap-by-gap breakdown and live-verification detail.
