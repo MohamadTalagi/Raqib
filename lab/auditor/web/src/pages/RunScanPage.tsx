@@ -4,6 +4,7 @@ import { PlayCircle, RefreshCw, Loader2, CheckCircle2, XCircle, Ban } from "luci
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/state";
+import { AssessmentStatusBadge } from "@/components/ui/severity-badge";
 import { api, ApiError } from "@/lib/api";
 import { useFetch } from "@/lib/useFetch";
 import type { AssessmentStatus, ScanJob, ScanTestCategory, ScanTestSpec, ServiceType } from "@/lib/types";
@@ -13,15 +14,6 @@ import { useToast } from "@/lib/useToast";
 const POLL_INTERVAL_MS = 1200;
 const IN_FLIGHT_STATUSES = new Set(["pending", "running"]);
 const IN_FLIGHT_ASSESSMENT_STATUSES = new Set<AssessmentStatus>(["queued", "running"]);
-
-const ASSESSMENT_STATUS_COPY: Record<AssessmentStatus, { label: string; tone: string }> = {
-  queued: { label: "Queued", tone: "text-[var(--color-text-muted)]" },
-  running: { label: "Running", tone: "text-[var(--color-low)]" },
-  partially_completed: { label: "Partially completed", tone: "text-[var(--color-medium)]" },
-  completed: { label: "Completed", tone: "text-[var(--color-pass)]" },
-  failed: { label: "Failed", tone: "text-[var(--color-critical)]" },
-  cancelled: { label: "Cancelled", tone: "text-[var(--color-text-muted)]" },
-};
 
 const SECTIONS: { category: ScanTestCategory; title: string }[] = [
   { category: "web-and-auth", title: "1. Web and Authentication Assessment" },
@@ -585,9 +577,7 @@ export function RunScanPage() {
                     <Loader2 className="h-4 w-4 animate-spin text-[var(--color-low)]" />
                   )}
                   <span className="font-mono text-xs text-[var(--color-text-muted)]">{assessmentId}</span>
-                  <span className={cn("text-sm font-medium", ASSESSMENT_STATUS_COPY[assessmentStatus].tone)}>
-                    {ASSESSMENT_STATUS_COPY[assessmentStatus].label}
-                  </span>
+                  <AssessmentStatusBadge status={assessmentStatus} />
                   {IN_FLIGHT_ASSESSMENT_STATUSES.has(assessmentStatus) && (
                     <button
                       type="button"

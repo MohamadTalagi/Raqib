@@ -182,10 +182,13 @@ export interface Assessment {
   completed_at: string | null;
   error: string | null;
   created_at: string;
-  jobs: ScanJob[];
+  // Present on POST /assessments and GET /assessments/{id}; absent on the
+  // GET /assessments list endpoint, which returns assessment summaries only.
+  jobs?: ScanJob[];
 }
 
 export interface CreateAssessmentResult extends Assessment {
+  jobs: ScanJob[];
   errors: Record<string, string>;
 }
 

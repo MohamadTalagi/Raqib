@@ -162,6 +162,7 @@ describe("DeviceDetailPage", () => {
     vi.spyOn(api, "vulnIntelDevice").mockResolvedValue(NO_VULN_DATA);
     vi.spyOn(api, "vulnIntelStatus").mockResolvedValue(vulnIntelStatusFixture);
     vi.spyOn(api, "riskDevice").mockResolvedValue({ device_id: "device-insecure", known: false });
+    vi.spyOn(api, "listAssessments").mockResolvedValue([]);
   });
 
   it("shows the device's NCA compliance percentage", async () => {
@@ -506,5 +507,105 @@ describe("DeviceDetailPage", () => {
     await screen.findByText("Smart Camera — Insecure");
 
     expect(screen.queryByText("Risk:")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty state when no assessments have been run", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    renderPage();
+
+    expect(await screen.findByText(/no assessments have been run/i)).toBeInTheDocument();
+  });
+
+  it("lists past assessments with their status, policy version, and timestamp", async () => {
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    vi.spyOn(api, "listAssessments").mockResolvedValue([
+      {
+        id: "ASMT-2026-07-31-0001",
+        device_id: "device-insecure",
+        status: "completed",
+        policy_version: "1.0.0",
+        started_at: "2026-07-31T10:00:00+00:00",
+        completed_at: "2026-07-31T10:01:00+00:00",
+        error: null,
+        created_at: "2026-07-31T10:00:00+00:00",
+      },
+      {
+        id: "ASMT-2026-07-31-0002",
+        device_id: "device-insecure",
+        status: "failed",
+        policy_version: null,
+        started_at: null,
+        completed_at: null,
+        error: "worker unreachable",
+        created_at: "2026-07-31T11:00:00+00:00",
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("ASMT-2026-07-31-0001")).toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.getByText("policy 1.0.0")).toBeInTheDocument();
+    expect(screen.getByText("ASMT-2026-07-31-0002")).toBeInTheDocument();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("worker unreachable")).toBeInTheDocument();
+    expect(screen.getByText("policy version unknown")).toBeInTheDocument();
+  });
+
+  it("expands an assessment row to lazily load and show its collector jobs", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "device").mockResolvedValue(DETAIL);
+    vi.spyOn(api, "listAssessments").mockResolvedValue([
+      {
+        id: "ASMT-2026-07-31-0001",
+        device_id: "device-insecure",
+        status: "completed",
+        policy_version: "1.0.0",
+        started_at: "2026-07-31T10:00:00+00:00",
+        completed_at: "2026-07-31T10:01:00+00:00",
+        error: null,
+        created_at: "2026-07-31T10:00:00+00:00",
+      },
+    ]);
+    const getAssessmentSpy = vi.spyOn(api, "getAssessment").mockResolvedValue({
+      id: "ASMT-2026-07-31-0001",
+      device_id: "device-insecure",
+      status: "completed",
+      policy_version: "1.0.0",
+      started_at: "2026-07-31T10:00:00+00:00",
+      completed_at: "2026-07-31T10:01:00+00:00",
+      error: null,
+      created_at: "2026-07-31T10:00:00+00:00",
+      jobs: [
+        {
+          id: 42,
+          device_id: "device-insecure",
+          test_id: "TEST-MQTT-OPEN",
+          status: "recorded",
+          tool: "nmap",
+          tool_version: "7.94",
+          command: null,
+          raw_output: null,
+          observations: null,
+          error: null,
+          evidence_id: "EV-1",
+          assessment_id: "ASMT-2026-07-31-0001",
+          created_at: "2026-07-31T10:00:05+00:00",
+          updated_at: "2026-07-31T10:00:10+00:00",
+        },
+      ],
+    });
+    renderPage();
+
+    const row = await screen.findByRole("button", { name: /ASMT-2026-07-31-0001/ });
+    await user.click(row);
+
+    expect(getAssessmentSpy).toHaveBeenCalledWith("ASMT-2026-07-31-0001");
+    expect(await screen.findByText("TEST-MQTT-OPEN")).toBeInTheDocument();
+    expect(screen.getByText("#42")).toBeInTheDocument();
+
+    // Collapsing and re-expanding must not refetch - the jobs are cached.
+    await user.click(row);
+    await user.click(row);
+    expect(getAssessmentSpy).toHaveBeenCalledTimes(1);
   });
 });

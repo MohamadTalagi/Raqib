@@ -191,6 +191,8 @@ export const api = {
     getJson<Assessment>(`/assessments/${encodeURIComponent(assessmentId)}`),
   cancelAssessment: (assessmentId: string): Promise<Assessment> =>
     postJson<Assessment>(`/assessments/${encodeURIComponent(assessmentId)}/cancel`, {}),
+  listAssessments: (deviceId: string): Promise<Assessment[]> =>
+    getJson<Assessment[]>(`/assessments?device_id=${encodeURIComponent(deviceId)}`),
 
   device: (deviceId: string): Promise<DeviceDetail> =>
     getJson<DeviceDetail>(`/devices/${encodeURIComponent(deviceId)}`),

@@ -12,7 +12,57 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Dynamic Risk Assessment (IoTGuard Stage 06) built out fully — COMPLETE**
+**Phase:** **Assessment history UI added to the device detail page — COMPLETE**
+(2026-07-31). Prompted by a fresh audit of the mentor's original Week 1 brief
+(`week-1-tasks.txt`, the owner added this file to the repo root this session) against
+the real codebase — every one of its 10 tasks was verified file-by-file (routes,
+migrations, control YAMLs, test files, not just re-reading old changelog claims), and
+9 of 10 were already fully done from the 2026-07-22 "Week 1 mentor-brief gap closure"
+session and everything built since. The one real, actionable gap found: task 2's
+"Assessment history" requirement had full backend support (`GET /assessments?device_id=`
+already existed and was already tested) but **no frontend ever called it** — Run Scan
+only tracks the single in-flight assessment in local component state, which is lost
+the moment you navigate away. Full findings written up in
+`docs/week1-completion-report.md`.
+- **New "Assessment history" card on `DeviceDetailPage`** — lists every past Assessment
+  for the device (worst/newest-first, via the existing list endpoint), each row
+  showing its status, policy version, and timestamp; clicking a row expands it in
+  place (same `expanded === id` convention `VerdictsPage` already uses) to show its
+  child collector jobs, fetched lazily via the existing `GET /assessments/{id}` only
+  on first expand and cached in component state so re-expanding never refetches.
+- **New shared `AssessmentStatusBadge`** (`severity-badge.tsx`) — the
+  queued/running/partially_completed/completed/failed/cancelled status, icon+text
+  like every other status badge in this file. Extracted from `RunScanPage`'s own
+  local `ASSESSMENT_STATUS_COPY` (now deleted) so the same status never renders two
+  different ways across the two pages that show it — the exact "same signal shown
+  inconsistently" class of bug this project has fixed several times before (see the
+  2026-07-24 dashboard-consistency-pass entry below).
+- **`Assessment.jobs` is now correctly optional** in the frontend's own type
+  (`types.ts`) — it was typed as always-present, which was simply false for the list
+  endpoint's response shape (only `POST /assessments` and `GET /assessments/{id}`
+  return `jobs`); `CreateAssessmentResult` narrows it back to required, since that
+  endpoint always populates it.
+- No backend changes at all — `GET /assessments?device_id=` already existed, already
+  filtered correctly, and was already covered by `test_assessments.py`.
+- **Verified**: `tsc --noEmit` clean; `oxlint` clean (same 5 pre-existing warnings,
+  nothing new); full Vitest suite green except the one already-known pre-existing
+  `RunScanPage.test.tsx` timing flake (confirmed independent of this change by
+  reproducing it identically on the unmodified code via `git stash`); 3 new
+  `DeviceDetailPage` tests (empty state, list rendering, expand-to-fetch-and-cache).
+  Rebuilt and redeployed `auditor-web` live; confirmed the new bundle is served
+  (content strings present) and drove a real assessment through the real API/worker
+  end to end to prove the card against live data, not just mocks: created
+  `ASMT-2026-07-31-0001` on `device-insecure` (`TEST-NET-REACHABILITY` +
+  `TEST-HTTP-HEADERS`), let the real worker run both collectors, recorded both
+  findings, and confirmed the assessment reached `completed` with two real evidence
+  rows (`EV-2026-07-31-0001/0002`) - kept, real data, per this project's standing
+  convention for verification artifacts created in the dev DB. Claude-in-Chrome
+  wasn't connected this session, so this was a curl/API-level live check, not a
+  browser screenshot. A full task-by-task re-audit of `week-1-tasks.txt` against
+  the codebase (file/line citations throughout, four narrow non-blocking gaps
+  found and documented) was written up as a report artifact this same session.
+
+Before that: **Dynamic Risk Assessment (IoTGuard Stage 06) built out fully — COMPLETE**
 (2026-07-31). Stage 06 was entirely unbuilt going in — confirmed by a repo-wide grep
 before starting: zero hits for risk-scoring code anywhere. Orchestrated as a 7-phase
 plan (full write-up in `docs/risk-assessment.md`), agreed with the owner up front on
@@ -1422,6 +1472,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-07-31 | **Added the assessment history UI to the device detail page, closing the last real gap from a full Week 1 brief re-audit** — see §0 for the full breakdown and `docs/week1-completion-report.md` for the complete task-by-task verification against `week-1-tasks.txt`. 9 of the brief's 10 tasks were already done; the one real gap was that `GET /assessments?device_id=` had no UI caller at all. New "Assessment history" card lists every past Assessment for a device with status/policy version/timestamp, expanding in place to lazily fetch and cache its child collector jobs. New shared `AssessmentStatusBadge` (`severity-badge.tsx`) replaces `RunScanPage`'s own local status-label mapping, so the same Assessment status renders identically on both pages. No backend changes — the endpoint already existed and was already tested. `tsc`/`oxlint` clean, 3 new frontend tests, full suite green except the already-known pre-existing `RunScanPage.test.tsx` timing flake (reproduced identically on the unmodified code, confirmed unrelated). Not yet rebuilt/redeployed to the live images. |
 | 2026-07-31 | **Built out Dynamic Risk Assessment (IoTGuard Stage 06) fully** — see §0 for the complete breakdown and `docs/risk-assessment.md` for the full architecture writeup. New `policies/risk/risk_engine.py` (one pure, unit-tested `compute_device_risk()` combining compliance/CVSS/CISA-KEV-exploit-availability/device-criticality/internet-exposure/violation-count/insecure-service-count into a weighted 0-100 score + Low/Medium/High/Critical category, matching the architecture of every other scoring engine in this codebase); new `devices.criticality`/`devices.exposure` columns (migration 008) with computed defaults, editable via the pre-existing but previously-never-called `PATCH /devices/{id}`; new read-only `risk_routes.py` (`GET /risk/devices` worst-first = the org-wide priority ranking, `/risk/devices/{id}` full breakdown, `/risk/fleet-summary`), reusing NCA/vuln-intel functions rather than reimplementing them, never cached; a new dedicated `/risk` dashboard page plus an Overview card and a device-detail badge/edit panel; and a matching section on both the PDF/HTML report and the consolidated device assessment page. 373 backend + 228 API + 227 frontend tests passing (was 373/226/226 respectively before this session's API-suite additions), `tsc`/`oxlint` clean. Verified live end to end: `device-insecure`'s real `/risk/devices/{id}` breakdown hand-checked against the formula (score 39, medium), confirmed in the live report, the deployed dashboard bundle, and the `/risk` route. |
 | 2026-07-30/31 | **Built out Vulnerability Intelligence (IoTGuard Stage 05) fully** — see §0 for the complete breakdown and `docs/vulnerability-intelligence.md` for the full architecture writeup. Replaced the 6-entry hardcoded `vuln_reference.py` fallback table with real coverage by wiring in Grype (already installed in the worker image, never invoked) via a hybrid model: scan-time lookups stay 100% local, a scheduled `job_runner.py` check refreshes Grype's local DB and a new CISA KEV cache out of band. New `sbom.py` (manifest → CycloneDX), `cisa_kev.py` (KEV feed fetch/cache), a new read-only `vuln_routes.py` API surface, and dashboard UI (`VulnAdvisoryPanel`/`VulnFreshnessNote`/`KevBadge`) across Overview, the device detail page, the consolidated assessment report, and the PDF/HTML report. Real coverage jump confirmed live: openssl 1.0.1e went from 2 CVEs to 77, busybox 1.19.4 from 0 to 24, with real CISA KEV cross-referencing (Heartbleed confirmed genuinely KEV-listed). Caught and fixed two real bugs live (a staleness-check design flaw that would have re-triggered a DB update on every check forever, and a frontend test race condition) and caught-and-repaired one real, unrelated incident (a corrupted Grype DB from an earlier container restart, handled gracefully by the existing three-tier fallback with zero bad data reaching evidence). 333 backend + 214 frontend tests passing (was 290/193), `tsc`/`oxlint` clean. Verified live end to end through the real production pipeline (register → upload firmware → scan → evidence → dashboard/report), not just against test databases. |
 | 2026-07-30 | **Hide non-scannable controls from the assess pickers** — the "This control has no automated collector…" dead-end message appeared because manual-only controls (e.g. SA-IOT-001, whose only test `TEST-DEVICE-ID` has no `SCAN_CATALOG` entry) were still listed in the assess control dropdowns. New `lib/controls.ts::scanAssessableControls()` filters the pickers (device detail assess panel + `AssessVerdictDialog`) to controls with at least one catalogued collector, so the dead-end can't be selected; falls back to all controls if the catalog hasn't loaded. Backend 400 kept as a concise defensive guard (verbose NCA-workspace text trimmed). 3 helper unit tests; verified live SA-IOT-001 is excluded. |

@@ -1,7 +1,7 @@
-import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert, ShieldCheck, AlertOctagon } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert, ShieldCheck, AlertOctagon, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification, RiskCategory } from "@/lib/types";
+import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification, RiskCategory, AssessmentStatus } from "@/lib/types";
 
 const SEVERITY_STYLES: Record<Severity, string> = {
   critical: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
@@ -272,6 +272,49 @@ export function KevBadge({ size = "sm" }: { size?: "xs" | "sm" }) {
         KEV
       </span>
     </Tooltip>
+  );
+}
+
+const ASSESSMENT_STATUS_STYLES: Record<AssessmentStatus, string> = {
+  queued: "bg-[color-mix(in_oklab,var(--color-text-muted)_16%,transparent)] text-[var(--color-text-muted)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-text-muted)_35%,transparent)]",
+  running: "bg-[color-mix(in_oklab,var(--color-low)_16%,transparent)] text-[var(--color-low)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-low)_35%,transparent)]",
+  partially_completed: "bg-[color-mix(in_oklab,var(--color-medium)_16%,transparent)] text-[var(--color-medium)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-medium)_35%,transparent)]",
+  completed: "bg-[color-mix(in_oklab,var(--color-pass)_16%,transparent)] text-[var(--color-pass)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-pass)_35%,transparent)]",
+  failed: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
+  cancelled: "bg-[color-mix(in_oklab,var(--color-text-muted)_16%,transparent)] text-[var(--color-text-muted)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-text-muted)_35%,transparent)]",
+};
+
+const ASSESSMENT_STATUS_ICON: Record<AssessmentStatus, typeof CheckCircle2> = {
+  queued: CircleDashed,
+  running: Loader2,
+  partially_completed: AlertTriangle,
+  completed: CheckCircle2,
+  failed: XCircle,
+  cancelled: Ban,
+};
+
+const ASSESSMENT_STATUS_LABEL: Record<AssessmentStatus, string> = {
+  queued: "Queued",
+  running: "Running",
+  partially_completed: "Partially completed",
+  completed: "Completed",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+/** The Assessment entity's aggregate status (policies/engine/assessment_status.py) - shared by Run Scan's in-flight indicator and the device detail page's assessment history. */
+export function AssessmentStatusBadge({ status }: { status: AssessmentStatus }) {
+  const Icon = ASSESSMENT_STATUS_ICON[status];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold tracking-wide",
+        ASSESSMENT_STATUS_STYLES[status],
+      )}
+    >
+      <Icon className={cn("h-3.5 w-3.5", status === "running" && "animate-spin")} strokeWidth={2} />
+      {ASSESSMENT_STATUS_LABEL[status]}
+    </span>
   );
 }
 

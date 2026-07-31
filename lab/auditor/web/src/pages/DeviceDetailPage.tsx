@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import {
+  AssessmentStatusBadge,
   BlockingBadge,
   ComplianceBadge,
   ConfidenceLabel,
@@ -26,7 +27,7 @@ import { api, ApiError, type UpdateDevicePayload } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
 import { applicableDomains } from "@/lib/nca";
 import { scanAssessableControls } from "@/lib/controls";
-import type { Confidence, Severity, VerdictStatus } from "@/lib/types";
+import type { Confidence, Severity, VerdictStatus, ScanJob } from "@/lib/types";
 
 const VERDICT_STATUSES: readonly VerdictStatus[] = ["PASS", "FAIL", "PARTIAL", "INCONCLUSIVE"];
 const SEVERITIES: readonly Severity[] = ["low", "medium", "high", "critical"];
@@ -89,9 +90,13 @@ export function DeviceDetailPage() {
   const ncaDetail = useFetch(() => api.ncaDevice(deviceId ?? ""), [deviceId]);
   const vulnSummary = useFetch(() => api.vulnIntelDevice(deviceId ?? ""), [deviceId, refreshKey]);
   const riskDetail = useFetch(() => api.riskDevice(deviceId ?? ""), [deviceId, refreshKey]);
+  const assessments = useFetch(() => api.listAssessments(deviceId ?? ""), [deviceId, refreshKey]);
   const controls = useFetch(api.controls, []);
   const scanTests = useFetch(api.scanTests, []);
   const [activeTab, setActiveTab] = useState<"overview" | "compliance">("overview");
+  const [expandedAssessmentId, setExpandedAssessmentId] = useState<string | null>(null);
+  const [assessmentJobs, setAssessmentJobs] = useState<Record<string, ScanJob[]>>({});
+  const [loadingJobsFor, setLoadingJobsFor] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deregistering, setDeregistering] = useState(false);
   const [firmwareOverride, setFirmwareOverride] = useState<FirmwareState | null>(null);
@@ -113,6 +118,28 @@ export function DeviceDetailPage() {
       showToast(caught instanceof ApiError ? caught.message : "Could not update the risk profile.", "error");
     } finally {
       setRiskProfileBusy(false);
+    }
+  }
+
+  // The assessment list (GET /assessments?device_id=...) returns summaries
+  // only - the child scan_jobs come from GET /assessments/{id}, fetched
+  // lazily the first time a row is expanded and cached here so re-collapsing
+  // and re-expanding a row doesn't refetch it.
+  async function handleToggleAssessment(assessmentId: string) {
+    if (expandedAssessmentId === assessmentId) {
+      setExpandedAssessmentId(null);
+      return;
+    }
+    setExpandedAssessmentId(assessmentId);
+    if (assessmentJobs[assessmentId]) return;
+    setLoadingJobsFor(assessmentId);
+    try {
+      const full = await api.getAssessment(assessmentId);
+      setAssessmentJobs((prev) => ({ ...prev, [assessmentId]: full.jobs ?? [] }));
+    } catch {
+      setAssessmentJobs((prev) => ({ ...prev, [assessmentId]: [] }));
+    } finally {
+      setLoadingJobsFor(null);
     }
   }
 
@@ -560,6 +587,86 @@ export function DeviceDetailPage() {
                           <span className="font-mono text-xs text-[var(--color-text-muted)]">{v.timestamp}</span>
                         </li>
                       ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Assessment history</CardTitle>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Every batch of collectors run together as one Assessment (via Run Scan's "Run selected" or the
+                    Scan Console). Click a row to see its collector jobs.
+                  </p>
+                </CardHeader>
+                <CardContent className="pt-2">
+                  {assessments.error ? (
+                    <ErrorState message={assessments.error} />
+                  ) : assessments.loading ? (
+                    <Skeleton className="h-24" />
+                  ) : !assessments.data || assessments.data.length === 0 ? (
+                    <EmptyState message="No assessments have been run for this device yet." />
+                  ) : (
+                    <ul className="divide-y divide-[var(--color-border)]">
+                      {assessments.data.map((assessment) => {
+                        const isOpen = expandedAssessmentId === assessment.id;
+                        const jobs = assessmentJobs[assessment.id];
+                        return (
+                          <li key={assessment.id}>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAssessment(assessment.id)}
+                              aria-expanded={isOpen}
+                              className="flex w-full flex-wrap items-center gap-3 py-2.5 text-left text-sm"
+                            >
+                              <AssessmentStatusBadge status={assessment.status} />
+                              <span className="font-mono text-xs text-[var(--color-text-muted)]">{assessment.id}</span>
+                              <span className="font-mono text-xs text-[var(--color-text-muted)]">
+                                {assessment.policy_version
+                                  ? `policy ${assessment.policy_version}`
+                                  : "policy version unknown"}
+                              </span>
+                              {assessment.error && (
+                                <span className="text-xs text-[var(--color-critical)]">{assessment.error}</span>
+                              )}
+                              <span className="ml-auto font-mono text-xs text-[var(--color-text-muted)]">
+                                {assessment.created_at}
+                              </span>
+                            </button>
+                            {isOpen && (
+                              <div className="mb-3 ml-1 space-y-2 border-l border-[var(--color-border)] pl-4">
+                                <p className="text-[11px] text-[var(--color-text-muted)]">
+                                  Started {assessment.started_at ?? "—"} · Completed{" "}
+                                  {assessment.completed_at ?? "—"}
+                                </p>
+                                {loadingJobsFor === assessment.id ? (
+                                  <Skeleton className="h-10" />
+                                ) : !jobs || jobs.length === 0 ? (
+                                  <p className="text-xs text-[var(--color-text-muted)]">
+                                    No collector jobs recorded for this assessment.
+                                  </p>
+                                ) : (
+                                  jobs.map((job) => (
+                                    <div key={job.id} className="flex flex-wrap items-center gap-3 text-xs">
+                                      <span className="font-mono text-[var(--color-text-muted)]">#{job.id}</span>
+                                      <span className="font-mono text-[var(--color-text-secondary)]">
+                                        {job.test_id}
+                                      </span>
+                                      <span className="font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+                                        {job.status}
+                                      </span>
+                                      {job.error && (
+                                        <span className="text-[var(--color-critical)]">{job.error}</span>
+                                      )}
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </CardContent>
