@@ -158,6 +158,11 @@ export interface ScanJob {
   assessment_id: string | null;
   created_at: string;
   updated_at: string;
+  // Only ever present while status is "awaiting_finding" - a suggestion
+  // computed fresh from the real observations, never persisted, never
+  // itself recorded as evidence. The auditor still reviews/edits/confirms.
+  suggested_finding: string | null;
+  suggested_confidence: Confidence | null;
 }
 
 export interface RecomputeVerdictsResult {

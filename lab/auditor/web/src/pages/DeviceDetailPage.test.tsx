@@ -592,6 +592,8 @@ describe("DeviceDetailPage", () => {
           assessment_id: "ASMT-2026-07-31-0001",
           created_at: "2026-07-31T10:00:05+00:00",
           updated_at: "2026-07-31T10:00:10+00:00",
+          suggested_finding: null,
+          suggested_confidence: null,
         },
       ],
     });

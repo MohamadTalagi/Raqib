@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { PlayCircle, RefreshCw, Loader2, CheckCircle2, XCircle, Ban } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
@@ -75,10 +75,27 @@ function ScanJobCard({ jobId, testLabel, onStatusChange }: ScanJobCardProps) {
   const [confidence, setConfidence] = useState<"high" | "medium" | "low">("high");
   const [confidenceReason, setConfidenceReason] = useState("");
   const [recordError, setRecordError] = useState<string | null>(null);
+  const [suggestionApplied, setSuggestionApplied] = useState(false);
+  const appliedSuggestionFor = useRef<number | null>(null);
 
   useEffect(() => {
     if (job) onStatusChange(jobId, job.status);
   }, [jobId, job, onStatusChange]);
+
+  // Pre-fill once per job the moment it first reaches awaiting_finding -
+  // never again on a later poll tick, or every edit the auditor makes
+  // would get clobbered by the next ~1.2s refresh. Freely editable
+  // afterward; nothing here is submitted until "Record evidence" is clicked.
+  useEffect(() => {
+    if (job?.status !== "awaiting_finding") return;
+    if (appliedSuggestionFor.current === job.id) return;
+    appliedSuggestionFor.current = job.id;
+    if (job.suggested_finding) {
+      setFinding(job.suggested_finding);
+      setSuggestionApplied(true);
+    }
+    if (job.suggested_confidence) setConfidence(job.suggested_confidence);
+  }, [job?.id, job?.status, job?.suggested_finding, job?.suggested_confidence]);
 
   async function handleRecord() {
     if (job === null) return;
@@ -155,6 +172,11 @@ function ScanJobCard({ jobId, testLabel, onStatusChange }: ScanJobCardProps) {
 
         {job.status === "awaiting_finding" && (
           <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
+            {suggestionApplied && (
+              <p className="rounded-md bg-[var(--color-brand)]/10 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                Suggested from automated observations — review and edit before recording.
+              </p>
+            )}
             <div>
               <label
                 htmlFor={`finding-input-${job.id}`}

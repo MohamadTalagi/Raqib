@@ -53,6 +53,8 @@ const DONE_JOB: ScanJob = {
   assessment_id: null,
   created_at: "2026-07-30T00:00:00Z",
   updated_at: "2026-07-30T00:00:00Z",
+  suggested_finding: null,
+  suggested_confidence: null,
 };
 
 function renderPage() {

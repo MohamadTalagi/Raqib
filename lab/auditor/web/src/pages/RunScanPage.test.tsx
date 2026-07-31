@@ -141,6 +141,8 @@ function makeJob(overrides: Partial<ScanJob> & { id: number; test_id: string }):
     assessment_id: "ASMT-2026-07-22-0001",
     created_at: "2026-07-12T00:00:00Z",
     updated_at: "2026-07-12T00:00:00Z",
+    suggested_finding: null,
+    suggested_confidence: null,
     ...overrides,
   };
 }
@@ -271,6 +273,109 @@ describe("RunScanPage", () => {
 
     const link = await screen.findByRole("link", { name: /discover devices/i });
     expect(link).toHaveAttribute("href", "/devices");
+  });
+
+  it("pre-fills the finding and confidence from the suggestion once a job is awaiting a finding", async () => {
+    const jobState = makeJob({
+      id: 5, test_id: "TEST-AUTH-DEFAULT-CREDS", status: "awaiting_finding",
+      tool: "curl", tool_version: "8.5.0", command: "curl login chain",
+      raw_output: "HTTP/1.1 401 Unauthorized\r\n",
+      observations: { default_creds: false },
+      suggested_finding: "None of the 10 tried default credential pairs were accepted.",
+      suggested_confidence: "medium",
+    });
+    vi.spyOn(api, "createAssessment").mockImplementation(async () => makeAssessmentResult([jobState]));
+    vi.spyOn(api, "getScanJob").mockImplementation(async () => jobState);
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+    await user.click(await screen.findByRole("checkbox", { name: "Default credentials" }));
+    await user.click(screen.getByRole("button", { name: /run selected \(1\)/i }));
+
+    expect(await screen.findByText(/Suggested from automated observations/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/your finding/i)).toHaveValue(
+      "None of the 10 tried default credential pairs were accepted.",
+    );
+    expect(screen.getByLabelText("Confidence")).toHaveValue("medium");
+  });
+
+  it("never overwrites an edited finding on a later poll tick", async () => {
+    const jobState = makeJob({
+      id: 6, test_id: "TEST-AUTH-DEFAULT-CREDS", status: "awaiting_finding",
+      tool: "curl", tool_version: "8.5.0", command: "curl login chain",
+      raw_output: "HTTP/1.1 401 Unauthorized\r\n",
+      observations: { default_creds: false },
+      suggested_finding: "None of the 10 tried default credential pairs were accepted.",
+      suggested_confidence: "high",
+    });
+    vi.spyOn(api, "createAssessment").mockImplementation(async () => makeAssessmentResult([jobState]));
+    vi.spyOn(api, "getScanJob").mockImplementation(async () => jobState);
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+    await user.click(await screen.findByRole("checkbox", { name: "Default credentials" }));
+    await user.click(screen.getByRole("button", { name: /run selected \(1\)/i }));
+
+    const findingInput = screen.getByLabelText(/your finding/i);
+    await waitFor(() =>
+      expect(findingInput).toHaveValue("None of the 10 tried default credential pairs were accepted."),
+    );
+    await user.clear(findingInput);
+    await user.type(findingInput, "My own wording, not the suggestion.");
+
+    // The poll keeps returning the same jobState (same suggestion) well past
+    // the ~1.2s poll interval - the edit must survive it.
+    await waitFor(
+      () => expect(screen.getByLabelText(/your finding/i)).toHaveValue("My own wording, not the suggestion."),
+      { timeout: 3000 },
+    );
+  });
+
+  it("shows no suggestion banner when the job has nothing to suggest", async () => {
+    const jobState = makeJob({
+      id: 7, test_id: "TEST-NET-PORTSCAN", status: "awaiting_finding",
+      tool: "nmap", tool_version: "7.94", command: "nmap -sV -p- device-insecure",
+      raw_output: "80/tcp open http\n", observations: { open_ports: [80] },
+      suggested_finding: null, suggested_confidence: null,
+    });
+    vi.spyOn(api, "createAssessment").mockImplementation(async () => makeAssessmentResult([jobState]));
+    vi.spyOn(api, "getScanJob").mockImplementation(async () => jobState);
+
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <RunScanPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "device-insecure" })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
+    await user.click(await screen.findByRole("checkbox", { name: "Nmap service/port scan" }));
+    await user.click(screen.getByRole("button", { name: /run selected \(1\)/i }));
+
+    await screen.findByText(/Awaiting your finding/i);
+    expect(screen.queryByText(/Suggested from automated observations/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/your finding/i)).toHaveValue("");
   });
 
   it("runs the full flow: select tests, run selected, read output, record evidence, recompute verdicts", async () => {
