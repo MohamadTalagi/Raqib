@@ -5,6 +5,7 @@ import { DevicesPage } from "@/pages/DevicesPage";
 import { FingerprintingPage } from "@/pages/FingerprintingPage";
 import { SAIOTCompliancePage } from "@/pages/SAIOTCompliancePage";
 import { VulnerabilityIntelligencePage } from "@/pages/VulnerabilityIntelligencePage";
+import { RemediationPage } from "@/pages/RemediationPage";
 import { NetworkMapPage } from "@/pages/NetworkMapPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { DeviceAssessmentReportPage } from "@/pages/DeviceAssessmentReportPage";
@@ -20,7 +21,6 @@ import { DeviceAssessmentPage } from "@/pages/DeviceAssessmentPage";
 import { NCAControlsPage } from "@/pages/NCAControlsPage";
 import { NCAControlDetailPage } from "@/pages/NCAControlDetailPage";
 import { OrganizationalCompliancePage } from "@/pages/OrganizationalCompliancePage";
-import { ComingSoonPage } from "@/pages/ComingSoonPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastProvider } from "@/lib/useToast";
@@ -44,16 +44,7 @@ export default function App() {
             <Route path="/nca-compliance/devices/:deviceId" element={<DeviceAssessmentPage />} />
             <Route path="/vulnerability-intelligence" element={<VulnerabilityIntelligencePage />} />
             <Route path="/risk" element={<RiskAssessmentPage />} />
-            <Route
-              path="/remediation"
-              element={
-                <ComingSoonPage
-                  title="Remediation"
-                  phaseLabel="Pipeline"
-                  description="AI-assisted remediation guidance per finding - not yet built. Each control's static remediation text is available today on its own Controls page."
-                />
-              }
-            />
+            <Route path="/remediation" element={<RemediationPage />} />
 
             {/* /run-scan's functionality is now split across Fingerprinting
                 and SA-IOT Compliance - redirect rather than 404 for anyone

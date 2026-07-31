@@ -38,19 +38,6 @@ describe("App", () => {
     window.history.pushState({}, "", "/");
   });
 
-  it("shows a not-built-yet placeholder for each new pipeline page not yet implemented", async () => {
-    for (const [path, title] of [
-      ["/remediation", "Remediation"],
-    ] as const) {
-      window.history.pushState({}, "", path);
-      const { unmount } = render(<App />);
-      expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
-      expect(screen.getByText(/not built yet/i)).toBeInTheDocument();
-      unmount();
-    }
-    window.history.pushState({}, "", "/");
-  });
-
   it("renders the sidebar grouped and ordered as the guided pipeline", () => {
     render(<App />);
     const linkNames = screen.getAllByRole("link").map((link) => link.textContent);
