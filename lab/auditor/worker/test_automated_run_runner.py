@@ -88,10 +88,13 @@ def test_run_scan_test_auto_submits_the_suggested_finding(mock_requests, mock_pr
         _response(201, {"id": 42, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"}),
         _response(201, {"evidence_id": "EV-1"}),
     ]
-    mock_requests.get.return_value = _response(200, {
-        "id": 42, "status": "awaiting_finding", "tool": "nmap",
-        "suggested_finding": "2 open ports found.", "suggested_confidence": "high",
-    })
+    mock_requests.get.side_effect = [
+        _response(200, [{"id": 42, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN", "host": "device-insecure"}]),
+        _response(200, {
+            "id": 42, "status": "awaiting_finding", "tool": "nmap",
+            "suggested_finding": "2 open ports found.", "suggested_confidence": "high",
+        }),
+    ]
 
     summary = {"tests_run": 0, "evidence_recorded": 0, "errors": []}
     _run_scan_test("device-insecure", "TEST-NET-PORTSCAN", summary)
@@ -110,7 +113,10 @@ def test_run_scan_test_auto_submits_the_suggested_finding(mock_requests, mock_pr
 @patch("automated_run_runner.requests")
 def test_run_scan_test_records_nothing_when_job_ends_failed(mock_requests, mock_process_job):
     mock_requests.post.return_value = _response(201, {"id": 43})
-    mock_requests.get.return_value = _response(200, {"id": 43, "status": "failed"})
+    mock_requests.get.side_effect = [
+        _response(200, [{"id": 43, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN", "host": "device-insecure"}]),
+        _response(200, {"id": 43, "status": "failed"}),
+    ]
 
     summary = {"tests_run": 0, "evidence_recorded": 0, "errors": []}
     _run_scan_test("device-insecure", "TEST-NET-PORTSCAN", summary)
@@ -130,6 +136,48 @@ def test_run_scan_test_skips_entirely_when_job_creation_is_rejected(mock_request
 
     mock_process_job.assert_not_called()
     assert summary["tests_run"] == 0
+
+
+@patch("automated_run_runner.process_job")
+@patch("automated_run_runner.requests")
+def test_run_scan_test_fetches_the_live_target_from_the_pending_list_not_the_post_response(
+    mock_requests, mock_process_job
+):
+    """Regression: POST /scan-jobs deliberately never returns host/
+    service_type/port (scan_jobs is a pure audit row) - passing that
+    response straight to process_job() made every real run fail every test
+    with "invalid target: host is required", caught live against the real
+    lab. The target must come from GET /scan-jobs?status=pending, the same
+    endpoint job_runner.py's own poll_once() already reads it from."""
+    mock_requests.post.return_value = _response(201, {"id": 44, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN"})
+    mock_requests.get.side_effect = [
+        _response(200, [
+            {"id": 44, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN",
+             "host": "device-insecure", "service_type": "http", "port": 80},
+        ]),
+        _response(200, {"id": 44, "status": "failed"}),
+    ]
+
+    summary = {"tests_run": 0, "evidence_recorded": 0, "errors": []}
+    _run_scan_test("device-insecure", "TEST-NET-PORTSCAN", summary)
+
+    job_passed_to_process_job = mock_process_job.call_args.args[0]
+    assert job_passed_to_process_job["host"] == "device-insecure"
+    assert job_passed_to_process_job["service_type"] == "http"
+    assert job_passed_to_process_job["port"] == 80
+
+
+@patch("automated_run_runner.process_job")
+@patch("automated_run_runner.requests")
+def test_run_scan_test_records_an_error_when_the_job_vanishes_before_running(mock_requests, mock_process_job):
+    mock_requests.post.return_value = _response(201, {"id": 45})
+    mock_requests.get.return_value = _response(200, [])  # not in the pending list anymore
+
+    summary = {"tests_run": 0, "evidence_recorded": 0, "errors": []}
+    _run_scan_test("device-insecure", "TEST-NET-PORTSCAN", summary)
+
+    mock_process_job.assert_not_called()
+    assert "vanished" in summary["errors"][0]
 
 
 # -- _run_discovery_and_register ---------------------------------------------

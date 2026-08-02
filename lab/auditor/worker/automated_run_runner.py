@@ -170,10 +170,22 @@ def _run_scan_test(device_id: str, test_id: str, summary: dict) -> None:
     if created.status_code != 201:
         return
     summary["tests_run"] += 1
-    job = created.json()
+    job_id = created.json()["id"]
+
+    # POST /scan-jobs deliberately never returns host/service_type/port -
+    # scan_jobs is a pure audit row (device_id, test_id only, see main.py's
+    # own comment on GET /scan-jobs). Only the *list* endpoint resolves the
+    # live target via a join against device_services, the same one
+    # job_runner.py's own poll_once() reads from - reusing it here instead of
+    # inventing a second target-resolution path.
+    pending = requests.get(f"{API_URL}/scan-jobs", params={"status": "pending"}, timeout=10).json()
+    job = next((j for j in pending if j["id"] == job_id), None)
+    if job is None:
+        summary["errors"].append(f"job {job_id} ({test_id}) vanished before it could run")
+        return
     process_job(job)
 
-    job = requests.get(f"{API_URL}/scan-jobs/{job['id']}", timeout=10).json()
+    job = requests.get(f"{API_URL}/scan-jobs/{job_id}", timeout=10).json()
     if job["status"] != "awaiting_finding":
         return
 
