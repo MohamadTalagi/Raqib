@@ -88,6 +88,20 @@ CREATE TABLE network_scans (
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- "Fully Automated Run" - see 013-automated-runs.sql for the full rationale.
+CREATE TABLE automated_runs (
+    id             SERIAL PRIMARY KEY,
+    status         TEXT NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+    device_ids     JSONB,
+    current_stage  TEXT,
+    summary        JSONB NOT NULL DEFAULT '{}',
+    error          TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at     TIMESTAMPTZ,
+    completed_at   TIMESTAMPTZ
+);
+
 CREATE INDEX idx_assessments_device_id ON assessments(device_id);
 CREATE INDEX idx_assessments_status ON assessments(status);
 CREATE INDEX idx_evidence_device_id ON evidence(device_id);
@@ -226,6 +240,9 @@ CREATE TABLE compliance_assessments (
     attestation_confirmed     BOOLEAN NOT NULL DEFAULT false
                               CHECK (status = 'not_tested' OR attestation_confirmed = true),
     attestation_statement     TEXT,
+    -- true when a "Fully Automated Run" recorded this with no human review -
+    -- distinct from attestation_confirmed (see 013-automated-runs.sql).
+    auto_recorded             BOOLEAN NOT NULL DEFAULT false,
     CHECK (
         (device_id IS NOT NULL AND organizational_scope_id IS NULL)
         OR (device_id IS NULL AND organizational_scope_id IS NOT NULL)
