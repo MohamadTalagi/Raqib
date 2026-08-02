@@ -215,6 +215,13 @@ CREATE TABLE compliance_assessments (
     retested_at               TIMESTAMPTZ,
     superseded_by             TEXT REFERENCES compliance_assessments(id),
     created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Formal sign-off, required on every assessment (see
+    -- 011-nca-checklists-and-attestation.sql for the migration path on an
+    -- existing volume) - the auditor's name lives in assessed_by above;
+    -- these carry their role and an explicit certification.
+    attested_role             TEXT,
+    attestation_confirmed     BOOLEAN NOT NULL DEFAULT false CHECK (attestation_confirmed = true),
+    attestation_statement     TEXT,
     CHECK (
         (device_id IS NOT NULL AND organizational_scope_id IS NULL)
         OR (device_id IS NULL AND organizational_scope_id IS NOT NULL)
@@ -225,6 +232,17 @@ CREATE INDEX idx_compliance_assessments_control_id ON compliance_assessments(con
 CREATE INDEX idx_compliance_assessments_device_id ON compliance_assessments(device_id);
 CREATE INDEX idx_compliance_assessments_org_scope ON compliance_assessments(organizational_scope_id);
 CREATE INDEX idx_compliance_assessments_superseded_by ON compliance_assessments(superseded_by);
+
+-- Guided checklist support for organizational-scope guidelines no scan can
+-- ever verify (see policies/nca/checklists.py and
+-- 011-nca-checklists-and-attestation.sql for the full rationale).
+CREATE TABLE compliance_control_checklists (
+    control_id       TEXT PRIMARY KEY REFERENCES compliance_controls(id),
+    questions        JSONB NOT NULL,
+    suggestion_rule  JSONB NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE compliance_evidence (
     id                      TEXT PRIMARY KEY,
