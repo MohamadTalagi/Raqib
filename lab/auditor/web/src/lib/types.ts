@@ -510,6 +510,21 @@ export interface NCADeviceDetail {
 }
 
 /**
+ * The general shape RecordAssessmentDialog's `suggestion` prop accepts -
+ * covers both a device auto-verdict hint (NCADeviceSuggestion, always
+ * fail/review_required) and a checklist-derived suggestion (any status,
+ * including pass - a checklist genuinely can conclude a guideline is
+ * satisfied, unlike scan evidence which never implies a pass on its own).
+ */
+export interface NCAAssessmentSuggestion {
+  control_id: string;
+  suggested_status: NCAStatus;
+  evidence_ids: string[];
+  test_ids: string[];
+  reasons: string[];
+}
+
+/**
  * Auto-verdict hint for one control, from GET /nca/devices/{id}/suggestions.
  * Emitted only when a finding mapping matched real automated evidence for
  * this device - it suggests a status the auditor confirms or overrides. The
@@ -589,6 +604,22 @@ export interface NCAChecklist {
   control_id: string;
   questions: NCAChecklistQuestion[];
   suggestion_rule: unknown;
+}
+
+export interface NCAComplianceEvidence {
+  id: string;
+  assessment_id: string | null;
+  evidence_type: string;
+  linked_evidence_id: string | null;
+  original_filename: string | null;
+  object_reference: string | null;
+  sha256: string;
+  collected_at: string;
+  collected_by: string;
+  source_system: string;
+  retention_expires_at: string | null;
+  access_control_note: string;
+  created_at: string;
 }
 
 export interface OverrideNCAAssessmentPayload {

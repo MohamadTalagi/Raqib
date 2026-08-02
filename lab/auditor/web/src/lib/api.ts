@@ -13,6 +13,7 @@ import type {
   NetworkScan,
   NCAAssessment,
   NCAChecklist,
+  NCAComplianceEvidence,
   NCAControl,
   NCAControlDetail,
   NCADeviceComplianceRow,
@@ -280,6 +281,29 @@ export const api = {
     answers: Record<string, unknown>,
   ): Promise<{ control_id: string; suggested_status: NCAStatus | null }> =>
     postJson(`/nca/controls/${encodeURIComponent(controlId)}/checklist/evaluate`, { answers }),
+  /** For genuinely new organizational evidence (policy documents, training
+   * records, supplier contracts) - see nca_routes.py's own docstring on
+   * this endpoint. collected_by/assessment_id are query params on the
+   * backend (no Form() annotation there), not multipart fields - the file
+   * itself is the only multipart body part. */
+  uploadNcaComplianceDocument: async (
+    file: File,
+    collectedBy: string,
+    assessmentId?: string | null,
+  ): Promise<NCAComplianceEvidence> => {
+    const body = new FormData();
+    body.append("file", file);
+    const params = new URLSearchParams({ collected_by: collectedBy });
+    if (assessmentId) params.set("assessment_id", assessmentId);
+    const response = await fetch(`${API_BASE_URL}/nca/evidence/upload?${params.toString()}`, {
+      method: "POST",
+      body,
+    });
+    if (!response.ok) {
+      throw await apiErrorFrom("/nca/evidence/upload", response);
+    }
+    return (await response.json()) as NCAComplianceEvidence;
+  },
   ncaDevices: (status?: NCAStatus): Promise<NCADeviceComplianceRow[]> =>
     getJson<NCADeviceComplianceRow[]>(`/nca/devices${status ? `?status=${status}` : ""}`),
   ncaDevice: (deviceId: string): Promise<NCADeviceDetail> =>

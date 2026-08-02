@@ -6,9 +6,9 @@ import type {
   Device,
   NCAApplicability,
   NCAAssessment,
+  NCAAssessmentSuggestion,
   NCAAssessmentType,
   NCAControl,
-  NCADeviceSuggestion,
   NCAStatus,
   Severity,
 } from "@/lib/types";
@@ -42,7 +42,7 @@ interface RecordAssessmentDialogProps {
    * ids, and test method are pre-filled from it - the auditor still confirms
    * or overrides before saving. Ignored on a retest (that reuses the prior
    * assessment's own values). */
-  suggestion?: NCADeviceSuggestion | null;
+  suggestion?: NCAAssessmentSuggestion | null;
   onSaved: (assessment: NCAAssessment) => void;
   onCancel: () => void;
 }
