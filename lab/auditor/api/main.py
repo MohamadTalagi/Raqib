@@ -23,6 +23,7 @@ from device_validation import (
     validate_port,
     validate_service_type,
 )
+from automation_routes import router as automation_router
 from nca_routes import router as nca_router
 from risk_routes import router as risk_router
 from vuln_routes import router as vuln_router
@@ -56,6 +57,7 @@ app.add_middleware(
 app.include_router(nca_router)
 app.include_router(vuln_router)
 app.include_router(risk_router)
+app.include_router(automation_router)
 
 
 @app.exception_handler(ValidationError)
