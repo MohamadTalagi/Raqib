@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, X, CheckCircle2, CircleDashed, ArrowUpRight, HardDrive, ArrowRight } from "lucide-react";
+import { Plus, X, CheckCircle2, CircleDashed, ArrowUpRight, HardDrive, ArrowRight, Zap } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,6 +9,7 @@ import { RegisterDeviceForm } from "@/components/devices/RegisterDeviceForm";
 import type { DeviceRegistrationPrefill } from "@/components/devices/NetworkDiscoveryPanel";
 import { DeviceCohortPicker } from "@/components/pipeline/DeviceCohortPicker";
 import { PhaseStatusBadge } from "@/components/pipeline/PhaseStatusBadge";
+import { AutomatedRunDialog } from "@/components/pipeline/AutomatedRunDialog";
 import { serviceIcon } from "@/lib/serviceIcons";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
@@ -127,6 +128,7 @@ export function DevicesPage() {
   const [showForm, setShowForm] = useState(false);
   const [prefill, setPrefill] = useState<DeviceRegistrationPrefill | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showAutomatedRunDialog, setShowAutomatedRunDialog] = useState(false);
 
   const loading = devices.loading || verdicts.loading;
   const error = devices.error ?? verdicts.error;
@@ -199,15 +201,34 @@ export function DevicesPage() {
         >
           Looking for devices to register? Try Discovery →
         </Link>
-        <button
-          type="button"
-          onClick={() => (showForm ? closeForm() : openForm())}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
-        >
-          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {showForm ? "Cancel" : "Register device"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowAutomatedRunDialog(true)}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)]"
+          >
+            <Zap className="h-4 w-4" />
+            Fully Automated Run
+          </button>
+          <button
+            type="button"
+            onClick={() => (showForm ? closeForm() : openForm())}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
+          >
+            {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {showForm ? "Cancel" : "Register device"}
+          </button>
+        </div>
       </div>
+
+      <AutomatedRunDialog
+        open={showAutomatedRunDialog}
+        onCancel={() => setShowAutomatedRunDialog(false)}
+        onStarted={(run) => {
+          setShowAutomatedRunDialog(false);
+          navigate(`/automated-run/${run.id}`);
+        }}
+      />
 
       {showForm && (
         <Card className="mb-6">

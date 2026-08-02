@@ -1,5 +1,6 @@
 import type {
   Assessment,
+  AutomatedRun,
   ControlRecord,
   ControlVerdictRollup,
   CreateAssessmentResult,
@@ -368,4 +369,14 @@ export const api = {
   riskDevice: (deviceId: string): Promise<DeviceRiskDetail> =>
     getJson<DeviceRiskDetail>(`/risk/devices/${encodeURIComponent(deviceId)}`),
   riskFleetSummary: (): Promise<RiskFleetSummary> => getJson<RiskFleetSummary>("/risk/fleet-summary"),
+
+  // -- Fully Automated Run --------------------------------------------------
+
+  createAutomatedRun: (deviceIds?: string[]): Promise<AutomatedRun> =>
+    postJson<AutomatedRun>("/automation/runs", deviceIds ? { device_ids: deviceIds } : {}),
+  getAutomatedRun: (runId: number): Promise<AutomatedRun> =>
+    getJson<AutomatedRun>(`/automation/runs/${runId}`),
+  listAutomatedRuns: (): Promise<AutomatedRun[]> => getJson<AutomatedRun[]>("/automation/runs"),
+  cancelAutomatedRun: (runId: number): Promise<AutomatedRun> =>
+    postJson<AutomatedRun>(`/automation/runs/${runId}/cancel`, {}),
 };

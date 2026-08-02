@@ -1,4 +1,4 @@
-import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert, ShieldCheck, AlertOctagon, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert, ShieldCheck, AlertOctagon, Loader2, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification, RiskCategory, AssessmentStatus } from "@/lib/types";
@@ -270,6 +270,37 @@ export function KevBadge({ size = "sm" }: { size?: "xs" | "sm" }) {
       >
         <ShieldAlert className={BLOCKING_ICON_SIZE[size]} strokeWidth={2} />
         KEV
+      </span>
+    </Tooltip>
+  );
+}
+
+export const AUTO_RECORDED_EXPLANATION =
+  "Recorded by Fully Automated Run with zero human review - the same attestation_confirmed flag a real sign-off " +
+  "carries, but no person has actually read this evidence yet. Use \"Review & confirm\" to do that.";
+
+/**
+ * Marks a compliance_assessments row with auto_recorded=true - structurally
+ * distinguishes "the system recorded this and satisfied the attestation
+ * constraint" from a real human sign-off, so the audit trail never lies
+ * about whether a person actually looked at it (see
+ * automated_run_runner.py's module docstring). Always carries its own
+ * explanation, same as BlockingBadge/KevBadge, since this is the one badge
+ * in the app whose entire point is "don't trust this at face value yet."
+ */
+export function AutoRecordedBadge({ size = "sm" }: { size?: "xs" | "sm" }) {
+  return (
+    <Tooltip content={AUTO_RECORDED_EXPLANATION}>
+      <span
+        tabIndex={0}
+        className={cn(
+          "inline-flex items-center rounded-md font-mono font-medium uppercase tracking-wide",
+          "bg-[color-mix(in_oklab,var(--color-medium)_16%,transparent)] text-[var(--color-medium)]",
+          BLOCKING_SIZE_STYLES[size],
+        )}
+      >
+        <Bot className={BLOCKING_ICON_SIZE[size]} strokeWidth={2} />
+        auto-recorded
       </span>
     </Tooltip>
   );

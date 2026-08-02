@@ -1,24 +1,25 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowUpRight, ClipboardCheck, Plus, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowUpRight, ClipboardCheck, Eye, Plus, RefreshCw, Sparkles } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
-import { BlockingBadge, NCAReadinessBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
+import { AutoRecordedBadge, BlockingBadge, NCAReadinessBadge, NCAStatusBadge } from "@/components/ui/severity-badge";
 import { RecordAssessmentDialog } from "@/components/nca/RecordAssessmentDialog";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
 import type { NCAAssessment, NCADeviceControlRow, NCADeviceSuggestion } from "@/lib/types";
 
-type Filter = "all" | "unassessed" | "failing" | "suggested";
+type Filter = "all" | "unassessed" | "failing" | "suggested" | "auto_recorded";
 
 const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: "all", label: "All" },
   { value: "unassessed", label: "Unassessed" },
   { value: "failing", label: "Failing" },
   { value: "suggested", label: "Has suggestion" },
+  { value: "auto_recorded", label: "Auto-recorded" },
 ];
 
 /** A control counts as assessed once a real verdict is recorded against it -
@@ -63,6 +64,8 @@ export function DeviceAssessmentPage() {
           return row.assessment?.status === "fail";
         case "suggested":
           return Boolean(suggestions[row.control.id]);
+        case "auto_recorded":
+          return Boolean(row.assessment?.auto_recorded);
         default:
           return true;
       }
@@ -159,7 +162,9 @@ export function DeviceAssessmentPage() {
                       ? controls.filter((r) => !isAssessed(r)).length
                       : f.value === "failing"
                         ? controls.filter((r) => r.assessment?.status === "fail").length
-                        : controls.filter((r) => suggestions[r.control.id]).length;
+                        : f.value === "auto_recorded"
+                          ? controls.filter((r) => r.assessment?.auto_recorded).length
+                          : controls.filter((r) => suggestions[r.control.id]).length;
                 return (
                   <button
                     key={f.value}
@@ -219,13 +224,19 @@ export function DeviceAssessmentPage() {
                               </span>
                             )}
                             {row.control.blocking && <BlockingBadge size="xs" />}
+                            {row.assessment?.auto_recorded && <AutoRecordedBadge size="xs" />}
                             <NCAStatusBadge status={row.assessment?.status ?? "not_tested"} />
                             <button
                               type="button"
                               onClick={() => setDialog({ row, suggestion })}
                               className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
                             >
-                              {row.assessment && row.assessment.status !== "not_tested" ? (
+                              {row.assessment?.auto_recorded ? (
+                                <>
+                                  <Eye className="h-3 w-3" />
+                                  Review &amp; confirm
+                                </>
+                              ) : row.assessment && row.assessment.status !== "not_tested" ? (
                                 <>
                                   <RefreshCw className="h-3 w-3" />
                                   Retest

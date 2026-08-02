@@ -90,6 +90,7 @@ const DETAIL: NCADeviceDetail = {
         attested_role: "Lead Auditor",
         attestation_confirmed: true,
         attestation_statement: "Reviewed and certified.",
+        auto_recorded: false,
       },
     },
   ],
@@ -169,7 +170,9 @@ describe("DeviceAssessmentPage", () => {
     renderPage();
 
     await screen.findByText("1 / 2 controls assessed");
-    await user.click(screen.getAllByRole("button", { name: /record/i })[0]);
+    // Exact match, not /record/i - "Auto-recorded" (the new filter tab added
+    // alongside this test) also matches a loose substring regex.
+    await user.click(screen.getAllByRole("button", { name: "Record" })[0]);
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/suggested from automated evidence/i)).toBeInTheDocument();

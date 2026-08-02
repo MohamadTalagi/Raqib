@@ -180,6 +180,7 @@ describe("OrganizationalCompliancePage", () => {
       attested_role: "Lead Auditor",
       attestation_confirmed: true,
       attestation_statement: "Reviewed and certified.",
+      auto_recorded: false,
     });
     const user = userEvent.setup();
     renderPage();

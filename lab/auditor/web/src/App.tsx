@@ -21,6 +21,7 @@ import { DeviceAssessmentPage } from "@/pages/DeviceAssessmentPage";
 import { NCAControlsPage } from "@/pages/NCAControlsPage";
 import { NCAControlDetailPage } from "@/pages/NCAControlDetailPage";
 import { OrganizationalCompliancePage } from "@/pages/OrganizationalCompliancePage";
+import { AutomatedRunProgressPage } from "@/pages/AutomatedRunProgressPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastProvider } from "@/lib/useToast";
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/vulnerability-intelligence" element={<VulnerabilityIntelligencePage />} />
             <Route path="/risk" element={<RiskAssessmentPage />} />
             <Route path="/remediation" element={<RemediationPage />} />
+            <Route path="/automated-run/:runId" element={<AutomatedRunProgressPage />} />
 
             {/* /run-scan's functionality is now split across Fingerprinting
                 and SA-IOT Compliance - redirect rather than 404 for anyone

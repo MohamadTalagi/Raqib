@@ -419,6 +419,10 @@ export interface NCAAssessment {
   attested_role: string | null;
   attestation_confirmed: boolean;
   attestation_statement: string | null;
+  // True only when a Fully Automated Run recorded this row with zero human
+  // review - never set by RecordAssessmentDialog's normal human flow, which
+  // always defaults false server-side. See automated_run_runner.py.
+  auto_recorded: boolean;
 }
 
 export interface NCAException {
@@ -591,6 +595,7 @@ export interface CreateNCAAssessmentPayload {
   attested_role?: string | null;
   attestation_confirmed?: boolean;
   attestation_statement?: string | null;
+  auto_recorded?: boolean;
 }
 
 export interface NCAChecklistQuestion {
@@ -760,4 +765,31 @@ export interface RiskFleetSummary {
   total_devices: number;
   average_score: number | null;
   by_category: Record<RiskCategory, number>;
+}
+
+// -- Fully Automated Run ------------------------------------------------
+
+export type AutomatedRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export interface AutomatedRunSummary {
+  hosts_discovered?: number;
+  devices_registered?: number;
+  tests_run?: number;
+  evidence_recorded?: number;
+  verdicts_computed?: number;
+  vuln_intel_devices_scanned?: number;
+  nca_assessments_recorded?: number;
+  errors?: string[];
+}
+
+export interface AutomatedRun {
+  id: number;
+  status: AutomatedRunStatus;
+  device_ids: string[] | null;
+  current_stage: string | null;
+  summary: AutomatedRunSummary;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
 }

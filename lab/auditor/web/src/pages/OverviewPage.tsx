@@ -1,6 +1,8 @@
-import { useMemo } from "react";
-import { Bug, FileSearch, Flame, Gavel, HardDrive, ShieldAlert } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Bug, FileSearch, Flame, Gavel, HardDrive, ShieldAlert, Zap } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
+import { AutomatedRunDialog } from "@/components/pipeline/AutomatedRunDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/state";
@@ -33,6 +35,8 @@ const SEVERITY_WEIGHT: Record<VerdictRecord["severity"], number> = {
 };
 
 export function OverviewPage() {
+  const navigate = useNavigate();
+  const [showAutomatedRunDialog, setShowAutomatedRunDialog] = useState(false);
   const summary = useFetch(api.summary, []);
   const devices = useFetch(api.devices, []);
   const verdicts = useFetch(api.verdicts, []);
@@ -79,6 +83,24 @@ export function OverviewPage() {
 
   return (
     <Shell title="Overview" subtitle="Live posture across the simulated IoT lab">
+      <div className="mb-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowAutomatedRunDialog(true)}
+          className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity hover:opacity-90"
+        >
+          <Zap className="h-4 w-4" />
+          Fully Automated Run
+        </button>
+      </div>
+      <AutomatedRunDialog
+        open={showAutomatedRunDialog}
+        onCancel={() => setShowAutomatedRunDialog(false)}
+        onStarted={(run) => {
+          setShowAutomatedRunDialog(false);
+          navigate(`/automated-run/${run.id}`);
+        }}
+      />
       {error ? (
         <ErrorState message={error} />
       ) : (
