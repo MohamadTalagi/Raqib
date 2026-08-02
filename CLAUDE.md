@@ -12,7 +12,117 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **5 new non-camera IoT device fixtures added for protocol/domain
+**Phase:** **NCA Compliance made "guided end to end" — every one of the 81
+CGIoT-1:2024 guidelines now reaches an auditor as a suggested status +
+evidence to review, with a mandatory formal sign-off before anything is
+recorded — COMPLETE** (2026-08-02). The owner asked, after reviewing how NCA
+Compliance actually worked, "wouldn't it make sense to automate all NCA
+Compliance sections and then have the auditor manually read them and sign
+them under his name instead of only doing some?" — this phase is that,
+executed as a 9-phase plan (approved via plan mode) after 3 clarifying
+decisions with the owner: (1) for the 60 guidelines no scan can ever verify
+(governance/HR/training/supplier/cloud), "automate" means a **structured
+attestation workflow** (guided checklist + real document upload), never an
+invented verdict; (2) sign-off gets a **formal attestation step** (role +
+explicit certify checkbox), still no real login — a full auth rebuild stays
+a separate, previously-deferred track; (3) **new device-scope collectors**
+get built wherever a real technical check exists, raising automated coverage
+as far as honestly possible.
+- **Phase 0 (prerequisite, found live)**: `policies/nca/build_catalog.py`'s
+  `DEVICE_TESTABLE_GUIDELINES` was missing `2-6-2`/`2-6-3`/`2-7-2` even
+  though real finding mappings and device evidence already targeted them
+  (added last session) — they silently fell through to `scope_type =
+  "organization"`, and `GET /nca/devices/{id}` only ever lists
+  `scope_type = "device"` controls, so their real computed suggestions were
+  **orphaned**: reachable via `/suggestions` but with no "Record" button
+  anywhere to act on them. Fixed by reclassifying all 3, and caught 5 more
+  guidelines (`2-4-2`, `2-4-6`, `2-9-1`, `2-13-2`, `2-15-1`) still marked
+  `"manual"` even though real collectors already existed for them from
+  earlier sessions — this table had simply never been revisited as
+  collectors were added. New regression test locks the invariant down:
+  every mapped `control_id` must resolve to `device`/`mobile` scope.
+- **New guided-checklist mechanism** (`policies/nca/checklists.py`,
+  `compliance_control_checklists` table, migration `011`) for the 60
+  guidelines a scan can never verify: a small fixed set of questions per
+  guideline, evaluated by a deterministic `suggestion_rule` reusing
+  `policy_engine.py`'s own `{field, op, value}` predicate — one evaluation
+  vocabulary in the codebase, not a second DSL. New
+  `GET/POST /nca/controls/{id}/checklist(/evaluate)` endpoints; new
+  `ChecklistAssessmentPanel.tsx` renders the questions, live-evaluates a
+  suggestion, and finally wires up `POST /nca/evidence/upload` (built in an
+  earlier session, never once called from any UI until now) so an auditor
+  can attach the real underlying policy/contract document as evidence.
+  **All 60 non-device guidelines now have a real, authored checklist**
+  (`policies/nca/seed_checklists.py`) — 27 governance, 21 remaining domain-2
+  organizational, 1 mobile, 6 supplier, 5 cloud — built from 3 reusable
+  templates matching this framework's own recurring phrasing patterns
+  (`_define_approve_implement`, `_periodic_review`, `_practice_with_evidence`),
+  every question's subject text drawn from that guideline's own real
+  canonical text, never invented. 11 new structural tests lock down full
+  coverage and that every rule can actually reach pass/partial/fail.
+- **Formal sign-off on every assessment, not just checklist-driven ones**:
+  `compliance_assessments` gained `attested_role`/`attestation_confirmed`
+  (`CHECK`'d true for any real verdict)/`attestation_statement` (the exact
+  fixed certify text, stored verbatim). `RecordAssessmentDialog` gained a
+  "Confirm & Sign" section — role + a required "I have reviewed the
+  evidence/reasons above and certify this finding" checkbox — Save stays
+  disabled until both are filled, applying uniformly whether the flow
+  started from a device auto-verdict suggestion, a checklist suggestion, or
+  a fully manual assessment. **One exception, found live**: `recompute`'s
+  own system-generated `not_tested` placeholder (`assessed_by =
+  'system:recompute'`) has nothing to attest to — a first-pass unconditional
+  `CHECK` briefly broke that path, fixed one migration later (`012`) once
+  caught.
+- **3 new device-scope collectors** raising real automated coverage:
+  `TEST-TLS-CLIENT-AUTH` (2-4-5, detects whether a TLS handshake ever
+  requests a client certificate), `TEST-SECURITY-LOG-ENDPOINT` (2-11-1) and
+  `TEST-MONITORING-ENDPOINT` (2-11-2, both chained conventional-path curl
+  probes). A 4th planned collector (2-4-6, secure update transport) was
+  dropped after investigation found no real update endpoint exists in this
+  lab to probe — documented as a deliberate boundary, not silently skipped.
+- **New `GET /nca/coverage`** (computed live, never cached): how many of the
+  81 guidelines have automated-or-hybrid device-scope signal or an authored
+  checklist today — **76/81**, with the 5 remaining gap guidelines named
+  explicitly (`2-9-2`, `2-14-2`, `2-15-3`, `3-1-1`, `3-1-2` — a process,
+  OS-level, or hardware-access requirement each) — surfaced as a stat tile
+  on the NCA Compliance dashboard and a summary line on
+  `OrganizationalCompliancePage`, so partial rollout stays honestly visible
+  rather than overclaimed.
+- **`OrganizationalCompliancePage` rebuilt into a guided workspace in
+  place** (not a separate route like `DeviceAssessmentPage` — there's only
+  one organizational scope, so a dedicated URL per-scope doesn't apply the
+  same way): a progress bar, Unassessed/Failing filter tabs, and per-control
+  "Assess"/"Retest" now opens the guided checklist inline before handing off
+  to `RecordAssessmentDialog`, instead of navigating away.
+- **Two real deployment incidents hit and resolved live** while verifying
+  this: (1) a mid-recovery `docker compose up -d auditor-api` partial
+  failure left `auditor-database` with **zero network attachments** at the
+  Docker level, and a follow-up recovery attempt dropped the
+  `docker-compose.dev.yml` overlay flag, silently unpublishing port 8000 —
+  both fixed with a clean `down`/`up` cycle, data intact throughout, no
+  purge needed (a stale container/network state issue, not the deeper
+  embedded-DNS corruption from `docs/errors/032`). (2) Discovered
+  `lab/auditor/api/*.py` (unlike `policies/`, which is bind-mounted) is
+  baked into the `auditor-api` image at build time — the new checklist
+  endpoints returned a plain routing 404 after a restart alone, until the
+  image was actually rebuilt. Both now documented in
+  `docs/nca-compliance.md`'s "Known limitations" and `lab/README.md`.
+- **Verified live end to end at every phase, not just at the end**: the
+  Phase 0 fix confirmed live (2-6-2/2-6-3 now appear in a device's own
+  workspace); all 3 new collectors run for real against real devices,
+  including both positive cases (`device-smartlock`'s real
+  `/api/access-log`, `device-insecure`'s real `/health`) and the honest
+  negative case (no device in this lab does mutual TLS); a real signed
+  `partial` assessment recorded on `1-1-1` via the API, confirming the
+  organizational rollup updated and `attestation_confirmed` was stored.
+  Regression: 370 `policies` tests (+31 this phase), 253 `lab/auditor/api`
+  tests (2 pre-existing WeasyPrint failures, unrelated), 282 frontend tests
+  (+9), `tsc -b --force`/`oxlint` clean throughout every phase.
+- **Also fixed `lab/README.md`'s previously-flagged first-time-setup gap**
+  while touching this doc: the NCA catalog seed steps are now documented
+  as needed after any fresh volume/purge, not just silently assumed.
+
+Before that: **5 new non-camera IoT device fixtures added for protocol/domain
 variety, fully wired into the scan/policy/NCA pipeline and live-verified end
 to end — COMPLETE** (2026-08-02). Every device in the lab until now was a
 posture variant of the same `smart-camera` app (HTTP/HTTPS + MQTT + Telnet) —
@@ -1822,7 +1932,8 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
-| 2026-08-02 | **Added 5 non-camera IoT device fixtures (smart lock, industrial Modbus gateway, router/gateway with UPnP, NVR with RTSP, smart speaker with mDNS) for real protocol/domain variety, fully live-verified** — see §0 for the full breakdown. Grounded in a real, confirmed gap: NCA subdomains 2-13 (Physical Security) and 2-6 (Data Protection) had zero device-scope finding mappings despite being real seeded CGIoT-1:2024 controls. Each device is a small FastAPI app mirroring `smart-camera`'s layout; new worker collectors reuse nmap's real `modbus-discover`/`rtsp-methods` NSE scripts plus two new hand-rolled raw-UDP probes (`upnp_probe.py`/`mdns_probe.py`) for protocols nmap has no per-host script for — a real correction made mid-build after discovering nmap's UPnP script is broadcast-only, not per-host. 8 new NCA finding mappings close the 2-13-2/2-6-2/2-6-3 gap with real evidence. Found and fixed 4 real bugs during live verification (not caught by unit tests alone): a missing DB-level CHECK constraint update (`device_services_service_type_check`, new migration 010) that 500'd on first real registration; `nmap -sV` hanging against both custom protocol servers' non-standard probe responses (fixed by dropping `-sV` and adding `--script-timeout 10s`); an RTSP-methods regex whose own unit-test fixture had copied a wrong two-line output assumption, caught only by reading nmap's actual single-line output live; and `serviceIcons.ts`'s exhaustive `Record<ServiceType, LucideIcon>` correctly failing `tsc` until icons were added for all 4 new types. Verified live end to end against a rebuilt 16-container stack: all 5 devices registered, every new collector run for real with real evidence recorded, NCA recompute producing real auto-suggested FAILs on the target controls for all 5, and a real `TEST-NET-DISCOVERY` sweep classifying all 5 as `iot_device` (including the two UDP-only fixtures via their HTTP-port fallback, exactly as designed). 337 `policies` (+28) + 241 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 30 new per-device tests + 271 frontend tests passing, `tsc -b`/`oxlint` clean. Not yet committed. |
+| 2026-08-02 | **Made NCA Compliance guided end to end — all 81 CGIoT-1:2024 guidelines now suggest a status + evidence for the auditor to review and formally sign** — see §0 for the full breakdown. Owner asked to automate every NCA section and gate recording behind an explicit sign-off, executed as a 9-phase approved plan. Phase 0 fixed a real orphaned-suggestion bug (2-6-2/2-6-3/2-7-2 misclassified as organization-scope, plus 5 more guidelines still marked "manual" despite real collectors existing). New `policies/nca/checklists.py` + `compliance_control_checklists` table give all 60 non-device guidelines a real guided checklist (`seed_checklists.py`, 3 reusable templates, every question drawn from real canonical text) evaluated with the same `condition_matches` predicate scan-evidence mappings already use. Every assessment now requires a formal "Confirm & Sign" step (`attested_role`/`attestation_confirmed`/`attestation_statement`, `CHECK`'d server-side) except the system's own `not_tested` placeholder. 3 new device-scope collectors (TLS client-auth, security-log endpoint, monitoring endpoint) raised real coverage to 76/81, honestly reported via a new live `GET /nca/coverage`. `OrganizationalCompliancePage` rebuilt in place into a guided workspace. Hit and fixed 2 real deployment incidents live (a container losing its network attachment mid-recovery, and discovering `lab/auditor/api/*.py` needs an image rebuild, not just a restart, to pick up changes — unlike bind-mounted `policies/`). 370 `policies` (+31) + 253 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 282 frontend tests passing, `tsc -b`/`oxlint` clean, verified live at every phase against the running stack. |
+| 2026-08-02 | **Added 5 non-camera IoT device fixtures (smart lock, industrial Modbus gateway, router/gateway with UPnP, NVR with RTSP, smart speaker with mDNS) for real protocol/domain variety, fully live-verified** — see §0 for the full breakdown. Grounded in a real, confirmed gap: NCA subdomains 2-13 (Physical Security) and 2-6 (Data Protection) had zero device-scope finding mappings despite being real seeded CGIoT-1:2024 controls. Each device is a small FastAPI app mirroring `smart-camera`'s layout; new worker collectors reuse nmap's real `modbus-discover`/`rtsp-methods` NSE scripts plus two new hand-rolled raw-UDP probes (`upnp_probe.py`/`mdns_probe.py`) for protocols nmap has no per-host script for — a real correction made mid-build after discovering nmap's UPnP script is broadcast-only, not per-host. 8 new NCA finding mappings close the 2-13-2/2-6-2/2-6-3 gap with real evidence. Found and fixed 4 real bugs during live verification (not caught by unit tests alone): a missing DB-level CHECK constraint update (`device_services_service_type_check`, new migration 010) that 500'd on first real registration; `nmap -sV` hanging against both custom protocol servers' non-standard probe responses (fixed by dropping `-sV` and adding `--script-timeout 10s`); an RTSP-methods regex whose own unit-test fixture had copied a wrong two-line output assumption, caught only by reading nmap's actual single-line output live; and `serviceIcons.ts`'s exhaustive `Record<ServiceType, LucideIcon>` correctly failing `tsc` until icons were added for all 4 new types. Verified live end to end against a rebuilt 16-container stack: all 5 devices registered, every new collector run for real with real evidence recorded, NCA recompute producing real auto-suggested FAILs on the target controls for all 5, and a real `TEST-NET-DISCOVERY` sweep classifying all 5 as `iot_device` (including the two UDP-only fixtures via their HTTP-port fallback, exactly as designed). 337 `policies` (+28) + 241 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 30 new per-device tests + 271 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-01 | **Dashboard overhaul (guided pipeline) — all 13 phases live-verified end to end, 3 real bugs found and fixed** — see §0 for the full breakdown. The 13-phase guided-pipeline overhaul itself was built in the prior session but never written up here since that session's final live-verification step was interrupted by a Docker Desktop networking failure serious enough to require a full OS reboot (`docker_networking_saga` preserved in the now-deleted `handoff.txt`). This session resumed after the reboot, found the DNS bug had survived it too, diagnosed it further via raw UDP queries to `127.0.0.11:53` (inconsistent per-name resolver behavior on `internal-network` only — not a compose config or host-firewall issue), and the user ran Docker Desktop's Troubleshoot → Clean/Purge data, which fixed it (`docs/errors/032`). Re-ran the lab's documented first-time setup (cert-init, mqtt secure-broker password) plus a previously-undocumented one — the NCA catalog's 81 guidelines/~20 finding mappings are seeded imperatively (`policies.nca.seed_catalog`/`seed_finding_mappings`), not via `init.sql`, and needed re-running against the purge-wiped volume. Then drove the entire pipeline live through a real browser (Claude-in-Chrome): Discovery's bulk-register flow (never exercised against a real backend before) registered 3 real devices from a real network scan; Fingerprinting ran a real `nmap` scan and recorded real evidence; SA-IOT Compliance ran a real 10-credential-pair default-creds test and recomputed real FAIL verdicts; Vulnerability Intelligence uploaded real generated firmware and got back real Grype-scanned CVE/KEV data (77 openssl CVEs, matching this project's own historical count); NCA Compliance's cohort "Assess selected" opened a real new browser tab and recorded a real blocking-control failure; Risk Assessment's 7-factor breakdown summed exactly to its displayed score; Remediation's stub correctly showed only real static remediation text. Found and fixed 3 real bugs this live pass exposed that mocked tests couldn't have caught: `risk_assessment` was trivially "reached" the instant any device was registered (`risk.known` means "device exists," not "assessed" — fixed to require real upstream SA-IOT/NCA/vuln signal, deliberately excluding fingerprinting since risk's own inputs never derive from it); `hasSaIotVerdict` counted a `NOT_APPLICABLE` placeholder verdict (created fleet-wide by any recompute) as "compliance reached" for devices that were never actually tested; and `SAIOTCompliancePage` never refetched verdicts after "Recompute verdicts" succeeded, leaving its own counts stale. All three fixed with regression tests (271/271 frontend passing, was 266), `tsc -b`/`oxlint` clean, `auditor-web` rebuilt/redeployed and re-verified live after each fix. |
 | 2026-07-31 | **Closed all 4 remaining Week 1 gaps found by the task-by-task audit** — see §0 for the full breakdown. (1) A real complete-assessment test for the partially-hardened profile, mixed 3-PASS/2-FAIL against the real controls. (2) `TEST-TLS-CONFIG` now forces a handshake at each of TLSv1/1.1/1.2/1.3 and reports a real 3-state (`accepted`/`rejected`/`untestable`) per-version enumeration instead of one default-negotiated value — confirmed live that this host's own OpenSSL genuinely can't offer TLSv1/1.1, a distinct honest state from a real server rejection. (3) `collector_versions` on an assessment, derived live from its child scan_jobs (never a new stored column, matching every other rollup in this codebase). (4) `confidence_reason` now auto-fills with a fixed template on both automated evidence-recording paths; new `report_records` audit-trail table + `GET /devices/{id}/report-history`, directly analogous to `compliance_audit_events`. Also fixed two real, unrelated bugs caught along the way: `test_assessments.py` was silently overwriting real evidence files on disk (fixed to isolate `DOCUMENT_STORE_DIR` like its sibling test file already does), and `tsc --noEmit` had been checking nothing all session because this project's root `tsconfig.json` needs `-b` to actually run its project references — `tsc -b --force` immediately caught 2 real errors, now fixed. 297 `policies` + 236 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 236 frontend tests passing, `tsc -b`/`oxlint` clean. Migration 009 applied live; all 3 changed images rebuilt/redeployed; verified live end to end for all 4 gaps at once against a real `device-hardened` HTTPS service (brought up for the first time this session via `cert-init`). |
 | 2026-07-31 | **Added the assessment history UI to the device detail page, closing the last real gap from a full Week 1 brief re-audit** — see §0 for the full breakdown and `docs/week1-completion-report.md` for the complete task-by-task verification against `week-1-tasks.txt`. 9 of the brief's 10 tasks were already done; the one real gap was that `GET /assessments?device_id=` had no UI caller at all. New "Assessment history" card lists every past Assessment for a device with status/policy version/timestamp, expanding in place to lazily fetch and cache its child collector jobs. New shared `AssessmentStatusBadge` (`severity-badge.tsx`) replaces `RunScanPage`'s own local status-label mapping, so the same Assessment status renders identically on both pages. No backend changes — the endpoint already existed and was already tested. `tsc`/`oxlint` clean, 3 new frontend tests, full suite green except the already-known pre-existing `RunScanPage.test.tsx` timing flake (reproduced identically on the unmodified code, confirmed unrelated). Not yet rebuilt/redeployed to the live images. |

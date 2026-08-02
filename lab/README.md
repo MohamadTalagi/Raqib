@@ -7,12 +7,24 @@ manual-assessment toolbox, used to produce evidence for Saudi NCA (CGIoT-1:2024)
 - Docker Desktop with Compose v2 (verified: Docker 29.x, Compose v5 on the build PC).
 - Run everything from this `lab/` directory.
 
-## First-time setup (once per clone)
+## First-time setup (once per clone, and again after any volume purge)
 
 ```
 docker compose --profile init run --rm cert-init
 docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config eclipse-mosquitto:2 mosquitto_passwd -c -b /mosquitto/config/passwd labworker "LabWork3r-Secr3t!"
 docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config alpine chmod 644 /mosquitto/config/passwd
+```
+
+The NCA compliance catalog is seeded **imperatively**, not via `init.sql` -
+a fresh `auditor-db-data` volume (a first clone, or after any Docker
+Desktop volume purge) needs this run once, from inside `auditor-api`
+(`auditor-worker` has no `psycopg` installed), or the NCA Compliance page
+silently shows "0 controls in catalog" with no error:
+
+```
+docker compose exec auditor-api python -m policies.nca.seed_catalog
+docker compose exec auditor-api python -m policies.nca.seed_finding_mappings
+docker compose exec auditor-api python -m policies.nca.seed_checklists
 ```
 
 ## Start the lab

@@ -55,6 +55,13 @@ idempotent-migration pattern as `002-devices-firmware-columns.sql`):
   expiry, no exceptions (pun intended).
 - **`compliance_audit_events`** — generic before/after/actor/reason log, keyed by
   entity_type + entity_id.
+- **`compliance_control_checklists`** (migration `011`) — one row per guideline
+  with an authored guided checklist: `questions` (ordered JSONB) and
+  `suggestion_rule` (JSONB, evaluated by `policies/nca/checklists.py`). See
+  "Guided checklists" below.
+- **`compliance_assessments.attested_role` / `attestation_confirmed` /
+  `attestation_statement`** (migrations `011`/`012`) — the formal sign-off
+  required on every real verdict; see "Formal sign-off" below.
 
 ## Migration instructions
 
@@ -65,16 +72,23 @@ docker exec kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor \
   -f /path/to/lab/auditor/db/migrations/003-nca-compliance.sql
 ```
 
-Then seed the catalog and finding mappings (idempotent, safe to re-run):
+An existing volume also needs migrations `011-nca-checklists-and-attestation.sql`
+and `012-nca-attestation-not-required-for-not-tested.sql` applied the same way.
+
+Then seed the catalog, finding mappings, and checklists (idempotent, safe to re-run):
 
 ```
 python -m policies.nca.build_catalog        # regenerates catalog_1_2024.json (only needed after editing the source markdown)
 python -m policies.nca.seed_catalog         # upserts the 81 guidelines into compliance_controls
-python -m policies.nca.seed_finding_mappings  # upserts the ~20 evidence→control mappings
+python -m policies.nca.seed_finding_mappings  # upserts the ~28 evidence→control mappings
+python -m policies.nca.seed_checklists      # upserts the 60 guided checklists
 ```
 
-Both scripts read `DATABASE_URL` from the environment, matching every other
-`seed_*.py` script's convention.
+All scripts read `DATABASE_URL` from the environment, matching every other
+`seed_*.py` script's convention. **Note**: `nca_routes.py` itself (unlike
+`policies/`, which is bind-mounted) is baked into the `auditor-api` image at
+build time — after editing it, `docker compose build auditor-api` is required,
+not just a container restart (see "Known limitations").
 
 ## Status-calculation rules — one centralized evaluator
 
@@ -124,6 +138,61 @@ follows for the `SA-IOT-*` evidence/verdict pipeline.
 groups** — a network or device scan cannot demonstrate policy approval, personnel
 training, audit outcomes, or supplier/cloud contract compliance. Those stay
 manual-assessment-only, enforced by `test_finding_mappings.py`'s own regression test.
+
+## Guided checklists (automated suggestion for the 60 non-device guidelines)
+
+The 60 organizational/mobile/supplier/cloud guidelines above can never get an
+automated finding mapping — no scan proves a policy was approved or staff were
+trained. **`policies/nca/checklists.py`** gives them the same "system
+suggests, human signs" shape anyway, via a different mechanism: a small fixed
+checklist per guideline (`compliance_control_checklists`, seeded from
+`policies/nca/seed_checklists.py`), evaluated with a deterministic
+`suggestion_rule` that reuses the exact same `condition_matches` predicate
+`finding_mappings.py` already uses against scan evidence — one evaluation
+vocabulary in the codebase for "does this data satisfy this rule," whether the
+data came from a scan or from an auditor's own answers.
+
+- `GET /nca/controls/{id}/checklist` — the questions, or `404` if none has
+  been authored yet for that guideline (an expected, common state — not every
+  guideline needs to launch with one; see the coverage note below).
+- `POST /nca/controls/{id}/checklist/evaluate` — `{"answers": {...}}` in, a
+  suggested status out. Read-only, exactly like
+  `GET /nca/devices/{id}/suggestions` — never writes anything.
+- The dashboard's `ChecklistAssessmentPanel` renders the questions, calls
+  `evaluate` live as the auditor answers them, lets them attach the real
+  underlying document as evidence (`POST /nca/evidence/upload`, previously
+  built but never wired to any UI until this), and hands the result to
+  `RecordAssessmentDialog` exactly like a device's automated suggestion does —
+  same component, same sign-off step, one flow either way.
+
+**Coverage today**: all 60 non-device guidelines have an authored checklist
+(`GET /nca/coverage` reports this live — `guided_or_automated_count` combines
+checklist-backed org-scope guidelines with automated/hybrid-classified
+device-scope ones). 3 reusable question templates
+(`_define_approve_implement`, `_periodic_review`, `_practice_with_evidence`)
+match this framework's own recurring phrasing patterns; every question's
+subject text is still drawn from that specific guideline's real canonical
+requirement, never invented.
+
+## Formal sign-off (attestation)
+
+Every assessment now requires an explicit certification, not just a name.
+`compliance_assessments` gained `attested_role`, `attestation_confirmed`
+(`CHECK`'d `true` for any real verdict — see migrations 011/012), and
+`attestation_statement` (the exact fixed copy shown at signing time, stored
+verbatim so a later dispute sees what was actually agreed to, not today's UI
+copy). `RecordAssessmentDialog`'s "Confirm & Sign" section — role + a
+required "I have reviewed the evidence/reasons above and certify this
+finding" checkbox — is the one place this whole module is actually enforced,
+applying uniformly whether the assessment came from a device suggestion, a
+checklist suggestion, or a fully manual page with neither.
+
+**The one exception**: a `not_tested` placeholder (the row
+`POST /nca/assessments/recompute` inserts, `assessed_by = 'system:recompute'`)
+is exempt — it's the system's own "nothing has been asserted yet" marker, not
+a human verdict, so there's nothing to attest to. Still no real
+authentication (see below) — this is a stronger attestation step layered on
+the existing free-text reviewer-identity convention, not a login system.
 
 ## Evidence handling
 
@@ -311,3 +380,24 @@ compliance, domain breakdown, failed/partial controls, and approved exceptions.
   each device's own Compliance tab and the control detail page rather than the
   fleet table (a device can simultaneously have controls at every severity/evidence
   state, so a device-level filter on those fields wouldn't cleanly select anything).
+- **5 device-scope guidelines have neither a collector nor a checklist**
+  (`2-9-2` vulnerability-management process, `2-14-2` application allowlisting,
+  `2-15-3` end-of-life/disposal, `3-1-1`/`3-1-2` fail-safe capability) —
+  `GET /nca/coverage` reports this honestly (76/81 today, not 81/81). Each is a
+  real process or hardware-access requirement no realistic network/device scan
+  can verify in this lab; the guided-checklist mechanism *could* extend to
+  them (checklists aren't inherently org-scope-only), just hasn't yet — a
+  natural next increment, not an architectural gap.
+- **A checklist's `suggestion_rule` is authored per-guideline, not
+  auto-derived from its canonical text** — the 3 reusable templates in
+  `seed_checklists.py` cover this framework's own recurring phrasing well, but
+  a genuinely novel guideline shape would need a 4th template or a one-off
+  rule, same as any rule-based system.
+- **`lab/auditor/api/*.py` (main.py, nca_routes.py, ...) is baked into the
+  `auditor-api` image at build time** — unlike `policies/`, which is
+  bind-mounted read-only into both `auditor-api` and `auditor-worker`, so
+  editing `policies/catalog/scan_tests.py` only needs a container *restart*
+  to take effect, but editing `nca_routes.py` needs a full
+  `docker compose build auditor-api` (confirmed the hard way: the checklist
+  endpoints returned a plain routing 404 after a restart alone, until the
+  image was actually rebuilt).
