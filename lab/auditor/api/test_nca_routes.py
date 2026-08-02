@@ -844,3 +844,25 @@ def test_evaluate_checklist_requires_answers_object(client, conn):
     response = client.post(f"/nca/controls/{CONTROL_ID}/checklist/evaluate", json={})
     assert response.status_code == 400
     assert response.json()["field"] == "answers"
+
+
+def test_coverage_reports_total_and_guided_or_automated_counts(client, conn):
+    # _seed_control's fixed INSERT always writes assessment_type='automated',
+    # regardless of scope_type - both seeded rows count toward
+    # automated_or_hybrid_count here; the checklist is the only guided signal.
+    _seed_control(conn, CONTROL_ID)
+    _seed_control(conn, "NCA-CGIoT-1_2024-1-1-1", domain_id="1", scope_type="organization")
+    conn.execute(
+        """
+        INSERT INTO compliance_control_checklists (control_id, questions, suggestion_rule)
+        VALUES (%s, '[]'::jsonb, '[]'::jsonb)
+        """,
+        ("NCA-CGIoT-1_2024-1-1-1",),
+    )
+    conn.commit()
+
+    body = client.get("/nca/coverage").json()
+    assert body["total_guidelines"] == 2
+    assert body["automated_or_hybrid_count"] == 2
+    assert body["checklist_count"] == 1
+    assert body["guided_or_automated_count"] == 3

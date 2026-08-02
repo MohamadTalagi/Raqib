@@ -600,6 +600,13 @@ export interface NCAChecklistQuestion {
   required: boolean;
 }
 
+export interface NCACoverage {
+  total_guidelines: number;
+  automated_or_hybrid_count: number;
+  checklist_count: number;
+  guided_or_automated_count: number;
+}
+
 export interface NCAChecklist {
   control_id: string;
   questions: NCAChecklistQuestion[];

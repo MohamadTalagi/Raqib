@@ -11,6 +11,7 @@ import {
   Loader2,
   RefreshCw,
   ShieldAlert,
+  Sparkles,
 } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +54,7 @@ export function NCACompliancePage() {
   const { showToast } = useToast();
   const [refreshKey, setRefreshKey] = useState(0);
   const summary = useFetch(api.ncaSummary, [refreshKey]);
+  const coverage = useFetch(api.ncaCoverage, [refreshKey]);
   const domains = useFetch(api.ncaDomains, [refreshKey]);
   const devices = useFetch(api.ncaDevices, [refreshKey]);
   const [recomputing, setRecomputing] = useState(false);
@@ -190,9 +192,10 @@ export function NCACompliancePage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {loading || !summary.data ? (
               <>
+                <Skeleton className="h-28" />
                 <Skeleton className="h-28" />
                 <Skeleton className="h-28" />
                 <Skeleton className="h-28" />
@@ -217,6 +220,13 @@ export function NCACompliancePage() {
                   icon={ClipboardCheck}
                   accent="neutral"
                   hint={`${summary.data.framework} ${summary.data.framework_version}`}
+                />
+                <StatTile
+                  label="Guided or automated"
+                  value={coverage.data ? `${coverage.data.guided_or_automated_count}/${coverage.data.total_guidelines}` : "…"}
+                  icon={Sparkles}
+                  accent="neutral"
+                  hint="collector or checklist support"
                 />
               </>
             )}

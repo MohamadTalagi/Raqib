@@ -1,8 +1,10 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OrganizationalCompliancePage } from "./OrganizationalCompliancePage";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { ToastProvider } from "@/lib/useToast";
 import type { NCAOrganizationalCompliance } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
@@ -83,7 +85,9 @@ const ORG: NCAOrganizationalCompliance = {
 function renderPage() {
   return render(
     <MemoryRouter>
-      <OrganizationalCompliancePage />
+      <ToastProvider>
+        <OrganizationalCompliancePage />
+      </ToastProvider>
     </MemoryRouter>,
   );
 }
@@ -118,5 +122,89 @@ describe("OrganizationalCompliancePage", () => {
     renderPage();
 
     expect(await screen.findByText(/could not load organization/i)).toBeInTheDocument();
+  });
+
+  it("shows the progress bar with the assessed count", async () => {
+    vi.spyOn(api, "ncaOrganization").mockResolvedValue(ORG);
+    renderPage();
+
+    expect(await screen.findByText("0 / 2 controls assessed")).toBeInTheDocument();
+  });
+
+  it("opens the guided checklist when Assess is clicked, and falls back to the plain dialog when no checklist exists", async () => {
+    vi.spyOn(api, "ncaOrganization").mockResolvedValue(ORG);
+    vi.spyOn(api, "ncaControlChecklist").mockRejectedValue(new ApiError("not found", 404));
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Have a strategy document.");
+    const assessButtons = screen.getAllByRole("button", { name: /^assess$/i });
+    await user.click(assessButtons[0]);
+
+    expect(await screen.findByText(/no guided checklist/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /record assessment/i }));
+
+    expect(await screen.findByRole("heading", { name: /^record assessment$/i })).toBeInTheDocument();
+    // Organizational controls never show a device picker.
+    expect(screen.queryByLabelText("Device")).not.toBeInTheDocument();
+  });
+
+  it("records an assessment via the guided flow and refreshes the page", async () => {
+    vi.spyOn(api, "ncaOrganization").mockResolvedValue(ORG);
+    vi.spyOn(api, "ncaControlChecklist").mockRejectedValue(new ApiError("not found", 404));
+    const createSpy = vi.spyOn(api, "createNcaAssessment").mockResolvedValue({
+      id: "ASM-9",
+      control_id: "NCA-CGIoT-1_2024-1-1-1",
+      device_id: null,
+      organizational_scope_id: "default",
+      applicability: "applicable",
+      applicability_reason: null,
+      status: "pass",
+      severity: "medium",
+      finding: "Strategy document reviewed.",
+      test_method: "manual",
+      test_identifier: null,
+      raw_result_reference: null,
+      evidence_ids: [],
+      scanner_tool: null,
+      scanner_tool_version: null,
+      firmware_version_assessed: null,
+      assessed_at: "2026-08-03T00:00:00Z",
+      assessed_by: "auditor-1",
+      remediation: null,
+      remediation_due_date: null,
+      retest_status: "not_requested",
+      retested_at: null,
+      superseded_by: null,
+      created_at: "2026-08-03T00:00:00Z",
+      attested_role: "Lead Auditor",
+      attestation_confirmed: true,
+      attestation_statement: "Reviewed and certified.",
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Have a strategy document.");
+    const assessButtons = screen.getAllByRole("button", { name: /^assess$/i });
+    await user.click(assessButtons[0]);
+    await screen.findByText(/no guided checklist/i);
+    await user.click(screen.getByRole("button", { name: /record assessment/i }));
+
+    await user.selectOptions(await screen.findByLabelText("Status"), "pass");
+    await user.type(screen.getByLabelText("Finding"), "Strategy document reviewed.");
+    await user.type(screen.getByLabelText("Your name"), "auditor-1");
+    await user.type(screen.getByLabelText("Your role"), "Lead Auditor");
+    await user.click(screen.getByLabelText("Attestation confirmation"));
+    await user.click(screen.getByRole("button", { name: /save assessment/i }));
+
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        control_id: "NCA-CGIoT-1_2024-1-1-1",
+        device_id: null,
+        organizational_scope_id: "default",
+        status: "pass",
+      }),
+    );
+    expect(await screen.findByText(/assessment asm-9 recorded/i)).toBeInTheDocument();
   });
 });

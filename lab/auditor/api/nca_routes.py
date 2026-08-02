@@ -283,6 +283,33 @@ def get_nca_summary():
     }
 
 
+@router.get("/coverage")
+def get_nca_coverage():
+    """How many of the 81 guidelines have *some* form of automated
+    suggestion support today - a device-scope collector (assessment_type
+    automated/hybrid) or an authored guided checklist
+    (compliance_control_checklists). Computed live, never cached, same
+    "never persist a derived value" rule as every other rollup in this
+    codebase - so this honestly reflects partial rollout as checklists are
+    added over time, never overclaiming complete coverage."""
+    conn = get_connection()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM compliance_controls WHERE enabled = true").fetchone()[0]
+        automated_or_hybrid = conn.execute(
+            "SELECT COUNT(*) FROM compliance_controls WHERE enabled = true AND assessment_type IN ('automated', 'hybrid')"
+        ).fetchone()[0]
+        checklist_count = conn.execute("SELECT COUNT(*) FROM compliance_control_checklists").fetchone()[0]
+    finally:
+        conn.close()
+
+    return {
+        "total_guidelines": total,
+        "automated_or_hybrid_count": automated_or_hybrid,
+        "checklist_count": checklist_count,
+        "guided_or_automated_count": automated_or_hybrid + checklist_count,
+    }
+
+
 @router.get("/domains")
 def get_nca_domains():
     conn = get_connection()

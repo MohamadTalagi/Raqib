@@ -14,6 +14,7 @@ import type {
   NCAAssessment,
   NCAChecklist,
   NCAComplianceEvidence,
+  NCACoverage,
   NCAControl,
   NCAControlDetail,
   NCADeviceComplianceRow,
@@ -261,6 +262,7 @@ export const api = {
   // -- NCA CGIoT-1:2024 compliance module --------------------------------
 
   ncaSummary: (): Promise<NCASummary> => getJson<NCASummary>("/nca/summary"),
+  ncaCoverage: (): Promise<NCACoverage> => getJson<NCACoverage>("/nca/coverage"),
   ncaDomains: (): Promise<NCADomainSummary> => getJson<NCADomainSummary>("/nca/domains"),
   ncaControls: (filters?: { domainId?: string; scopeType?: string }): Promise<NCAControl[]> => {
     const params = new URLSearchParams();

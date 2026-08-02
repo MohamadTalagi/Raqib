@@ -87,6 +87,19 @@ describe("NCACompliancePage", () => {
     expect(screen.getByText("81")).toBeInTheDocument();
   });
 
+  it("shows the guided/automated coverage stat", async () => {
+    setup();
+    vi.spyOn(api, "ncaCoverage").mockResolvedValue({
+      total_guidelines: 81,
+      automated_or_hybrid_count: 21,
+      checklist_count: 60,
+      guided_or_automated_count: 81,
+    });
+    renderPage();
+
+    expect(await screen.findByText("81/81")).toBeInTheDocument();
+  });
+
   it("shows the four domain groups with their counts", async () => {
     setup();
     renderPage();
