@@ -25,6 +25,7 @@ from device_validation import (
 )
 from automation_routes import router as automation_router
 from nca_routes import router as nca_router
+from remediation_routes import router as remediation_router
 from risk_routes import router as risk_router
 from vuln_routes import router as vuln_router
 from policies.catalog.scan_tests import (
@@ -58,6 +59,7 @@ app.include_router(nca_router)
 app.include_router(vuln_router)
 app.include_router(risk_router)
 app.include_router(automation_router)
+app.include_router(remediation_router)
 
 
 @app.exception_handler(ValidationError)
