@@ -53,6 +53,12 @@ const SUMMARY: ExecutiveSummary = {
       device_display_name: "Insecure Smart Camera",
     },
   ],
+  post_quantum_readiness: {
+    total_devices: 2,
+    tls_key_exchange: { pass: 1, fail: 1, unknown: 0, not_applicable: 0 },
+    certificate_signature: { pass: 0, fail: 2, unknown: 0, not_applicable: 0 },
+    firmware_crypto: { pass: 0, fail: 0, unknown: 0, not_applicable: 2 },
+  },
   devices: [
     {
       device_id: "device-insecure",
@@ -115,6 +121,19 @@ const SUMMARY: ExecutiveSummary = {
           superseded_by: null,
         },
       ],
+      pqc_readiness: {
+        device_id: "device-insecure",
+        known: true,
+        overall_status: "fail",
+        fail_count: 1,
+        tls_key_exchange: { status: "pass", negotiated_group: "X25519MLKEM768" },
+        certificate_signature: {
+          status: "fail",
+          signature_algorithm: "sha256WithRSAEncryption",
+          tip: "Deploy an ML-DSA or SLH-DSA certificate once your CA supports it.",
+        },
+        firmware_crypto: { status: "not_applicable", packages: [] },
+      },
     },
     {
       device_id: "device-hardened",
@@ -126,6 +145,15 @@ const SUMMARY: ExecutiveSummary = {
       nca_gaps: [],
       evidence: [],
       remediation: [],
+      pqc_readiness: {
+        device_id: "device-hardened",
+        known: true,
+        overall_status: "fail",
+        fail_count: 1,
+        tls_key_exchange: { status: "fail", negotiated_group: "X25519" },
+        certificate_signature: { status: "fail", signature_algorithm: "sha256WithRSAEncryption" },
+        firmware_crypto: { status: "not_applicable", packages: [] },
+      },
     },
   ],
 };
@@ -184,6 +212,30 @@ describe("ExecutiveSummaryPage", () => {
     expect(await screen.findByText("observations.default_creds equals True")).toBeInTheDocument();
     expect(screen.getByText("Default creds admin/admin accepted")).toBeInTheDocument();
     expect(screen.getByText(/ai-generated/i)).toBeInTheDocument();
+  });
+
+  it("shows the fleet-wide Post-Quantum Readiness section, informational only", async () => {
+    vi.spyOn(api, "executiveSummary").mockResolvedValue(SUMMARY);
+    renderPage();
+
+    expect(await screen.findByText("Post-Quantum Readiness (informational)")).toBeInTheDocument();
+    expect(screen.getByText("TLS key exchange (KEM)")).toBeInTheDocument();
+    expect(screen.getByText(/never affects the risk scores or compliance gaps/i)).toBeInTheDocument();
+  });
+
+  it("shows a device's own 3-criterion PQC breakdown once expanded", async () => {
+    vi.spyOn(api, "executiveSummary").mockResolvedValue(SUMMARY);
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Devices, ranked by risk (highest first)");
+    const insecureRow = screen
+      .getAllByRole("button")
+      .find((btn) => /Insecure Smart Camera/.test(btn.textContent ?? ""))!;
+    await user.click(insecureRow);
+
+    expect(await screen.findByText("Negotiated group: X25519MLKEM768")).toBeInTheDocument();
+    expect(screen.getByText(/deploy an ml-dsa or slh-dsa certificate/i)).toBeInTheDocument();
   });
 
   it("shows an empty state when nothing is registered", async () => {

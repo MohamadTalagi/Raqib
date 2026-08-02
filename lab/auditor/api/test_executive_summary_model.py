@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import psycopg
@@ -69,6 +70,20 @@ def _seed_nca_assessment(conn, assessment_id, control_id, device_id, status):
     conn.commit()
 
 
+def _seed_pqc_evidence(conn, evidence_id, device_id, test_id, observations):
+    conn.execute(
+        """
+        INSERT INTO evidence (evidence_id, device_id, test_id, tool, tool_version,
+                              command, timestamp, finding, observations,
+                              raw_output_path, confidence, sha256)
+        VALUES (%s, %s, %s, 'python3', '3.12', 'pqc_readiness_check.py', now(),
+                'a finding', %s::jsonb, 'document-store/raw/test.txt', 'high', 'abc123')
+        """,
+        (evidence_id, device_id, test_id, json.dumps(observations)),
+    )
+    conn.commit()
+
+
 def _add_remediation(conn, blueprint_id, device_id, control_id, finding_type, finding_id, *, priority="immediate", reviewed=False):
     conn.execute(
         """
@@ -97,6 +112,67 @@ def test_empty_fleet_has_no_devices_and_null_averages(conn):
     assert model["fleet_summary"]["remediation_coverage_pct"] is None
     assert model["priority_recommendations"] == []
     assert model["significant_compliance_gaps"] == []
+    assert model["post_quantum_readiness"]["total_devices"] == 0
+
+
+def test_post_quantum_readiness_is_its_own_section_never_touching_risk_score(conn):
+    """PQC readiness must never move a device's risk_score or count toward
+    fleet_summary's compliance-gap totals - purely informational, its own
+    top-level section (see executive_summary.py's comment on this)."""
+    _register_device(conn, "device-1")
+    _seed_pqc_evidence(
+        conn,
+        "EV-PQC-1",
+        "device-1",
+        "TEST-PQC-TLS-HANDSHAKE",
+        {
+            "negotiated_group": "X25519",
+            "is_pqc_kem": False,
+            "cert_signature_algorithm": "sha256WithRSAEncryption",
+            "is_pqc_signature": False,
+            "connection_error": False,
+            "notes": [],
+        },
+    )
+
+    model = build_executive_summary_model(conn)
+    device = model["devices"][0]
+
+    assert device["pqc_readiness"]["overall_status"] == "fail"
+    assert device["pqc_readiness"]["tls_key_exchange"]["status"] == "fail"
+    assert "tip" in device["pqc_readiness"]["tls_key_exchange"]
+    # A PQC failure must not appear in the compliance-gap counters or affect
+    # the risk score at all - those come entirely from SA-IOT/NCA/risk_engine.
+    assert model["fleet_summary"]["total_compliance_gaps"] == 0
+    assert device["sa_iot_gaps"] == []
+    assert device["nca_gaps"] == []
+
+
+def test_post_quantum_readiness_fleet_summary_counts_across_devices(conn):
+    _register_device(conn, "device-1")
+    _register_device(conn, "device-2")
+    _seed_pqc_evidence(
+        conn,
+        "EV-PQC-1",
+        "device-1",
+        "TEST-PQC-TLS-HANDSHAKE",
+        {
+            "negotiated_group": "X25519MLKEM768",
+            "is_pqc_kem": True,
+            "cert_signature_algorithm": "sha256WithRSAEncryption",
+            "is_pqc_signature": False,
+            "connection_error": False,
+            "notes": [],
+        },
+    )
+
+    model = build_executive_summary_model(conn)
+    pqc = model["post_quantum_readiness"]
+
+    assert pqc["total_devices"] == 2
+    assert pqc["tls_key_exchange"]["pass"] == 1
+    assert pqc["tls_key_exchange"]["not_applicable"] == 1
+    assert pqc["certificate_signature"]["fail"] == 1
 
 
 def test_devices_are_ranked_by_risk_score_descending(conn):

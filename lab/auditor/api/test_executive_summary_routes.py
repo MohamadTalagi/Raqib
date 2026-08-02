@@ -74,3 +74,4 @@ def test_report_html_renders_real_content_without_weasyprint(client, postgres_ur
     assert "Summary Cam" in response.text
     assert "<style>" in response.text
     assert "no AI-generated narrative text" in response.text
+    assert "Post-Quantum Readiness" in response.text

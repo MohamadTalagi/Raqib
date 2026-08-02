@@ -70,6 +70,14 @@ td { padding: 1.8mm 2mm 1.8mm 0; border-bottom: 1px solid #eef0f3; vertical-alig
 .status-partial { color: var(--partial); }
 .status-not_tested { color: var(--inconclusive); }
 
+/* Post-Quantum Readiness's own 4-state vocabulary (pass/fail/unknown/
+   not_applicable) - "unknown" reuses the inconclusive colour (a real,
+   honest "couldn't determine" state, never a guessed pass or fail);
+   not_applicable stays deliberately unstyled/muted, matching the greyed
+   look every other "n/a" cell in this report already gets. */
+.status-unknown { color: var(--inconclusive); }
+.status-not_applicable { color: var(--inconclusive); }
+
 /* Keep a control's clause, verdict and remediation together. Splitting these
    across a page is the most common reason a generated PDF looks amateur. */
 .finding { break-inside: avoid; padding: 3mm 0; border-bottom: 1px solid #eef0f3; }

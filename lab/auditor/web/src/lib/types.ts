@@ -926,6 +926,8 @@ export interface ExecutiveSummaryDevice {
   nca_gaps: ExecutiveSummaryNcaGap[];
   evidence: ExecutiveSummaryEvidence[];
   remediation: RemediationBlueprint[];
+  /** Informational only - never affects risk_score/risk_category above. */
+  pqc_readiness: DevicePqcReadiness;
 }
 
 export interface ExecutiveSummaryFleet {
@@ -953,4 +955,7 @@ export interface ExecutiveSummary {
   fleet_summary: ExecutiveSummaryFleet;
   priority_recommendations: ExecutiveSummaryPriorityRecommendation[];
   significant_compliance_gaps: ExecutiveSummarySignificantGap[];
+  /** Its own section, deliberately separate from fleet_summary - informational
+   * only, never affects risk_score or a compliance-gap count. */
+  post_quantum_readiness: PqcReadinessFleetSummary;
 }

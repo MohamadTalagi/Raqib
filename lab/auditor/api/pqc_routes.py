@@ -148,6 +148,26 @@ def get_device_pqc_readiness(device_id: str) -> dict:
     return {"known": True, **summary}
 
 
+def _criterion_counts(devices: list[dict], criterion_key: str) -> dict:
+    counts = {status: 0 for status in CRITERION_STATUSES}
+    for d in devices:
+        counts[d[criterion_key]["status"]] += 1
+    return counts
+
+
+def fleet_summary_from_devices(devices: list[dict]) -> dict:
+    """Shared by GET /pqc-readiness/fleet-summary and executive_summary.py's
+    post_quantum_readiness section, so the two can never disagree - takes
+    already-computed per-device summaries rather than re-querying, since the
+    executive summary already builds one per device for its own device list."""
+    return {
+        "total_devices": len(devices),
+        "tls_key_exchange": _criterion_counts(devices, "tls_key_exchange"),
+        "certificate_signature": _criterion_counts(devices, "certificate_signature"),
+        "firmware_crypto": _criterion_counts(devices, "firmware_crypto"),
+    }
+
+
 @router.get("/fleet-summary")
 def get_pqc_readiness_fleet_summary() -> dict:
     conn = get_connection()
@@ -156,16 +176,4 @@ def get_pqc_readiness_fleet_summary() -> dict:
         devices = [_device_pqc_summary(conn, device_id) for device_id in device_ids]
     finally:
         conn.close()
-
-    def _counts(criterion_key: str) -> dict:
-        counts = {status: 0 for status in CRITERION_STATUSES}
-        for d in devices:
-            counts[d[criterion_key]["status"]] += 1
-        return counts
-
-    return {
-        "total_devices": len(devices),
-        "tls_key_exchange": _counts("tls_key_exchange"),
-        "certificate_signature": _counts("certificate_signature"),
-        "firmware_crypto": _counts("firmware_crypto"),
-    }
+    return fleet_summary_from_devices(devices)

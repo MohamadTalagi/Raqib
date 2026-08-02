@@ -25,6 +25,7 @@ from pathlib import Path
 
 from nca_routes import _evaluator_rows_for_scope
 from policies.nca.evaluator import _applicable_required, effective_status
+from pqc_routes import _device_pqc_summary, fleet_summary_from_devices
 from report import build_report_model
 from risk_routes import _compute_risk_for_device
 
@@ -111,6 +112,7 @@ def build_executive_summary_model(conn) -> dict:
     all_immediate_unreviewed = []
     all_blocking_gaps = []
 
+    pqc_devices = []
     for device_id, display_name in device_rows:
         report_model = build_report_model(conn, device_id)
         risk = _compute_risk_for_device(conn, device_id)
@@ -118,6 +120,8 @@ def build_executive_summary_model(conn) -> dict:
         sa_iot_gaps = [c for c in report_model["controls"] if c["status"] in ("FAIL", "PARTIAL")]
         nca_gaps = _nca_gaps_for_device(conn, device_id)
         remediation = _remediation_for_device(conn, device_id)
+        pqc_readiness = _device_pqc_summary(conn, device_id)
+        pqc_devices.append(pqc_readiness)
 
         total_sa_iot_gaps += len(sa_iot_gaps)
         total_nca_gaps += len(nca_gaps)
@@ -141,6 +145,7 @@ def build_executive_summary_model(conn) -> dict:
             "evidence": report_model["evidence"],
             "vulnerabilities": report_model["vulnerabilities"],
             "remediation": remediation,
+            "pqc_readiness": pqc_readiness,
         })
 
     devices.sort(key=lambda d: d["risk_score"], reverse=True)
@@ -173,6 +178,11 @@ def build_executive_summary_model(conn) -> dict:
         },
         "priority_recommendations": all_immediate_unreviewed,
         "significant_compliance_gaps": all_blocking_gaps,
+        # Deliberately its own top-level section, never blended into
+        # risk_score/fleet_summary above - Post-Quantum Readiness is purely
+        # informational (see pqc_routes.py) and must never read as though it
+        # affects a device's risk score or compliance standing.
+        "post_quantum_readiness": fleet_summary_from_devices(pqc_devices),
     }
 
 

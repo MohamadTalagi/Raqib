@@ -13,14 +13,34 @@ import {
   RiskCategoryBadge,
   StatusBadge,
 } from "@/components/ui/severity-badge";
+import { PqcReadinessPanel } from "@/components/pipeline/PqcReadinessPanel";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type {
   ExecutiveSummaryDevice,
   NCAStatus,
+  PqcCriterionCounts,
   RemediationPriority,
 } from "@/lib/types";
+
+const PQC_CRITERION_LABEL: Record<"tls_key_exchange" | "certificate_signature" | "firmware_crypto", string> = {
+  tls_key_exchange: "TLS key exchange (KEM)",
+  certificate_signature: "Certificate signature algorithm",
+  firmware_crypto: "Firmware crypto library currency",
+};
+
+function PqcCriterionCountsRow({ label, counts }: { label: string; counts: PqcCriterionCounts }) {
+  return (
+    <tr className="border-t border-[var(--color-border)] text-sm">
+      <td className="py-2 pr-4 text-[var(--color-text)]">{label}</td>
+      <td className="py-2 pr-4 text-[var(--color-pass)]">{counts.pass}</td>
+      <td className="py-2 pr-4 text-[var(--color-critical)]">{counts.fail}</td>
+      <td className="py-2 pr-4 text-[var(--color-inconclusive)]">{counts.unknown}</td>
+      <td className="py-2 text-[var(--color-text-muted)]">{counts.not_applicable}</td>
+    </tr>
+  );
+}
 
 const PRIORITY_LABEL: Record<RemediationPriority, string> = {
   immediate: "Immediate",
@@ -113,6 +133,13 @@ function DeviceDetailPanel({ device }: { device: ExecutiveSummaryDevice }) {
             ))}
           </ul>
         )}
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-semibold tracking-wide text-[var(--color-text-muted)] uppercase">
+          Post-quantum readiness <span className="normal-case text-[var(--color-text-muted)]">(informational only)</span>
+        </p>
+        <PqcReadinessPanel readiness={device.pqc_readiness} />
       </div>
 
       <Link
@@ -256,6 +283,46 @@ export function ExecutiveSummaryPage() {
                   ))}
                 </ul>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Post-Quantum Readiness (informational)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+                3 named technical criteria grounded in real NIST standards (FIPS 203 ML-KEM, FIPS 204 ML-DSA, FIPS
+                205 SLH-DSA) - no enforceable IoT post-quantum regulation exists yet, so this is not a compliance
+                framework. Never affects the risk scores or compliance gaps above.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left text-xs font-semibold tracking-wide text-[var(--color-text-muted)] uppercase">
+                      <th className="pb-2 pr-4">Criterion</th>
+                      <th className="pb-2 pr-4">Pass</th>
+                      <th className="pb-2 pr-4">Fail</th>
+                      <th className="pb-2 pr-4">Unknown</th>
+                      <th className="pb-2">Not applicable</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <PqcCriterionCountsRow
+                      label={PQC_CRITERION_LABEL.tls_key_exchange}
+                      counts={data.post_quantum_readiness.tls_key_exchange}
+                    />
+                    <PqcCriterionCountsRow
+                      label={PQC_CRITERION_LABEL.certificate_signature}
+                      counts={data.post_quantum_readiness.certificate_signature}
+                    />
+                    <PqcCriterionCountsRow
+                      label={PQC_CRITERION_LABEL.firmware_crypto}
+                      counts={data.post_quantum_readiness.firmware_crypto}
+                    />
+                  </tbody>
+                </table>
+              </div>
             </CardContent>
           </Card>
 

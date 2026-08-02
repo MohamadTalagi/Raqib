@@ -110,8 +110,59 @@
 </table>
 {% else %}<p class="empty-state">No remediation blueprints generated for this device yet.</p>{% endif %}
 
+<p class="cite">Post-quantum readiness (informational only - never affects risk score or compliance status)</p>
+<table>
+  <thead><tr><th>Criterion</th><th>Status</th><th>Detail</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>TLS key exchange (KEM)</td>
+      <td class="status status-{{ d.pqc_readiness.tls_key_exchange.status }}">{{ d.pqc_readiness.tls_key_exchange.status }}</td>
+      <td>{{ d.pqc_readiness.tls_key_exchange.negotiated_group or "n/a" }}</td>
+    </tr>
+    <tr>
+      <td>Certificate signature algorithm</td>
+      <td class="status status-{{ d.pqc_readiness.certificate_signature.status }}">{{ d.pqc_readiness.certificate_signature.status }}</td>
+      <td>{{ d.pqc_readiness.certificate_signature.signature_algorithm or "n/a" }}</td>
+    </tr>
+    <tr>
+      <td>Firmware crypto library currency</td>
+      <td class="status status-{{ d.pqc_readiness.firmware_crypto.status }}">{{ d.pqc_readiness.firmware_crypto.status }}</td>
+      <td>{% if d.pqc_readiness.firmware_crypto.packages %}{% for p in d.pqc_readiness.firmware_crypto.packages %}{{ p.name }} {{ p.version }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}n/a{% endif %}</td>
+    </tr>
+  </tbody>
+</table>
+
 {% endfor %}
 {% else %}<p class="empty-state">No devices registered.</p>{% endif %}
+
+<h2>5. Post-Quantum Readiness (informational)</h2>
+<p class="cite">3 named technical criteria grounded in real NIST standards (FIPS 203 ML-KEM, FIPS 204 ML-DSA, FIPS 205 SLH-DSA) - no enforceable IoT post-quantum regulation exists yet, so this is not a compliance framework and needs no sign-off. Never affects the risk scores or compliance gaps reported above.</p>
+<table>
+  <thead><tr><th>Criterion</th><th>Pass</th><th>Fail</th><th>Unknown</th><th>Not applicable</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>TLS key exchange (KEM)</td>
+      <td>{{ post_quantum_readiness.tls_key_exchange.pass }}</td>
+      <td>{{ post_quantum_readiness.tls_key_exchange.fail }}</td>
+      <td>{{ post_quantum_readiness.tls_key_exchange.unknown }}</td>
+      <td>{{ post_quantum_readiness.tls_key_exchange.not_applicable }}</td>
+    </tr>
+    <tr>
+      <td>Certificate signature algorithm</td>
+      <td>{{ post_quantum_readiness.certificate_signature.pass }}</td>
+      <td>{{ post_quantum_readiness.certificate_signature.fail }}</td>
+      <td>{{ post_quantum_readiness.certificate_signature.unknown }}</td>
+      <td>{{ post_quantum_readiness.certificate_signature.not_applicable }}</td>
+    </tr>
+    <tr>
+      <td>Firmware crypto library currency</td>
+      <td>{{ post_quantum_readiness.firmware_crypto.pass }}</td>
+      <td>{{ post_quantum_readiness.firmware_crypto.fail }}</td>
+      <td>{{ post_quantum_readiness.firmware_crypto.unknown }}</td>
+      <td>{{ post_quantum_readiness.firmware_crypto.not_applicable }}</td>
+    </tr>
+  </tbody>
+</table>
 
 </body>
 </html>
