@@ -220,7 +220,11 @@ CREATE TABLE compliance_assessments (
     -- existing volume) - the auditor's name lives in assessed_by above;
     -- these carry their role and an explicit certification.
     attested_role             TEXT,
-    attestation_confirmed     BOOLEAN NOT NULL DEFAULT false CHECK (attestation_confirmed = true),
+    -- Required for every real human verdict, but NOT for a 'not_tested'
+    -- placeholder (see /assessments/recompute) - that row is the system's
+    -- own "nothing has been asserted yet" state, not a human verdict.
+    attestation_confirmed     BOOLEAN NOT NULL DEFAULT false
+                              CHECK (status = 'not_tested' OR attestation_confirmed = true),
     attestation_statement     TEXT,
     CHECK (
         (device_id IS NOT NULL AND organizational_scope_id IS NULL)

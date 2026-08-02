@@ -63,7 +63,8 @@ ASSESSMENT_COLUMNS = (
     "applicability_reason, status, severity, finding, test_method, test_identifier, "
     "raw_result_reference, evidence_ids, scanner_tool, scanner_tool_version, "
     "firmware_version_assessed, assessed_at, assessed_by, remediation, "
-    "remediation_due_date, retest_status, retested_at, superseded_by, created_at"
+    "remediation_due_date, retest_status, retested_at, superseded_by, created_at, "
+    "attested_role, attestation_confirmed, attestation_statement"
 )
 
 EXCEPTION_COLUMNS = (
@@ -107,7 +108,8 @@ def _row_to_assessment(row) -> dict:
      status, severity, finding, test_method, test_identifier, raw_result_reference,
      evidence_ids, scanner_tool, scanner_tool_version, firmware_version_assessed,
      assessed_at, assessed_by, remediation, remediation_due_date, retest_status,
-     retested_at, superseded_by, created_at) = row
+     retested_at, superseded_by, created_at,
+     attested_role, attestation_confirmed, attestation_statement) = row
     return {
         "id": id_, "control_id": control_id, "device_id": device_id,
         "organizational_scope_id": org_scope_id, "applicability": applicability,
@@ -123,6 +125,8 @@ def _row_to_assessment(row) -> dict:
         "retest_status": retest_status,
         "retested_at": retested_at.isoformat() if retested_at else None,
         "superseded_by": superseded_by, "created_at": created_at.isoformat(),
+        "attested_role": attested_role, "attestation_confirmed": attestation_confirmed,
+        "attestation_statement": attestation_statement,
     }
 
 
@@ -374,6 +378,53 @@ def get_control(control_id: str):
     return {"control": control, "assessments": assessments, "audit_events": audit_events}
 
 
+@router.get("/controls/{control_id}/checklist")
+def get_control_checklist(control_id: str):
+    """The guided questions for this control, or 404 if it has none yet -
+    a real, expected state for most of the 62 organizational guidelines
+    until policies/nca/seed_checklists.py authors one. The frontend must
+    treat 404 as "fall back to the plain assessment dialog", not an error."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT control_id, questions, suggestion_rule FROM compliance_control_checklists WHERE control_id = %s",
+            (control_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="this control has no guided checklist yet")
+    return {"control_id": row[0], "questions": row[1], "suggestion_rule": row[2]}
+
+
+@router.post("/controls/{control_id}/checklist/evaluate")
+def evaluate_control_checklist(control_id: str, payload: dict):
+    """Read-only, like GET /nca/devices/{id}/suggestions - computes a
+    suggested status from submitted answers but never writes anything.
+    The frontend calls this live as the auditor fills in the checklist,
+    then feeds the result into the same RecordAssessmentDialog a device
+    suggestion already pre-fills."""
+    from policies.nca.checklists import evaluate_checklist
+
+    answers = payload.get("answers")
+    if not isinstance(answers, dict):
+        raise ValidationError("answers", "answers must be an object of question key -> answer value")
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT suggestion_rule FROM compliance_control_checklists WHERE control_id = %s",
+            (control_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="this control has no guided checklist yet")
+
+    suggested_status = evaluate_checklist(row[0], answers)
+    return {"control_id": control_id, "suggested_status": suggested_status}
+
+
 # ---------------------------------------------------------------------------
 # Devices
 # ---------------------------------------------------------------------------
@@ -584,6 +635,34 @@ def _validate_assessment_payload(payload: dict) -> dict:
     if not assessed_by or not isinstance(assessed_by, str) or not assessed_by.strip():
         raise ValidationError("assessed_by", "assessed_by (reviewer name) is required")
 
+    # Formal sign-off, required on every REAL verdict (compliance_assessments'
+    # own attestation_confirmed CHECK constraint enforces this too - this is
+    # the friendlier 400 a caller sees before ever reaching that constraint).
+    # Never optional for pass/partial/fail/review_required: a human must
+    # explicitly certify they reviewed the evidence/reasons before anything
+    # is recorded, matching this project's "AI-assisted, not AI-decided"
+    # rule at its strongest point yet. `not_tested` is the one exception -
+    # it is the system's own "nothing has been asserted yet" placeholder
+    # (see /assessments/recompute), not a human verdict, so there is
+    # nothing to attest to.
+    attestation_confirmed = payload.get("attestation_confirmed", False)
+    attestation_statement = payload.get("attestation_statement")
+    attested_role = payload.get("attested_role")
+    if status != "not_tested":
+        if attestation_confirmed is not True:
+            raise ValidationError(
+                "attestation_confirmed",
+                "attestation_confirmed must be true - the recording auditor must certify "
+                "they reviewed the evidence/reasons before this assessment can be saved",
+            )
+        if not attestation_statement or not isinstance(attestation_statement, str):
+            raise ValidationError(
+                "attestation_statement", "attestation_statement (the certify text shown at signing) is required"
+            )
+        if not attested_role or not isinstance(attested_role, str) or not attested_role.strip():
+            raise ValidationError("attested_role", "attested_role is required")
+        attested_role = attested_role.strip()
+
     return {
         "control_id": control_id,
         "device_id": device_id,
@@ -603,6 +682,9 @@ def _validate_assessment_payload(payload: dict) -> dict:
         "assessed_by": assessed_by.strip(),
         "remediation": payload.get("remediation"),
         "remediation_due_date": payload.get("remediation_due_date"),
+        "attested_role": attested_role,
+        "attestation_confirmed": status != "not_tested",
+        "attestation_statement": attestation_statement,
     }
 
 
@@ -631,14 +713,16 @@ def _insert_assessment(conn, data: dict, *, event_type: str, reason: str | None)
             applicability_reason, status, severity, finding, test_method,
             test_identifier, raw_result_reference, evidence_ids, scanner_tool,
             scanner_tool_version, firmware_version_assessed, assessed_by,
-            remediation, remediation_due_date, retest_status, retested_at
+            remediation, remediation_due_date, retest_status, retested_at,
+            attested_role, attestation_confirmed, attestation_statement
         ) VALUES (
             %(id)s, %(control_id)s, %(device_id)s, %(organizational_scope_id)s,
             %(applicability)s, %(applicability_reason)s, %(status)s, %(severity)s,
             %(finding)s, %(test_method)s, %(test_identifier)s, %(raw_result_reference)s,
             %(evidence_ids)s, %(scanner_tool)s, %(scanner_tool_version)s,
             %(firmware_version_assessed)s, %(assessed_by)s, %(remediation)s,
-            %(remediation_due_date)s, %(retest_status)s, %(retested_at)s
+            %(remediation_due_date)s, %(retest_status)s, %(retested_at)s,
+            %(attested_role)s, %(attestation_confirmed)s, %(attestation_statement)s
         ) RETURNING {ASSESSMENT_COLUMNS}
         """,
         {
@@ -830,6 +914,9 @@ def override_assessment(assessment_id: str, payload: dict):
             "status": new_status,
             "remediation": payload.get("remediation", prior["remediation"]),
             "assessed_by": overridden_by,
+            "attested_role": payload.get("attested_role"),
+            "attestation_confirmed": payload.get("attestation_confirmed"),
+            "attestation_statement": payload.get("attestation_statement"),
         }
         data = _validate_assessment_payload(merged)
         reason = f"Auditor override by {overridden_by.strip()}: {justification.strip()}"

@@ -115,6 +115,8 @@ def test_device_risk_counts_a_real_nca_fail_as_a_violation(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "risk-cam", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     )
 

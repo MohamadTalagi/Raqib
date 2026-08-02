@@ -98,6 +98,89 @@ def test_create_assessment_requires_reviewer_identity(client, conn):
     assert response.json()["field"] == "assessed_by"
 
 
+def test_create_assessment_requires_attestation_confirmed(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    response = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            # attestation_confirmed deliberately omitted
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "attestation_confirmed"
+
+
+def test_create_assessment_rejects_attestation_confirmed_false(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    response = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attestation_confirmed": False, "attested_role": "Auditor",
+            "attestation_statement": "text",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "attestation_confirmed"
+
+
+def test_create_assessment_requires_attested_role(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    response = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attestation_confirmed": True, "attestation_statement": "text",
+            # attested_role deliberately omitted
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "attested_role"
+
+
+def test_create_assessment_stores_attestation_fields(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    body = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed and certified.",
+        },
+    ).json()
+    assert body["attested_role"] == "Lead Auditor"
+    assert body["attestation_confirmed"] is True
+    assert body["attestation_statement"] == "Reviewed and certified."
+
+
+def test_recompute_placeholder_needs_no_attestation(client, conn):
+    # /assessments/recompute's own system-generated not_tested placeholder
+    # (see the INSERT in recompute_assessments) must still succeed - it is
+    # not a human verdict, so the attestation requirement doesn't apply to
+    # it. Exercised indirectly here via the same validation path a real
+    # not_tested assessment would go through.
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    response = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "not_tested",
+            "severity": "high", "test_method": "automated", "assessed_by": "system:recompute",
+            # no attestation fields at all
+        },
+    )
+    assert response.status_code == 201
+
+
 def test_create_assessment_requires_exactly_one_scope(client, conn):
     _seed_control(conn, CONTROL_ID)
     response = client.post(
@@ -105,6 +188,8 @@ def test_create_assessment_requires_exactly_one_scope(client, conn):
         json={
             "control_id": CONTROL_ID, "status": "fail", "severity": "high",
             "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     )
     assert response.status_code == 400
@@ -119,6 +204,8 @@ def test_create_assessment_drives_device_overall_status_to_fail(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
             "finding": "default creds accepted",
         },
     )
@@ -137,6 +224,8 @@ def test_reassessing_supersedes_the_prior_row_and_writes_an_audit_event(client, 
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer-1",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     ).json()
 
@@ -145,6 +234,8 @@ def test_reassessing_supersedes_the_prior_row_and_writes_an_audit_event(client, 
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "pass",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer-2",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
             "reason": "credentials rotated",
         },
     ).json()
@@ -172,12 +263,18 @@ def test_retest_marks_retest_status_from_the_new_result(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer-1",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     ).json()
 
     retested = client.post(
         f"/nca/assessments/{first['id']}/retest",
-        json={"status": "pass", "assessed_by": "reviewer-2", "finding": "fixed"},
+        json={
+            "status": "pass", "assessed_by": "reviewer-2", "finding": "fixed",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
+        },
     ).json()
     assert retested["retest_status"] == "passed"
     assert retested["retested_at"] is not None
@@ -196,6 +293,8 @@ def test_exception_excludes_control_from_device_score(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     )
     assert client.get("/nca/devices/cam-1").json()["overall_status"] == "fail"
@@ -317,6 +416,8 @@ def test_recompute_never_overwrites_an_existing_manual_assessment(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "device-insecure", "status": "fail",
             "severity": "high", "test_method": "manual", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     )
     result = client.post("/nca/assessments/recompute").json()
@@ -374,6 +475,8 @@ def test_device_readiness_failed_when_blocking_control_fails(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     )
     body = client.get("/nca/devices/cam-1").json()
@@ -413,6 +516,8 @@ def test_create_assessment_accepts_review_required_status(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "review_required",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
             "finding": "conflicting evidence - needs a second look",
         },
     )
@@ -431,6 +536,8 @@ def test_create_assessment_rejects_unknown_status(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "bogus",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     )
     assert response.status_code == 400
@@ -450,6 +557,8 @@ def test_override_requires_justification(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     ).json()
     response = client.post(
@@ -468,6 +577,8 @@ def test_override_requires_auditor_identity(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     ).json()
     response = client.post(
@@ -494,6 +605,8 @@ def test_override_supersedes_original_and_writes_audit_trail(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     ).json()
 
@@ -504,6 +617,8 @@ def test_override_supersedes_original_and_writes_audit_trail(client, conn):
             "justification": "compensating network segmentation verified on-site",
             "overridden_by": "auditor-1",
             "original_status": "fail",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     )
     assert response.status_code == 201
@@ -537,6 +652,8 @@ def test_override_rejects_stale_original_status(client, conn):
         json={
             "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
             "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
         },
     ).json()
 
@@ -661,3 +778,69 @@ def test_suggestions_ignore_other_devices_evidence(client, conn):
 
     body = client.get("/nca/devices/device-insecure/suggestions").json()
     assert body["suggestions"] == {}
+
+
+def _seed_checklist(conn, control_id, questions, suggestion_rule):
+    import json as json_module
+
+    conn.execute(
+        """
+        INSERT INTO compliance_control_checklists (control_id, questions, suggestion_rule)
+        VALUES (%s, %s, %s)
+        """,
+        (control_id, json_module.dumps(questions), json_module.dumps(suggestion_rule)),
+    )
+    conn.commit()
+
+
+def test_get_checklist_404_when_none_authored_yet(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    response = client.get(f"/nca/controls/{CONTROL_ID}/checklist")
+    assert response.status_code == 404
+
+
+def test_get_checklist_returns_authored_questions(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    questions = [{"key": "exists", "label": "Does it exist?", "type": "yes_no", "required": True}]
+    rule = [{"conditions": [{"field": "answers.exists", "op": "equals", "value": True}], "suggested_status": "pass"}]
+    _seed_checklist(conn, CONTROL_ID, questions, rule)
+
+    response = client.get(f"/nca/controls/{CONTROL_ID}/checklist")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["questions"] == questions
+    assert body["suggestion_rule"] == rule
+
+
+def test_evaluate_checklist_404_when_none_authored_yet(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    response = client.post(f"/nca/controls/{CONTROL_ID}/checklist/evaluate", json={"answers": {}})
+    assert response.status_code == 404
+
+
+def test_evaluate_checklist_returns_suggested_status(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    rule = [{"conditions": [{"field": "answers.exists", "op": "equals", "value": True}], "suggested_status": "pass"}]
+    _seed_checklist(conn, CONTROL_ID, [], rule)
+
+    response = client.post(f"/nca/controls/{CONTROL_ID}/checklist/evaluate", json={"answers": {"exists": True}})
+    assert response.status_code == 200
+    assert response.json()["suggested_status"] == "pass"
+
+
+def test_evaluate_checklist_returns_none_when_nothing_matches(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    rule = [{"conditions": [{"field": "answers.exists", "op": "equals", "value": True}], "suggested_status": "pass"}]
+    _seed_checklist(conn, CONTROL_ID, [], rule)
+
+    response = client.post(f"/nca/controls/{CONTROL_ID}/checklist/evaluate", json={"answers": {"exists": False}})
+    assert response.status_code == 200
+    assert response.json()["suggested_status"] is None
+
+
+def test_evaluate_checklist_requires_answers_object(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _seed_checklist(conn, CONTROL_ID, [], [])
+    response = client.post(f"/nca/controls/{CONTROL_ID}/checklist/evaluate", json={})
+    assert response.status_code == 400
+    assert response.json()["field"] == "answers"
