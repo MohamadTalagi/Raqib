@@ -12,7 +12,71 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **AI-Assisted Remediation (IoTGuard Stage 07) built out via
+**Phase:** **AI Executive Summary (IoTGuard Stage 08) — the final analytical
+pipeline stage — COMPLETE** (2026-08-02). The owner asked whether Remediation
+was wired into the Fully Automated Run (confirmed: no, deliberately - it
+stays on-demand only, never part of that pipeline's own documented
+boundary), then asked to plan the last pipeline stage: every device listed
+and ranked by risk score (highest first), the remediation for each device,
+the evidence pointing to each vulnerability and what tool found it, all
+summarized clearly. Per `docs/reference/IoTGuard.md`, that's Stage 08 - AI
+Executive Summary, depending on Stages 4-7 (compliance, vulnerabilities,
+risk, remediation), all already built. **Confirmed with the owner up
+front**: stays a fully deterministic rollup, no genuinely AI-generated
+narrative text - every other report in this app already carries the same
+rule ("a generated summary paragraph would contradict the report's own
+determinism claim"), and a document aimed at non-technical stakeholders is
+exactly where a hallucinated claim would do the most damage. The "AI" in
+the stage's name is satisfied by aggregating the already-AI-generated,
+human-reviewed Remediation blueprints from Stage 07, not by generating new
+prose.
+- **New `lab/auditor/api/executive_summary.py`** - pure aggregation,
+  nothing reimplemented: reuses `risk_routes._compute_risk_for_device()`
+  for ranking (same worst-first sort `GET /risk/devices` already does),
+  `report.build_report_model()` once per device (SA-IOT gaps, evidence+
+  tools, vulnerability summary - called wholesale, not reimplemented),
+  `nca_routes._evaluator_rows_for_scope()` +
+  `policies/nca/evaluator.py`'s `effective_status()`/`_applicable_required()`
+  for NCA gaps (so this view can never disagree with a device's own
+  readiness classification), and a direct query against
+  `remediation_blueprints` (already has a denormalized `device_id` column
+  from Stage 07 - no new join needed). Fleet-wide rollup adds priority
+  recommendations (unreviewed immediate-priority remediation, worst-device-
+  first) and significant compliance gaps (blocking NCA controls currently
+  failing, fleet-wide).
+- **New `lab/auditor/api/executive_summary_routes.py`**:
+  `GET /executive-summary` (live JSON model), `GET /executive-summary/
+  report.pdf` / `/report.html` (same Jinja2/WeasyPrint `font_config`
+  pattern as `report.py`/`nca_report.py`). Read-only, like `risk_routes.py`
+  - nothing is cached or persisted. Not logged to `report_records` (that
+  table's `device_id` column is scoped to a single device by design - a
+  documented scope cut, not a silent gap).
+- **New `ExecutiveSummaryPage.tsx`** (`/executive-summary`), the final entry
+  in the Sidebar's Pipeline group: fleet-wide stat tiles, priority-
+  recommendations and significant-compliance-gaps cards, and every device
+  ranked by risk score highest-first, expand-in-place (same convention
+  `RiskAssessmentPage` already uses) to show compliance gaps, evidence+
+  tools, and remediation blueprints (reusing the `AiGeneratedBadge` built
+  for Stage 07). PDF/HTML export buttons matching
+  `DeviceAssessmentReportPage`'s own convention.
+- **Verified live end to end**: loaded against the real stack - 11 real
+  devices correctly ranked by risk (`device-insecure` #1 at 84/Critical
+  down to `telnet-sim` #11 at 38/Medium), real priority recommendations
+  and blocking compliance gaps rendered fleet-wide, and
+  `device-insecure`'s expanded panel showed its real compliance gaps, its
+  real evidence/tool list, and both of its real remediation blueprints
+  exactly as previously recorded (one "Reviewed by Lead Auditor," the
+  other still carrying the "AI-generated" badge). Both the PDF export (a
+  genuine 139KB `%PDF-1.7` file) and the HTML export were downloaded and
+  confirmed against the live stack.
+- **Regression**: 370 `policies` + 300 `lab/auditor/api` (3 pre-existing
+  WeasyPrint gaps, unrelated - the new PDF-rendering test joins the same
+  known Windows-host gap every other PDF test in this suite already has)
+  + 78 `lab/auditor/worker` + 299 frontend tests all passing, `tsc -b`/
+  `oxlint` clean. `auditor-api`/`auditor-web` rebuilt and redeployed.
+- **Docs**: new `docs/executive-summary.md`, this entry.
+
+Before that: **AI-Assisted Remediation (IoTGuard Stage 07) built out via
 Google Gemini's free tier — COMPLETE** (2026-08-02). The owner asked how to
 add AI-assisted remediation "worthwhile and cheap" - no money to spend.
 Chose Gemini specifically because its free tier needs no billing/card
@@ -2092,6 +2156,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-02 | **AI Executive Summary (IoTGuard Stage 08) — the final analytical pipeline stage** — see §0 for the full breakdown. Owner asked to plan the last pipeline stage after confirming Remediation is deliberately not wired into the Fully Automated Run. Matches Stage 08's own definition in `docs/reference/IoTGuard.md`: overall posture, highest-risk devices, most significant compliance gaps, priority recommendations - depending on Stages 4-7, all already built. Confirmed with the owner up front: stays a fully deterministic rollup, no AI-generated narrative text, matching every other report in this app's own "never generate a summary paragraph" rule - the "AI" in the name is satisfied by aggregating Stage 07's already-AI-generated, human-reviewed remediation content. New `executive_summary.py` reuses `risk_routes._compute_risk_for_device()` (ranking), `report.build_report_model()` (per-device SA-IOT gaps/evidence+tools/vulnerabilities, called once per device), `nca_routes._evaluator_rows_for_scope()` (NCA gaps), and a direct query against `remediation_blueprints` (already has a denormalized `device_id` column) - nothing reimplemented. New `executive_summary_routes.py` (`GET /executive-summary`, PDF/HTML export). New `ExecutiveSummaryPage.tsx` (`/executive-summary`, last Pipeline sidebar entry): fleet stat tiles, priority-recommendations and significant-compliance-gaps cards, devices ranked by risk highest-first with expand-in-place detail (compliance gaps, evidence+tools, remediation). Verified live end to end: 11 real devices correctly ranked, a device's expanded panel showed its real gaps/evidence/remediation exactly as previously recorded (one blueprint "Reviewed by Lead Auditor," one still "AI-generated"), both PDF (genuine 139KB file) and HTML exports downloaded and confirmed. 370 `policies` + 300 `lab/auditor/api` (3 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` + 299 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **AI-Assisted Remediation (IoTGuard Stage 07) via Google Gemini's free tier** — see §0 for the full breakdown. Owner wanted this cheap - Gemini's free tier needs no billing attached at all. Scope confirmed with the owner up front: both SA-IOT verdicts and NCA CGIoT-1:2024 assessments, not just the SA-IOT pilot the old "Not built yet" stub showed, since NCA's `remediation_guidance` is hardcoded empty for every one of its 81 guidelines. New `remediation_engine.py` (pure, builds the Gemini prompt, calls its REST endpoint via plain `httpx.post` - no SDK, no new dependency, `httpx` was already installed - never raises, a failed/malformed call returns `None` so the caller reports an honest failure rather than fabricating a blueprint) + `remediation_routes.py` (generate/list/review, append-only `remediation_blueprints` table, migration 014, same supersede pattern as `compliance_assessments` - never mutates the existing `verdicts.remediation`/`compliance_assessments.remediation` fields). New flat `GET /nca/assessments` (fleet-wide, the NCA equivalent of `GET /verdicts`). Rebuilt `RemediationPage.tsx`: every failing/partial finding gets a "Generate AI remediation" button, the structured blueprint (root cause/steps/priority/effort/caveats) renders behind a new `AiGeneratedBadge` until a human marks it reviewed - a prompt instruction (not a hard guarantee) forbids the model from inventing facts beyond the given finding, which is exactly why the human-review gate exists. A real bug caught by the first live call: the planned default model, `gemini-2.0-flash`, returned 429 "limit: 0" the moment a real key went live (Google had zeroed its free-tier allocation for new keys since - stale model-availability knowledge) - queried Gemini's own ListModels endpoint live and switched the pinned default to `gemini-3.5-flash-lite`, confirmed real quota and correct structured-output support. Verified live end to end: real blueprints generated for both finding types through the browser, review/regenerate-supersede both confirmed correct. 370 `policies` + 289 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` + 294 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **"Fully Automated Run" — one dashboard action drives Discovery through NCA sign-off end to end, zero further clicks** — see §0 for the full breakdown. Owner's framing: automate everything from network scanning to fingerprinting to scoring so end users aren't overwhelmed. Goes further than the guided-workflow phase's own "a human always signs" rule by design (3 clarifying decisions, all confirmed with the owner, each more aggressive than the default recommendation): auto-*records* NCA assessments (not just suggests), auto-submits scan evidence with zero review, and scopes to the whole fleet including a fresh Discovery sweep. New `compliance_assessments.auto_recorded` flag (migration 013) reconciles this with the attestation CHECK constraint - an auto-recorded row still satisfies `attestation_confirmed=true` but is structurally distinguishable from a real human sign-off. New `automated_run_runner.py` (a new `job_runner.py` poll loop) drives every stage through auditor-api's existing endpoints only - no new bypass of device_validation/the scan-test whitelist/the finding-mapping table; scan-job/network-scan execution reuses `process_job()`/`process_network_scan()` directly rather than creating a row and waiting for the next poll iteration, which would deadlock against itself. New `automation_routes.py` (`POST/GET/PATCH /automation/runs`, cancel). New frontend: `AutomatedRunDialog` (states exactly what will run/what won't before starting), `AutomatedRunProgressPage`, `AutoRecordedBadge` + filter tab + "Review & confirm" action reopening the existing retest flow to let a human supersede an auto-recorded row with a real signed one. A real bug caught by the first live whole-fleet run (not unit tests): the runner passed POST /scan-jobs' response straight to `process_job()`, but that endpoint deliberately never returns host/service_type/port (scan_jobs is a pure audit row - only the list endpoint resolves it via a join) - 114 of 115 scan jobs failed with "invalid target: host is required" before being caught and fixed. Re-verified live end to end after the fix: a scoped run recorded 13/13 evidence, auto-recorded 9 real NCA assessments, and a real human "Review & confirm" through the browser correctly superseded one while preserving the full append-only audit trail. 370 `policies` + 266 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` (2 pre-existing yara gaps) + 291 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **Made NCA Compliance guided end to end — all 81 CGIoT-1:2024 guidelines now suggest a status + evidence for the auditor to review and formally sign** — see §0 for the full breakdown. Owner asked to automate every NCA section and gate recording behind an explicit sign-off, executed as a 9-phase approved plan. Phase 0 fixed a real orphaned-suggestion bug (2-6-2/2-6-3/2-7-2 misclassified as organization-scope, plus 5 more guidelines still marked "manual" despite real collectors existing). New `policies/nca/checklists.py` + `compliance_control_checklists` table give all 60 non-device guidelines a real guided checklist (`seed_checklists.py`, 3 reusable templates, every question drawn from real canonical text) evaluated with the same `condition_matches` predicate scan-evidence mappings already use. Every assessment now requires a formal "Confirm & Sign" step (`attested_role`/`attestation_confirmed`/`attestation_statement`, `CHECK`'d server-side) except the system's own `not_tested` placeholder. 3 new device-scope collectors (TLS client-auth, security-log endpoint, monitoring endpoint) raised real coverage to 76/81, honestly reported via a new live `GET /nca/coverage`. `OrganizationalCompliancePage` rebuilt in place into a guided workspace. Hit and fixed 2 real deployment incidents live (a container losing its network attachment mid-recovery, and discovering `lab/auditor/api/*.py` needs an image rebuild, not just a restart, to pick up changes — unlike bind-mounted `policies/`). 370 `policies` (+31) + 253 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 282 frontend tests passing, `tsc -b`/`oxlint` clean, verified live at every phase against the running stack. |
