@@ -1,7 +1,7 @@
 import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert, ShieldCheck, AlertOctagon, Loader2, Bot, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification, RiskCategory, AssessmentStatus } from "@/lib/types";
+import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification, RiskCategory, AssessmentStatus, PqcCriterionStatus } from "@/lib/types";
 
 const SEVERITY_STYLES: Record<Severity, string> = {
   critical: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
@@ -374,6 +374,46 @@ export function AssessmentStatusBadge({ status }: { status: AssessmentStatus }) 
     >
       <Icon className={cn("h-3.5 w-3.5", status === "running" && "animate-spin")} strokeWidth={2} />
       {ASSESSMENT_STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+const PQC_CRITERION_STYLES: Record<PqcCriterionStatus, string> = {
+  pass: "bg-[color-mix(in_oklab,var(--color-pass)_16%,transparent)] text-[var(--color-pass)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-pass)_35%,transparent)]",
+  fail: "bg-[color-mix(in_oklab,var(--color-critical)_16%,transparent)] text-[var(--color-critical)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-critical)_35%,transparent)]",
+  unknown: "bg-[color-mix(in_oklab,var(--color-inconclusive)_16%,transparent)] text-[var(--color-inconclusive)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-inconclusive)_35%,transparent)]",
+  not_applicable: "bg-[color-mix(in_oklab,var(--color-text-muted)_16%,transparent)] text-[var(--color-text-muted)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--color-text-muted)_35%,transparent)]",
+};
+
+const PQC_CRITERION_ICON: Record<PqcCriterionStatus, typeof CheckCircle2> = {
+  pass: CheckCircle2,
+  fail: XCircle,
+  unknown: CircleDashed,
+  not_applicable: Ban,
+};
+
+const PQC_CRITERION_LABEL: Record<PqcCriterionStatus, string> = {
+  pass: "Ready",
+  fail: "Not Ready",
+  unknown: "Unknown",
+  not_applicable: "Not Applicable",
+};
+
+/** Pass/Fail/Unknown/Not Applicable for one Post-Quantum Readiness criterion
+ * - "unknown" (never a guessed pass or fail) covers a probe that couldn't
+ * reach the device or a firmware library this project hasn't verified a
+ * PQC threshold for. See pqc_routes.py. */
+export function PqcCriterionBadge({ status }: { status: PqcCriterionStatus }) {
+  const Icon = PQC_CRITERION_ICON[status];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold tracking-wide",
+        PQC_CRITERION_STYLES[status],
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {PQC_CRITERION_LABEL[status]}
     </span>
   );
 }

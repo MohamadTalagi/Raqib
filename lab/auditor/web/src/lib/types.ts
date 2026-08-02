@@ -102,14 +102,18 @@ export type PipelinePhaseId =
   | "vuln_intelligence"
   | "risk_assessment";
 
-// A scan test can only ever belong to one of the 3 phases that are actually
+// A scan test can only ever belong to one of the phases that are actually
 // driven by running a SCAN_CATALOG test - Devices/NCA Compliance/Risk
 // Assessment are reached through other mechanisms entirely (registration, a
 // separate NCA assessment workspace, live risk computation), never a test_id.
-export type ScanTestPipelinePhase = Extract<
-  PipelinePhaseId,
-  "fingerprinting" | "sa_iot_compliance" | "vuln_intelligence"
->;
+// "pqc_readiness" is deliberately not part of PipelinePhaseId/PIPELINE_PHASES
+// (lib/pipeline.ts) - it's a real SCAN_CATALOG-driven phase, but (like
+// Remediation/Executive Summary) it's never tracked in a device's
+// furthest-reached-phase badge, since it's explicitly informational only and
+// never feeds risk_engine.py.
+export type ScanTestPipelinePhase =
+  | Extract<PipelinePhaseId, "fingerprinting" | "sa_iot_compliance" | "vuln_intelligence">
+  | "pqc_readiness";
 
 export interface ScanTestSpec {
   test_id: string;
@@ -817,6 +821,65 @@ export interface RemediationBlueprint {
   reviewed_by: string | null;
   reviewed_at: string | null;
   superseded_by: string | null;
+}
+
+// -- Post-Quantum Readiness (bonus pipeline stage, informational only) ------
+// Sourced from lab/auditor/api/pqc_routes.py. Never feeds risk_engine.py or
+// any compliance verdict - purely informational, matching every field this
+// router returns.
+
+export type PqcCriterionStatus = "pass" | "fail" | "unknown" | "not_applicable";
+
+export interface PqcTlsKeyExchange {
+  status: PqcCriterionStatus;
+  negotiated_group: string | null;
+  tip?: string;
+}
+
+export interface PqcCertificateSignature {
+  status: PqcCriterionStatus;
+  signature_algorithm: string | null;
+  tip?: string;
+}
+
+export interface PqcFirmwarePackage {
+  name: string;
+  version: string;
+  pqc_status: PqcCriterionStatus;
+}
+
+export interface PqcFirmwareCrypto {
+  status: PqcCriterionStatus;
+  packages: PqcFirmwarePackage[];
+  tip?: string;
+}
+
+export interface DevicePqcReadiness {
+  device_id: string;
+  known?: boolean;
+  overall_status?: PqcCriterionStatus;
+  fail_count?: number;
+  tls_key_exchange?: PqcTlsKeyExchange;
+  certificate_signature?: PqcCertificateSignature;
+  firmware_crypto?: PqcFirmwareCrypto;
+}
+
+export interface PqcReadinessDevicesResponse {
+  devices: DevicePqcReadiness[];
+}
+
+export interface PqcCriterionCounts {
+  pass: number;
+  fail: number;
+  unknown: number;
+  not_applicable: number;
+}
+
+export interface PqcReadinessFleetSummary {
+  total_devices: number;
+  tls_key_exchange: PqcCriterionCounts;
+  certificate_signature: PqcCriterionCounts;
+  firmware_crypto: PqcCriterionCounts;
 }
 
 // -- AI Executive Summary (IoTGuard Stage 08) -----------------------------

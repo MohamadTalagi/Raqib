@@ -44,6 +44,9 @@ import type {
   RiskDevicesResponse,
   RiskExposure,
   RiskFleetSummary,
+  DevicePqcReadiness,
+  PqcReadinessDevicesResponse,
+  PqcReadinessFleetSummary,
 } from "./types";
 
 function resolveApiBaseUrl(): string {
@@ -398,6 +401,15 @@ export const api = {
     postJson<RemediationBlueprint>(`/remediation/blueprints/${encodeURIComponent(blueprintId)}/review`, {
       reviewed_by: reviewedBy,
     }),
+
+  // -- Post-Quantum Readiness (bonus stage, informational only) -----------
+
+  pqcReadinessDevices: (): Promise<PqcReadinessDevicesResponse> =>
+    getJson<PqcReadinessDevicesResponse>("/pqc-readiness/devices"),
+  pqcReadinessDevice: (deviceId: string): Promise<DevicePqcReadiness> =>
+    getJson<DevicePqcReadiness>(`/pqc-readiness/devices/${encodeURIComponent(deviceId)}`),
+  pqcReadinessFleetSummary: (): Promise<PqcReadinessFleetSummary> =>
+    getJson<PqcReadinessFleetSummary>("/pqc-readiness/fleet-summary"),
 
   // -- AI Executive Summary (IoTGuard Stage 08) ----------------------------
 

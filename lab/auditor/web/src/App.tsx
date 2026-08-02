@@ -6,6 +6,7 @@ import { FingerprintingPage } from "@/pages/FingerprintingPage";
 import { SAIOTCompliancePage } from "@/pages/SAIOTCompliancePage";
 import { VulnerabilityIntelligencePage } from "@/pages/VulnerabilityIntelligencePage";
 import { RemediationPage } from "@/pages/RemediationPage";
+import { PostQuantumReadinessPage } from "@/pages/PostQuantumReadinessPage";
 import { ExecutiveSummaryPage } from "@/pages/ExecutiveSummaryPage";
 import { NetworkMapPage } from "@/pages/NetworkMapPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="/vulnerability-intelligence" element={<VulnerabilityIntelligencePage />} />
             <Route path="/risk" element={<RiskAssessmentPage />} />
             <Route path="/remediation" element={<RemediationPage />} />
+            <Route path="/pqc-readiness" element={<PostQuantumReadinessPage />} />
             <Route path="/executive-summary" element={<ExecutiveSummaryPage />} />
             <Route path="/automated-run/:runId" element={<AutomatedRunProgressPage />} />
 
