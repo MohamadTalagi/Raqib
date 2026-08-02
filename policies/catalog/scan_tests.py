@@ -928,12 +928,15 @@ def _suggest_confidence_tls(observations: dict) -> str:
 
 PQC_READINESS_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/pqc_readiness_check.py"
 
-# The 4 hybrid PQC group names and the classical signature-algorithm names
-# below were confirmed live against this project's own auditor-worker image
-# (OpenSSL 3.5.6) via `openssl list -kem-algorithms`/`-signature-algorithms`
-# before being written down - never assumed from documentation alone (see
-# docs/pqc-readiness.md).
-PQC_HYBRID_GROUPS = {"X25519MLKEM768", "SecP256r1MLKEM768", "X448MLKEM1024", "SecP384r1MLKEM1024"}
+# The 3 hybrid PQC group names below were confirmed live against this
+# project's own auditor-worker image (OpenSSL 3.5.6) via `openssl list
+# -tls1_3 -tls-groups` (see docs/pqc-readiness.md). A first version also
+# included a 4th, invented-by-analogy name, X448MLKEM1024, which does not
+# exist in OpenSSL's real hybrid-group registry (ML-KEM-1024 only pairs
+# with SecP384r1, not X448) - passing it made `-groups` reject its entire
+# argument outright, so every device reported connection_error instead of
+# a real result until this was caught by the first live scan and fixed.
+PQC_HYBRID_GROUPS = {"X25519MLKEM768", "SecP256r1MLKEM768", "SecP384r1MLKEM1024"}
 PQC_SIGNATURE_MARKERS = ("ml-dsa", "dilithium", "slh-dsa", "sphincs")
 
 

@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-08-02
+> **Last updated:** 2026-08-03
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,96 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **AI Executive Summary (IoTGuard Stage 08) — the final analytical
+**Phase:** **Post-Quantum Readiness — a bonus pipeline stage beyond IoTGuard's
+original 10, sitting between AI Remediation and the AI Executive Summary —
+COMPLETE** (2026-08-03). The owner's idea, raised first as an exploratory
+question ("it does not affect risk scoring, it just checks whether the IoT
+system is post-quantum ready or not"), then turned into a full implementation
+request with one explicit instruction: "if anything is unclear please ask,
+don't hallucinate." Two clarifying questions were asked and answered up front:
+(1) remediation tips are **static, deterministic text**, not AI-generated,
+matching this project's dominant convention; (2) the new collector **is
+included in the Fully Automated Run**, unlike AI Remediation (which stays
+manual-only) — the owner's own choice, more aggressive than this session's
+default recommendation. Full detail, design decisions, and the real bug this
+caught live: `docs/pqc-readiness.md`.
+- **3 named technical criteria** grounded in real NIST standards (FIPS 203
+  ML-KEM, FIPS 204 ML-DSA, FIPS 205 SLH-DSA), not a fabricated regulation - no
+  enforceable IoT post-quantum regulation exists yet, stated honestly
+  everywhere this surfaces: TLS Key Exchange (KEM), Certificate Signature
+  Algorithm, Firmware Crypto Library Currency. Every criterion resolves to
+  `pass`/`fail`/`unknown`/`not_applicable` - `unknown` is a real, honest state
+  (a probe that couldn't reach the device, or a firmware crypto library this
+  project hasn't verified a threshold for), never a guessed pass or fail.
+- **Verified live against the real `auditor-worker` image (OpenSSL 3.5.6)
+  before designing anything**: `openssl list -tls1_3 -tls-groups` shows
+  exactly 3 real hybrid PQC groups (`X25519MLKEM768`, `SecP256r1MLKEM768`,
+  `SecP384r1MLKEM1024`); this lab's own `device-hardened`/`device-partial`
+  already negotiate a real hybrid PQC key exchange, a genuine surprise worth
+  confirming rather than assuming "everything will fail" - while their
+  certificates stay classical RSA, honestly reflecting the real world (PQC
+  key-exchange rollout is ahead of PQC certificate/PKI rollout industry-wide).
+- **New `policies/catalog/pqc_crypto_reference.py`** (OpenSSL-only,
+  version-gated lookup + fixed tip text) and
+  **`lab/auditor/worker/scan_scripts/pqc_readiness_check.py`** (mirrors
+  `tls_cert_check.py`'s two-handshake shape). Two new `SCAN_CATALOG` entries
+  (`TEST-PQC-TLS-HANDSHAKE`, `TEST-PQC-FIRMWARE-CRYPTO`) and a new
+  `PIPELINE_PHASE_PQC_READINESS`. New read-only
+  `lab/auditor/api/pqc_routes.py` (`GET /pqc-readiness/devices(/{id})`,
+  `/fleet-summary`) - computed live from `evidence` rows on every request,
+  same architecture as `vuln_routes.py`/`risk_routes.py`, no new table, no new
+  verdict/assessment concept.
+- **A real bug caught by the first live scan, not by unit tests alone**: the
+  original PQC group list included a 4th name, `X448MLKEM1024`, invented by
+  analogy with the other 3 pairings without checking OpenSSL's actual
+  supported list first - that group doesn't exist in OpenSSL's real
+  hybrid-group registry (ML-KEM-1024 only pairs with SecP384r1, not X448),
+  and passing it made `-groups` reject its *entire* argument outright, so
+  every TLS-capable device reported `connection_error` instead of a real
+  result. Fixed by removing it from both the collector script and
+  `scan_tests.py`'s classification set; re-verified live that
+  `device-hardened` now correctly negotiates `X25519MLKEM768` (KEM pass) with
+  a classical certificate signature (fail).
+- **Wired into the Fully Automated Run**: a new `pqc_readiness` stage between
+  `vulnerability_intelligence` and `nca_compliance` in
+  `automated_run_runner.py`, with its own `summary["pqc_devices_scanned"]`
+  counter; `AutomatedRunDialog.tsx` discloses it up front,
+  `AutomatedRunProgressPage.tsx` shows a live stat tile. A real scoped run
+  against `device-hardened` confirmed `pqc_devices_scanned: 1` live.
+- **`executive_summary.py`** gained a `post_quantum_readiness` fleet-wide
+  section (via a new shared `fleet_summary_from_devices()` helper, refactored
+  out of the route so the two can never disagree) and a per-device
+  `pqc_readiness` breakdown - deliberately kept separate from
+  `risk_score`/`fleet_summary`'s existing fields, never blended into the
+  compliance-gap counts. The PDF/HTML template and `ExecutiveSummaryPage.tsx`
+  both got a matching new section, confirmed live to render the real
+  post-fix data (1 pass / 1 fail on TLS key exchange, matching the API
+  exactly) via curl and a real browser (Claude-in-Chrome).
+- **New `/pqc-readiness` dashboard page** (`PostQuantumReadinessPage.tsx`),
+  inserted in the sidebar's Pipeline group between Remediation and Executive
+  Summary as requested - same `DeviceCohortPicker` +
+  `PhaseRunnerCard`-wrapping pattern `VulnerabilityIntelligencePage.tsx`
+  already established (`DevicePqcReadinessCard.tsx`), plus a shared
+  `PqcReadinessPanel` reused on both this page and the Executive Summary's
+  per-device panel so the two can never render differently. New
+  `PqcCriterionBadge` (`severity-badge.tsx`) for the 4-state status set.
+- **Verified live end to end**: real collector runs against `device-hardened`
+  (TLS service present) and `device-insecure` (no TLS service, correctly
+  rejected/`not_applicable`); a real Fully Automated Run; the fleet-summary
+  and executive-summary endpoints agreeing byte-for-byte; the live HTML
+  export rendering the real evidence row and fleet table; and both the
+  Executive Summary page and the new `/pqc-readiness` route confirmed live in
+  a real browser.
+- **Regression**: 387 `policies` (+17) + 310 `lab/auditor/api` (3
+  pre-existing WeasyPrint failures, unrelated) + 113 `lab/auditor/worker`
+  (in-container, 0 failures) + 307 frontend tests (+22) passing, `tsc -b`/
+  `oxlint` clean. `auditor-api`/`auditor-web` rebuilt and redeployed
+  (baked-in code changed); `auditor-worker` restarted twice - once for the
+  initial wiring, once more after the live-caught group-name fix
+  (bind-mounted, no rebuild needed).
+- **Docs**: new `docs/pqc-readiness.md`, this entry, and a new changelog row.
+
+Before that: **AI Executive Summary (IoTGuard Stage 08) — the final analytical
 pipeline stage — COMPLETE** (2026-08-02). The owner asked whether Remediation
 was wired into the Fully Automated Run (confirmed: no, deliberately - it
 stays on-demand only, never part of that pipeline's own documented
@@ -2156,6 +2245,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-03 | **Post-Quantum Readiness — a bonus pipeline stage between AI Remediation and the AI Executive Summary** — see §0 and `docs/pqc-readiness.md` for the full breakdown. Owner's idea, raised first as an exploratory question, then a full implementation request with an explicit "ask, don't hallucinate" instruction - honored by verifying every technical claim live against the real `auditor-worker` OpenSSL 3.5.6 image before designing anything. 3 named technical criteria (TLS Key Exchange, Certificate Signature Algorithm, Firmware Crypto Library Currency) grounded in real NIST FIPS 203/204/205 standards, not a fabricated regulation - explicitly informational only, never touches `risk_engine.py` or any compliance verdict. New `pqc_crypto_reference.py` (static tips, per the owner's own choice over AI-generated ones) + `pqc_readiness_check.py` (mirrors `tls_cert_check.py`'s two-handshake shape) + read-only `pqc_routes.py` (computed live from evidence, no new table). Wired into the Fully Automated Run (the owner's own choice, more aggressive than the default recommendation) via a new `pqc_readiness` stage in `automated_run_runner.py`. New `/pqc-readiness` dashboard page in the sidebar's Pipeline group at the requested position, plus a new fleet-wide + per-device section on the AI Executive Summary. **A real bug caught by the first live scan, not by unit tests alone**: the original PQC group list included an invented, non-existent OpenSSL group name (`X448MLKEM1024`), which made `-groups` reject its entire argument and made every TLS-capable device report `connection_error` - fixed by removing it once `openssl list -tls1_3 -tls-groups`'s real output was checked, then re-verified live that `device-hardened` correctly negotiates a real hybrid PQC key exchange (pass) with a classical certificate signature (fail), a real scoped Fully Automated Run reported `pqc_devices_scanned: 1`, and both the Executive Summary page and the new route rendered the real post-fix data live in a browser. 387 `policies` (+17) + 310 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 113 `lab/auditor/worker` (in-container) + 307 frontend tests (+22) passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **AI Executive Summary (IoTGuard Stage 08) — the final analytical pipeline stage** — see §0 for the full breakdown. Owner asked to plan the last pipeline stage after confirming Remediation is deliberately not wired into the Fully Automated Run. Matches Stage 08's own definition in `docs/reference/IoTGuard.md`: overall posture, highest-risk devices, most significant compliance gaps, priority recommendations - depending on Stages 4-7, all already built. Confirmed with the owner up front: stays a fully deterministic rollup, no AI-generated narrative text, matching every other report in this app's own "never generate a summary paragraph" rule - the "AI" in the name is satisfied by aggregating Stage 07's already-AI-generated, human-reviewed remediation content. New `executive_summary.py` reuses `risk_routes._compute_risk_for_device()` (ranking), `report.build_report_model()` (per-device SA-IOT gaps/evidence+tools/vulnerabilities, called once per device), `nca_routes._evaluator_rows_for_scope()` (NCA gaps), and a direct query against `remediation_blueprints` (already has a denormalized `device_id` column) - nothing reimplemented. New `executive_summary_routes.py` (`GET /executive-summary`, PDF/HTML export). New `ExecutiveSummaryPage.tsx` (`/executive-summary`, last Pipeline sidebar entry): fleet stat tiles, priority-recommendations and significant-compliance-gaps cards, devices ranked by risk highest-first with expand-in-place detail (compliance gaps, evidence+tools, remediation). Verified live end to end: 11 real devices correctly ranked, a device's expanded panel showed its real gaps/evidence/remediation exactly as previously recorded (one blueprint "Reviewed by Lead Auditor," one still "AI-generated"), both PDF (genuine 139KB file) and HTML exports downloaded and confirmed. 370 `policies` + 300 `lab/auditor/api` (3 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` + 299 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **AI-Assisted Remediation (IoTGuard Stage 07) via Google Gemini's free tier** — see §0 for the full breakdown. Owner wanted this cheap - Gemini's free tier needs no billing attached at all. Scope confirmed with the owner up front: both SA-IOT verdicts and NCA CGIoT-1:2024 assessments, not just the SA-IOT pilot the old "Not built yet" stub showed, since NCA's `remediation_guidance` is hardcoded empty for every one of its 81 guidelines. New `remediation_engine.py` (pure, builds the Gemini prompt, calls its REST endpoint via plain `httpx.post` - no SDK, no new dependency, `httpx` was already installed - never raises, a failed/malformed call returns `None` so the caller reports an honest failure rather than fabricating a blueprint) + `remediation_routes.py` (generate/list/review, append-only `remediation_blueprints` table, migration 014, same supersede pattern as `compliance_assessments` - never mutates the existing `verdicts.remediation`/`compliance_assessments.remediation` fields). New flat `GET /nca/assessments` (fleet-wide, the NCA equivalent of `GET /verdicts`). Rebuilt `RemediationPage.tsx`: every failing/partial finding gets a "Generate AI remediation" button, the structured blueprint (root cause/steps/priority/effort/caveats) renders behind a new `AiGeneratedBadge` until a human marks it reviewed - a prompt instruction (not a hard guarantee) forbids the model from inventing facts beyond the given finding, which is exactly why the human-review gate exists. A real bug caught by the first live call: the planned default model, `gemini-2.0-flash`, returned 429 "limit: 0" the moment a real key went live (Google had zeroed its free-tier allocation for new keys since - stale model-availability knowledge) - queried Gemini's own ListModels endpoint live and switched the pinned default to `gemini-3.5-flash-lite`, confirmed real quota and correct structured-output support. Verified live end to end: real blueprints generated for both finding types through the browser, review/regenerate-supersede both confirmed correct. 370 `policies` + 289 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` + 294 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **"Fully Automated Run" — one dashboard action drives Discovery through NCA sign-off end to end, zero further clicks** — see §0 for the full breakdown. Owner's framing: automate everything from network scanning to fingerprinting to scoring so end users aren't overwhelmed. Goes further than the guided-workflow phase's own "a human always signs" rule by design (3 clarifying decisions, all confirmed with the owner, each more aggressive than the default recommendation): auto-*records* NCA assessments (not just suggests), auto-submits scan evidence with zero review, and scopes to the whole fleet including a fresh Discovery sweep. New `compliance_assessments.auto_recorded` flag (migration 013) reconciles this with the attestation CHECK constraint - an auto-recorded row still satisfies `attestation_confirmed=true` but is structurally distinguishable from a real human sign-off. New `automated_run_runner.py` (a new `job_runner.py` poll loop) drives every stage through auditor-api's existing endpoints only - no new bypass of device_validation/the scan-test whitelist/the finding-mapping table; scan-job/network-scan execution reuses `process_job()`/`process_network_scan()` directly rather than creating a row and waiting for the next poll iteration, which would deadlock against itself. New `automation_routes.py` (`POST/GET/PATCH /automation/runs`, cancel). New frontend: `AutomatedRunDialog` (states exactly what will run/what won't before starting), `AutomatedRunProgressPage`, `AutoRecordedBadge` + filter tab + "Review & confirm" action reopening the existing retest flow to let a human supersede an auto-recorded row with a real signed one. A real bug caught by the first live whole-fleet run (not unit tests): the runner passed POST /scan-jobs' response straight to `process_job()`, but that endpoint deliberately never returns host/service_type/port (scan_jobs is a pure audit row - only the list endpoint resolves it via a join) - 114 of 115 scan jobs failed with "invalid target: host is required" before being caught and fixed. Re-verified live end to end after the fix: a scoped run recorded 13/13 evidence, auto-recorded 9 real NCA assessments, and a real human "Review & confirm" through the browser correctly superseded one while preserving the full append-only audit trail. 370 `policies` + 266 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` (2 pre-existing yara gaps) + 291 frontend tests passing, `tsc -b`/`oxlint` clean. |

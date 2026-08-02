@@ -12,11 +12,23 @@ suppresses the PEM even together with `-showcerts`) fed into a second
 without a shell pipe, which this project never uses.
 
 Confirmed live against this project's own auditor-worker image (OpenSSL
-3.5.6) before writing this: `openssl list -kem-algorithms` shows native
-ML-KEM-512/768/1024 (NIST FIPS 203) support, and `-groups` accepts the 4
+3.5.6) before writing this: `openssl list -tls1_3 -tls-groups` shows native
+ML-KEM (NIST FIPS 203) hybrid group support, and `-groups` accepts the 3
 hybrid names below directly. Real device-hardened/device-partial/
 mqtt-broker-secure handshakes in this lab all negotiated X25519MLKEM768
 when this was checked - not assumed.
+
+**A real bug caught by the first live run, not by unit tests alone**: an
+earlier version of this list also included a 4th name, `X448MLKEM1024`,
+assumed by analogy with the other 3 pairings without checking `openssl
+list -tls1_3 -tls-groups`'s actual output first. That group name does not
+exist in this OpenSSL build (ML-KEM-1024 only pairs with SecP384r1, not
+X448, in the real IETF hybrid-group registry) - passing it to `-groups`
+at all made OpenSSL reject the *entire* colon-separated argument with
+`Call to SSL_CONF_cmd(-groups, ...) failed`, so every single TLS-capable
+device in the lab reported `connection_error` instead of a real result.
+Fixed by removing it and re-verifying live that the real 3-name list
+negotiates `X25519MLKEM768` against `device-hardened` exactly as expected.
 """
 
 import re
@@ -30,11 +42,12 @@ CERT_RE = re.compile(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
 
 # Hybrid PQC groups offered first (so a PQC-capable server negotiates one
 # of these), classical groups last as a fallback so a non-PQC server still
-# completes a handshake rather than failing outright. All 4 hybrid names
+# completes a handshake rather than failing outright. All 3 hybrid names
 # and the KEM they wrap (ML-KEM, NIST FIPS 203) were confirmed live via
-# `openssl list -kem-algorithms` against this project's own worker image -
-# never assumed from documentation alone.
-PQC_HYBRID_GROUPS = ("X25519MLKEM768", "SecP256r1MLKEM768", "X448MLKEM1024", "SecP384r1MLKEM1024")
+# `openssl list -tls1_3 -tls-groups` against this project's own worker
+# image - never assumed from documentation alone (there is no X448-based
+# hybrid group in this registry, only X25519- and SecP-based ones).
+PQC_HYBRID_GROUPS = ("X25519MLKEM768", "SecP256r1MLKEM768", "SecP384r1MLKEM1024")
 CLASSICAL_FALLBACK_GROUPS = ("X25519", "secp256r1", "X448", "secp384r1")
 GROUPS_ARG = ":".join(PQC_HYBRID_GROUPS + CLASSICAL_FALLBACK_GROUPS)
 
