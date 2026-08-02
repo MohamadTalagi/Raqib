@@ -12,7 +12,94 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **NCA Compliance made "guided end to end" — every one of the 81
+**Phase:** **"Fully Automated Run" — one dashboard action drives Discovery
+through NCA sign-off end to end with zero further clicks — COMPLETE**
+(2026-08-02). The owner's own framing: "to ensure actual end users don't
+find this overwhelming or difficult," automate everything from network
+scanning to device cataloguing to fingerprinting all the way until scoring.
+Planned via plan mode with 3 clarifying decisions, each more aggressive than
+this session's own default recommendation, all confirmed with the owner up
+front: (1) the run **auto-records** NCA assessments, not just
+auto-suggests them — going further than the guided-workflow phase's own "a
+human always signs" rule; (2) scan evidence **auto-submits** its
+already-deterministic suggested finding with zero human review; (3) scope
+is **the entire fleet, including a fresh Discovery sweep**, not just
+already-registered devices.
+- **Reconciling full automation with the attestation rule from the phase
+  below**: a new `compliance_assessments.auto_recorded BOOLEAN NOT NULL
+  DEFAULT false` column (migration `013`, alongside a new `automated_runs`
+  table) is set `true` only by the new orchestrator, never by
+  `RecordAssessmentDialog`'s human path. An auto-recorded row still
+  satisfies the same `attestation_confirmed = true` CHECK every real
+  verdict does (`attested_role: "system:automated-run"`, `assessed_by:
+  "Fully Automated Run"`, a fixed disclosure statement) — honest about
+  *what* confirmed it, never bypassing the constraint.
+- **New `lab/auditor/worker/automated_run_runner.py`**, a new poll loop
+  registered in `job_runner.py`'s main loop: Discovery scan → guess and
+  register any new `iot_device`/`uncertain` host (mirrors
+  `NetworkDiscoveryPanel.tsx`'s own prefill logic, reimplemented in Python)
+  → every applicable Fingerprinting/SA-IOT-Compliance test per device with
+  its suggested finding auto-submitted → `POST /verdicts/recompute` →
+  Vulnerability Intelligence for any device that already has firmware
+  uploaded (never invented) → NCA recompute + per-device suggestions, each
+  auto-recorded. **Never automated, stated up front in the confirmation
+  dialog**: the ~60 organizational/mobile/supplier/cloud guidelines (need a
+  human's checklist answers) and Vulnerability Intelligence for a
+  firmware-less device. Architecturally not a new execution path — every
+  stage calls the exact same auditor-api endpoints a human clicking through
+  the UI would, inheriting every existing security boundary with no new
+  bypass surface; scan-job/network-scan *execution* reuses `job_runner.py`'s
+  own `process_job()`/`process_network_scan()` directly rather than
+  creating a row and waiting for the next poll iteration (which would
+  deadlock against itself, single-threaded loop).
+- **New `lab/auditor/api/automation_routes.py`**: `POST/GET /automation/runs`,
+  `GET /automation/runs/{id}`, `PATCH /automation/runs/{id}` (progress
+  reporting, only ever called by the runner), `POST /automation/runs/{id}/cancel`
+  (cooperative, not preemptive — same documented limitation as
+  `POST /assessments/{id}/cancel`).
+- **Frontend**: `AutomatedRunDialog` (states exactly what will run and what
+  won't, before anything starts — the same "confirm before fleet-wide side
+  effects" pattern this project always uses for consequential actions),
+  entry buttons on Overview and Devices, and `AutomatedRunProgressPage`
+  (`/automated-run/:id`, polls live stage/summary counts, cancel button,
+  review links once complete). New `AutoRecordedBadge` marks any
+  `auto_recorded: true` row in the NCA per-device workspace, with its own
+  filter tab and a **"Review & confirm"** action that reopens
+  `RecordAssessmentDialog`'s existing retest flow — a human reads the
+  pre-filled finding and does a real Confirm & Sign, superseding the
+  auto-recorded row (append-only; the original is never deleted).
+- **A real bug caught by the first live run, not by unit tests alone**: the
+  first version handed `process_job()` the raw `POST /scan-jobs` response as
+  the job's target, but that endpoint deliberately never returns
+  `host`/`service_type`/`port` (`scan_jobs` is a pure audit row by design —
+  only `GET /scan-jobs?status=pending`'s list endpoint resolves the live
+  target via a join, the same one `job_runner.py`'s own `poll_once()` reads
+  from). A live whole-fleet run failed 114 of 115 scan jobs with `"invalid
+  target: host is required"` before this was caught and fixed to re-fetch
+  from the pending list by job id first. 2 new regression tests lock this
+  down.
+- **Verified live end to end, twice**: a first whole-fleet run (via a real
+  browser, Claude-in-Chrome) surfaced the bug above; after the fix, a
+  second scoped run against `device-insecure` recorded 13/13 evidence (was
+  1/115), computed 2 new verdicts, ran Vulnerability Intelligence once, and
+  auto-recorded 9 real NCA assessments — confirmed live in the browser
+  (`AUTO-RECORDED` badges, correct filter counts), then a real human
+  "Review & confirm" was carried out on one control through the actual UI
+  and confirmed via the API that the new human-signed row
+  (`auto_recorded: false`) correctly superseded the auto-recorded one while
+  both stayed visible in the append-only audit trail.
+- **Regression**: 370 `policies` + 266 `lab/auditor/api` (2 pre-existing
+  WeasyPrint gaps, unrelated) + 78 `lab/auditor/worker` (2 pre-existing
+  yara-import gaps on this host, unrelated) + 291 frontend tests (+9,
+  including a real fix: the new "Auto-recorded" filter tab's text collided
+  with an existing test's loose `/record/i` button query) all passing,
+  `tsc -b`/`oxlint` clean. `auditor-api`/`auditor-web` rebuilt (baked-in
+  code changed), `auditor-worker` restarted (bind-mounted, no rebuild
+  needed) and confirmed live serving the new poll loop.
+- **Docs**: this entry, plus a new "Fully Automated Run" section and two
+  new "Known limitations" bullets in `docs/nca-compliance.md`.
+
+Before that: **NCA Compliance made "guided end to end" — every one of the 81
 CGIoT-1:2024 guidelines now reaches an auditor as a suggested status +
 evidence to review, with a mandatory formal sign-off before anything is
 recorded — COMPLETE** (2026-08-02). The owner asked, after reviewing how NCA
@@ -1932,6 +2019,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-02 | **"Fully Automated Run" — one dashboard action drives Discovery through NCA sign-off end to end, zero further clicks** — see §0 for the full breakdown. Owner's framing: automate everything from network scanning to fingerprinting to scoring so end users aren't overwhelmed. Goes further than the guided-workflow phase's own "a human always signs" rule by design (3 clarifying decisions, all confirmed with the owner, each more aggressive than the default recommendation): auto-*records* NCA assessments (not just suggests), auto-submits scan evidence with zero review, and scopes to the whole fleet including a fresh Discovery sweep. New `compliance_assessments.auto_recorded` flag (migration 013) reconciles this with the attestation CHECK constraint - an auto-recorded row still satisfies `attestation_confirmed=true` but is structurally distinguishable from a real human sign-off. New `automated_run_runner.py` (a new `job_runner.py` poll loop) drives every stage through auditor-api's existing endpoints only - no new bypass of device_validation/the scan-test whitelist/the finding-mapping table; scan-job/network-scan execution reuses `process_job()`/`process_network_scan()` directly rather than creating a row and waiting for the next poll iteration, which would deadlock against itself. New `automation_routes.py` (`POST/GET/PATCH /automation/runs`, cancel). New frontend: `AutomatedRunDialog` (states exactly what will run/what won't before starting), `AutomatedRunProgressPage`, `AutoRecordedBadge` + filter tab + "Review & confirm" action reopening the existing retest flow to let a human supersede an auto-recorded row with a real signed one. A real bug caught by the first live whole-fleet run (not unit tests): the runner passed POST /scan-jobs' response straight to `process_job()`, but that endpoint deliberately never returns host/service_type/port (scan_jobs is a pure audit row - only the list endpoint resolves it via a join) - 114 of 115 scan jobs failed with "invalid target: host is required" before being caught and fixed. Re-verified live end to end after the fix: a scoped run recorded 13/13 evidence, auto-recorded 9 real NCA assessments, and a real human "Review & confirm" through the browser correctly superseded one while preserving the full append-only audit trail. 370 `policies` + 266 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` (2 pre-existing yara gaps) + 291 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **Made NCA Compliance guided end to end — all 81 CGIoT-1:2024 guidelines now suggest a status + evidence for the auditor to review and formally sign** — see §0 for the full breakdown. Owner asked to automate every NCA section and gate recording behind an explicit sign-off, executed as a 9-phase approved plan. Phase 0 fixed a real orphaned-suggestion bug (2-6-2/2-6-3/2-7-2 misclassified as organization-scope, plus 5 more guidelines still marked "manual" despite real collectors existing). New `policies/nca/checklists.py` + `compliance_control_checklists` table give all 60 non-device guidelines a real guided checklist (`seed_checklists.py`, 3 reusable templates, every question drawn from real canonical text) evaluated with the same `condition_matches` predicate scan-evidence mappings already use. Every assessment now requires a formal "Confirm & Sign" step (`attested_role`/`attestation_confirmed`/`attestation_statement`, `CHECK`'d server-side) except the system's own `not_tested` placeholder. 3 new device-scope collectors (TLS client-auth, security-log endpoint, monitoring endpoint) raised real coverage to 76/81, honestly reported via a new live `GET /nca/coverage`. `OrganizationalCompliancePage` rebuilt in place into a guided workspace. Hit and fixed 2 real deployment incidents live (a container losing its network attachment mid-recovery, and discovering `lab/auditor/api/*.py` needs an image rebuild, not just a restart, to pick up changes — unlike bind-mounted `policies/`). 370 `policies` (+31) + 253 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 282 frontend tests passing, `tsc -b`/`oxlint` clean, verified live at every phase against the running stack. |
 | 2026-08-02 | **Added 5 non-camera IoT device fixtures (smart lock, industrial Modbus gateway, router/gateway with UPnP, NVR with RTSP, smart speaker with mDNS) for real protocol/domain variety, fully live-verified** — see §0 for the full breakdown. Grounded in a real, confirmed gap: NCA subdomains 2-13 (Physical Security) and 2-6 (Data Protection) had zero device-scope finding mappings despite being real seeded CGIoT-1:2024 controls. Each device is a small FastAPI app mirroring `smart-camera`'s layout; new worker collectors reuse nmap's real `modbus-discover`/`rtsp-methods` NSE scripts plus two new hand-rolled raw-UDP probes (`upnp_probe.py`/`mdns_probe.py`) for protocols nmap has no per-host script for — a real correction made mid-build after discovering nmap's UPnP script is broadcast-only, not per-host. 8 new NCA finding mappings close the 2-13-2/2-6-2/2-6-3 gap with real evidence. Found and fixed 4 real bugs during live verification (not caught by unit tests alone): a missing DB-level CHECK constraint update (`device_services_service_type_check`, new migration 010) that 500'd on first real registration; `nmap -sV` hanging against both custom protocol servers' non-standard probe responses (fixed by dropping `-sV` and adding `--script-timeout 10s`); an RTSP-methods regex whose own unit-test fixture had copied a wrong two-line output assumption, caught only by reading nmap's actual single-line output live; and `serviceIcons.ts`'s exhaustive `Record<ServiceType, LucideIcon>` correctly failing `tsc` until icons were added for all 4 new types. Verified live end to end against a rebuilt 16-container stack: all 5 devices registered, every new collector run for real with real evidence recorded, NCA recompute producing real auto-suggested FAILs on the target controls for all 5, and a real `TEST-NET-DISCOVERY` sweep classifying all 5 as `iot_device` (including the two UDP-only fixtures via their HTTP-port fallback, exactly as designed). 337 `policies` (+28) + 241 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 30 new per-device tests + 271 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-01 | **Dashboard overhaul (guided pipeline) — all 13 phases live-verified end to end, 3 real bugs found and fixed** — see §0 for the full breakdown. The 13-phase guided-pipeline overhaul itself was built in the prior session but never written up here since that session's final live-verification step was interrupted by a Docker Desktop networking failure serious enough to require a full OS reboot (`docker_networking_saga` preserved in the now-deleted `handoff.txt`). This session resumed after the reboot, found the DNS bug had survived it too, diagnosed it further via raw UDP queries to `127.0.0.11:53` (inconsistent per-name resolver behavior on `internal-network` only — not a compose config or host-firewall issue), and the user ran Docker Desktop's Troubleshoot → Clean/Purge data, which fixed it (`docs/errors/032`). Re-ran the lab's documented first-time setup (cert-init, mqtt secure-broker password) plus a previously-undocumented one — the NCA catalog's 81 guidelines/~20 finding mappings are seeded imperatively (`policies.nca.seed_catalog`/`seed_finding_mappings`), not via `init.sql`, and needed re-running against the purge-wiped volume. Then drove the entire pipeline live through a real browser (Claude-in-Chrome): Discovery's bulk-register flow (never exercised against a real backend before) registered 3 real devices from a real network scan; Fingerprinting ran a real `nmap` scan and recorded real evidence; SA-IOT Compliance ran a real 10-credential-pair default-creds test and recomputed real FAIL verdicts; Vulnerability Intelligence uploaded real generated firmware and got back real Grype-scanned CVE/KEV data (77 openssl CVEs, matching this project's own historical count); NCA Compliance's cohort "Assess selected" opened a real new browser tab and recorded a real blocking-control failure; Risk Assessment's 7-factor breakdown summed exactly to its displayed score; Remediation's stub correctly showed only real static remediation text. Found and fixed 3 real bugs this live pass exposed that mocked tests couldn't have caught: `risk_assessment` was trivially "reached" the instant any device was registered (`risk.known` means "device exists," not "assessed" — fixed to require real upstream SA-IOT/NCA/vuln signal, deliberately excluding fingerprinting since risk's own inputs never derive from it); `hasSaIotVerdict` counted a `NOT_APPLICABLE` placeholder verdict (created fleet-wide by any recompute) as "compliance reached" for devices that were never actually tested; and `SAIOTCompliancePage` never refetched verdicts after "Recompute verdicts" succeeded, leaving its own counts stale. All three fixed with regression tests (271/271 frontend passing, was 266), `tsc -b`/`oxlint` clean, `auditor-web` rebuilt/redeployed and re-verified live after each fix. |

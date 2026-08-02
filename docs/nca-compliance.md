@@ -72,8 +72,10 @@ docker exec kaust-iot-lab-auditor-database-1 psql -U auditor -d auditor \
   -f /path/to/lab/auditor/db/migrations/003-nca-compliance.sql
 ```
 
-An existing volume also needs migrations `011-nca-checklists-and-attestation.sql`
-and `012-nca-attestation-not-required-for-not-tested.sql` applied the same way.
+An existing volume also needs migrations `011-nca-checklists-and-attestation.sql`,
+`012-nca-attestation-not-required-for-not-tested.sql`, and
+`013-automated-runs.sql` (the `automated_runs` table + `compliance_assessments.auto_recorded`)
+applied the same way.
 
 Then seed the catalog, finding mappings, and checklists (idempotent, safe to re-run):
 
@@ -193,6 +195,75 @@ is exempt — it's the system's own "nothing has been asserted yet" marker, not
 a human verdict, so there's nothing to attest to. Still no real
 authentication (see below) — this is a stronger attestation step layered on
 the existing free-text reviewer-identity convention, not a login system.
+
+## Fully Automated Run (`auto_recorded`)
+
+A single dashboard action (`AutomatedRunDialog` on Overview/Devices →
+`POST /automation/runs`) drives the *entire* pipeline — Discovery through NCA
+sign-off — with zero further clicks, for the whole fleet or an explicit
+device scope. It deliberately goes further than the manual flow's "a human
+always signs" rule: it auto-*records* NCA assessments too, not just
+auto-suggests them.
+
+That's reconciled with the attestation rule above by a new
+`compliance_assessments.auto_recorded BOOLEAN NOT NULL DEFAULT false`
+column (migration 013), set `true` only by `automated_run_runner.py`
+(`lab/auditor/worker/`) and never by the dashboard's own
+`RecordAssessmentDialog`. An auto-recorded row still satisfies the same
+`attestation_confirmed = true` CHECK constraint every real verdict does —
+`attested_role: "system:automated-run"`, `assessed_by: "Fully Automated
+Run"`, and a fixed `attestation_statement` disclosing that no human
+reviewed it — so the audit trail is honest about *what* confirmed it
+without ever bypassing the constraint.
+
+**What the run actually does, in order** (`automated_run_runner.py`, a new
+poll loop registered in `job_runner.py`'s main loop): Discovery scan → guess
+and register any new `iot_device`/`uncertain` host (mirrors
+`NetworkDiscoveryPanel.tsx`'s own prefill logic, reimplemented in Python) →
+every applicable Fingerprinting/SA-IOT-Compliance test per device, each
+job's already-deterministic `suggested_finding`/`suggested_confidence`
+auto-submitted with zero human review → `POST /verdicts/recompute` →
+Vulnerability Intelligence for any device that already has firmware
+uploaded (never invented) → `POST /nca/assessments/recompute` +
+`GET /nca/devices/{id}/suggestions` per device, each suggestion
+auto-recorded with `auto_recorded: true`. **Never automated, by design**:
+the ~60 organizational/mobile/supplier/cloud guidelines (they need a
+human's guided-checklist answers — nothing in scan evidence tells the
+system whether a policy was approved) and Vulnerability Intelligence for a
+device with no firmware. Both are stated up front in the confirmation
+dialog before the run starts.
+
+Architecturally the runner is not a new execution path: every stage calls
+the exact same auditor-api endpoints a human clicking through the UI
+would, so it inherits every existing security boundary
+(`device_validation`, the scan-test whitelist, the finding-mapping table)
+with no new bypass surface. Scan-job/network-scan *execution* reuses
+`job_runner.py`'s own `process_job()`/`process_network_scan()` directly —
+creating a row via the API and waiting for the next `poll_once()`/
+`poll_network_scans_once()` iteration to pick it up would deadlock against
+itself, since `poll_automated_runs_once()` runs inside the same
+single-threaded loop, after those two have already run for that iteration.
+
+**A real bug this uncovered live, not by unit tests alone**: the first
+version handed `process_job()` the raw `POST /scan-jobs` response as the
+job's target — but that endpoint deliberately never returns
+`host`/`service_type`/`port` (`scan_jobs` is a pure audit row by design;
+only `GET /scan-jobs?status=pending`'s list endpoint resolves the live
+target via a join against `device_services`, the same one
+`job_runner.py`'s own `poll_once()` reads from). A live whole-fleet run
+failed 114 of 115 scan jobs with `"invalid target: host is required"`
+before this was caught and fixed to re-fetch from the pending list by job
+id first.
+
+Every auto-recorded assessment carries an **"Auto-recorded — not yet
+reviewed"** badge (`AutoRecordedBadge`) wherever it appears in
+`DeviceAssessmentPage`'s control list, with its own filter tab, and a
+**"Review & confirm"** action that opens the same `RecordAssessmentDialog`
+retest flow a manual retest already uses — a human reads the pre-filled
+finding/evidence and does a real Confirm & Sign, which supersedes the
+auto-recorded row with a new one (`auto_recorded: false`) via the existing
+append-only mechanism. The original auto-recorded row is never deleted —
+both stay visible in the control's audit trail.
 
 ## Evidence handling
 
@@ -401,3 +472,14 @@ compliance, domain breakdown, failed/partial controls, and approved exceptions.
   `docker compose build auditor-api` (confirmed the hard way: the checklist
   endpoints returned a plain routing 404 after a restart alone, until the
   image was actually rebuilt).
+- **A Fully Automated Run's cancellation is cooperative, not preemptive** —
+  same documented limitation as `POST /assessments/{id}/cancel`: the run's
+  status is checked between stages/devices, but a scan already dispatched to
+  `process_job()` (a blocking `subprocess.run`) is left to finish rather than
+  killed mid-execution.
+- **A Fully Automated Run can never assess the ~60 organizational/mobile/
+  supplier/cloud guidelines or run Vulnerability Intelligence on a device
+  with no firmware uploaded** — by design, not an oversight; see "Fully
+  Automated Run" above. An auto-recorded assessment's finding text is the
+  same fixed, deterministic template a human sees pre-filled in
+  `RecordAssessmentDialog` — never model-generated.
