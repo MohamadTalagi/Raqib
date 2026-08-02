@@ -64,7 +64,7 @@ ASSESSMENT_COLUMNS = (
     "raw_result_reference, evidence_ids, scanner_tool, scanner_tool_version, "
     "firmware_version_assessed, assessed_at, assessed_by, remediation, "
     "remediation_due_date, retest_status, retested_at, superseded_by, created_at, "
-    "attested_role, attestation_confirmed, attestation_statement"
+    "attested_role, attestation_confirmed, attestation_statement, auto_recorded"
 )
 
 EXCEPTION_COLUMNS = (
@@ -109,7 +109,7 @@ def _row_to_assessment(row) -> dict:
      evidence_ids, scanner_tool, scanner_tool_version, firmware_version_assessed,
      assessed_at, assessed_by, remediation, remediation_due_date, retest_status,
      retested_at, superseded_by, created_at,
-     attested_role, attestation_confirmed, attestation_statement) = row
+     attested_role, attestation_confirmed, attestation_statement, auto_recorded) = row
     return {
         "id": id_, "control_id": control_id, "device_id": device_id,
         "organizational_scope_id": org_scope_id, "applicability": applicability,
@@ -126,7 +126,7 @@ def _row_to_assessment(row) -> dict:
         "retested_at": retested_at.isoformat() if retested_at else None,
         "superseded_by": superseded_by, "created_at": created_at.isoformat(),
         "attested_role": attested_role, "attestation_confirmed": attestation_confirmed,
-        "attestation_statement": attestation_statement,
+        "attestation_statement": attestation_statement, "auto_recorded": auto_recorded,
     }
 
 
@@ -712,6 +712,14 @@ def _validate_assessment_payload(payload: dict) -> dict:
         "attested_role": attested_role,
         "attestation_confirmed": status != "not_tested",
         "attestation_statement": attestation_statement,
+        # Set only by automated_run_runner.py's own caller - a human recording
+        # through the dashboard's RecordAssessmentDialog never sends this, so
+        # it defaults false there. This is what actually distinguishes "the
+        # system recorded this with attestation_confirmed=true" from a real
+        # human sign-off, since a Fully Automated Run sets
+        # attestation_confirmed=true too (the CHECK constraint requires it
+        # for every non-not_tested status) - auto_recorded is the honest flag.
+        "auto_recorded": bool(payload.get("auto_recorded", False)),
     }
 
 
@@ -741,7 +749,7 @@ def _insert_assessment(conn, data: dict, *, event_type: str, reason: str | None)
             test_identifier, raw_result_reference, evidence_ids, scanner_tool,
             scanner_tool_version, firmware_version_assessed, assessed_by,
             remediation, remediation_due_date, retest_status, retested_at,
-            attested_role, attestation_confirmed, attestation_statement
+            attested_role, attestation_confirmed, attestation_statement, auto_recorded
         ) VALUES (
             %(id)s, %(control_id)s, %(device_id)s, %(organizational_scope_id)s,
             %(applicability)s, %(applicability_reason)s, %(status)s, %(severity)s,
@@ -749,7 +757,7 @@ def _insert_assessment(conn, data: dict, *, event_type: str, reason: str | None)
             %(evidence_ids)s, %(scanner_tool)s, %(scanner_tool_version)s,
             %(firmware_version_assessed)s, %(assessed_by)s, %(remediation)s,
             %(remediation_due_date)s, %(retest_status)s, %(retested_at)s,
-            %(attested_role)s, %(attestation_confirmed)s, %(attestation_statement)s
+            %(attested_role)s, %(attestation_confirmed)s, %(attestation_statement)s, %(auto_recorded)s
         ) RETURNING {ASSESSMENT_COLUMNS}
         """,
         {
