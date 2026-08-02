@@ -2,6 +2,7 @@ import type {
   Assessment,
   AutomatedRun,
   ControlRecord,
+  ExecutiveSummary,
   RemediationBlueprint,
   RemediationFindingType,
   ControlVerdictRollup,
@@ -397,6 +398,12 @@ export const api = {
     postJson<RemediationBlueprint>(`/remediation/blueprints/${encodeURIComponent(blueprintId)}/review`, {
       reviewed_by: reviewedBy,
     }),
+
+  // -- AI Executive Summary (IoTGuard Stage 08) ----------------------------
+
+  executiveSummary: (): Promise<ExecutiveSummary> => getJson<ExecutiveSummary>("/executive-summary"),
+  executiveSummaryReportPdfUrl: (): string => `${API_BASE_URL}/executive-summary/report.pdf`,
+  executiveSummaryReportHtmlUrl: (): string => `${API_BASE_URL}/executive-summary/report.html`,
 
   // -- Fully Automated Run --------------------------------------------------
 

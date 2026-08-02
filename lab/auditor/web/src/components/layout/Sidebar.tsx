@@ -18,6 +18,7 @@ import {
   BadgeCheck,
   Bug,
   Wrench,
+  FileBarChart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/vulnerability-intelligence", label: "Vulnerability Intelligence", icon: Bug, end: false },
       { to: "/risk", label: "Risk Assessment", icon: Flame, end: false },
       { to: "/remediation", label: "Remediation", icon: Wrench, end: false },
+      { to: "/executive-summary", label: "Executive Summary", icon: FileBarChart, end: false },
     ],
   },
   {

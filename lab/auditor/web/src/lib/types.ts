@@ -817,3 +817,76 @@ export interface RemediationBlueprint {
   reviewed_at: string | null;
   superseded_by: string | null;
 }
+
+// -- AI Executive Summary (IoTGuard Stage 08) -----------------------------
+
+export interface ExecutiveSummarySaIotGap {
+  control_id: string;
+  title: string | null;
+  severity: Severity;
+  status: VerdictStatus;
+  reason: string;
+  remediation: string | null;
+}
+
+export interface ExecutiveSummaryNcaGap {
+  control_id: string;
+  domain_name: string;
+  subdomain_name: string;
+  guideline_id: string;
+  canonical_requirement: string;
+  blocking: boolean;
+  status: string;
+}
+
+export interface ExecutiveSummaryEvidence {
+  evidence_id: string;
+  test_id: string;
+  tool: string;
+  tool_version: string;
+  command: string;
+  timestamp: string;
+  finding: string;
+  confidence: Confidence;
+  raw_output_path: string;
+  sha256: string;
+}
+
+export interface ExecutiveSummaryDevice {
+  device_id: string;
+  display_name: string;
+  risk_score: number;
+  risk_category: RiskCategory;
+  priority_rank: number;
+  sa_iot_gaps: ExecutiveSummarySaIotGap[];
+  nca_gaps: ExecutiveSummaryNcaGap[];
+  evidence: ExecutiveSummaryEvidence[];
+  remediation: RemediationBlueprint[];
+}
+
+export interface ExecutiveSummaryFleet {
+  total_devices: number;
+  average_risk_score: number | null;
+  risk_by_category: Record<RiskCategory, number>;
+  total_compliance_gaps: number;
+  remediation_generated: number;
+  remediation_reviewed: number;
+  remediation_coverage_pct: number | null;
+}
+
+export interface ExecutiveSummaryPriorityRecommendation extends RemediationBlueprint {
+  device_display_name: string;
+}
+
+export interface ExecutiveSummarySignificantGap extends ExecutiveSummaryNcaGap {
+  device_id: string;
+  device_display_name: string;
+}
+
+export interface ExecutiveSummary {
+  generated_at: string;
+  devices: ExecutiveSummaryDevice[];
+  fleet_summary: ExecutiveSummaryFleet;
+  priority_recommendations: ExecutiveSummaryPriorityRecommendation[];
+  significant_compliance_gaps: ExecutiveSummarySignificantGap[];
+}
