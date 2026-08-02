@@ -214,6 +214,12 @@ services:
       - DATABASE_URL=postgresql://auditor:auditor-lab-pw@auditor-database:5432/auditor
       - PYTHONPATH=/work
       - DOCUMENT_STORE_DIR=/work/document-store
+      # AI-Assisted Remediation (IoTGuard Stage 07) - real key lives only in
+      # the gitignored lab/.env, interpolated here at compose time so it
+      # never touches this tracked file. Free-tier Gemini; no billing
+      # attached (see docs/remediation.md).
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
     volumes:
       - ../policies:/work/policies:ro
       - ../document-store:/work/document-store
