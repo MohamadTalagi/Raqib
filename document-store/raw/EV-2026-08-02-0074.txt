@@ -1,0 +1,17 @@
+HTTP/1.1 200 OK
+date: Sun, 02 Aug 2026 17:11:08 GMT
+server: uvicorn
+content-length: 329
+content-type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html><head><title>NVR Admin</title></head>
+<body>
+<h1>ViewKeep VK-NVR8 - Admin</h1>
+<form method="post" action="/login">
+  <input type="text" name="username" placeholder="Username" />
+  <input type="password" name="password" placeholder="Password" />
+  <button type="submit">Login</button>
+</form>
+</body></html>
+HTTP_VERSION:1.1

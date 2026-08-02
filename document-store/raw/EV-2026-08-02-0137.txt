@@ -1,0 +1,13 @@
+HTTP/1.1 404 Not Found
+date: Sun, 02 Aug 2026 17:12:42 GMT
+server: uvicorn
+content-length: 22
+content-type: application/json
+
+{"detail":"Not Found"}HTTP/1.1 404 Not Found
+date: Sun, 02 Aug 2026 17:12:42 GMT
+server: uvicorn
+content-length: 22
+content-type: application/json
+
+{"detail":"Not Found"}

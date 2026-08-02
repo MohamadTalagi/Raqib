@@ -2,6 +2,8 @@ import type {
   Assessment,
   AutomatedRun,
   ControlRecord,
+  RemediationBlueprint,
+  RemediationFindingType,
   ControlVerdictRollup,
   CreateAssessmentResult,
   CreateNCAAssessmentPayload,
@@ -369,6 +371,32 @@ export const api = {
   riskDevice: (deviceId: string): Promise<DeviceRiskDetail> =>
     getJson<DeviceRiskDetail>(`/risk/devices/${encodeURIComponent(deviceId)}`),
   riskFleetSummary: (): Promise<RiskFleetSummary> => getJson<RiskFleetSummary>("/risk/fleet-summary"),
+
+  // -- NCA assessments, fleet-wide (used by the Remediation page) ---------
+
+  ncaAssessments: (status?: string): Promise<NCAAssessment[]> =>
+    getJson<NCAAssessment[]>(`/nca/assessments${status ? `?status=${status}` : ""}`),
+
+  // -- AI-Assisted Remediation (IoTGuard Stage 07) -------------------------
+
+  generateRemediation: (
+    findingType: RemediationFindingType,
+    findingId: string,
+  ): Promise<RemediationBlueprint> =>
+    postJson<RemediationBlueprint>("/remediation/generate", { finding_type: findingType, finding_id: findingId }),
+  remediationBlueprints: (findingType: RemediationFindingType, findingId: string): Promise<RemediationBlueprint[]> =>
+    getJson<RemediationBlueprint[]>(
+      `/remediation/blueprints?finding_type=${findingType}&finding_id=${encodeURIComponent(findingId)}`,
+    ),
+  // Every current (non-superseded) blueprint across every finding, in one
+  // call - lets the Remediation page know which findings already have a
+  // blueprint without an N+1 fetch per row.
+  allRemediationBlueprints: (): Promise<RemediationBlueprint[]> =>
+    getJson<RemediationBlueprint[]>("/remediation/blueprints"),
+  reviewRemediationBlueprint: (blueprintId: string, reviewedBy: string): Promise<RemediationBlueprint> =>
+    postJson<RemediationBlueprint>(`/remediation/blueprints/${encodeURIComponent(blueprintId)}/review`, {
+      reviewed_by: reviewedBy,
+    }),
 
   // -- Fully Automated Run --------------------------------------------------
 

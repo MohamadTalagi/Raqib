@@ -793,3 +793,27 @@ export interface AutomatedRun {
   started_at: string | null;
   completed_at: string | null;
 }
+
+// -- AI-Assisted Remediation (IoTGuard Stage 07) -------------------------
+
+export type RemediationFindingType = "sa_iot_verdict" | "nca_assessment";
+export type RemediationPriority = "immediate" | "short_term" | "long_term";
+
+export interface RemediationBlueprint {
+  id: string;
+  finding_type: RemediationFindingType;
+  finding_id: string;
+  device_id: string | null;
+  control_id: string;
+  model: string;
+  root_cause: string;
+  remediation_steps: string[];
+  priority: RemediationPriority;
+  estimated_effort: string | null;
+  caveats: string | null;
+  generated_at: string;
+  reviewed: boolean;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  superseded_by: string | null;
+}

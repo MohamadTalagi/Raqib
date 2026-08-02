@@ -1,0 +1,12 @@
+
+4057FF505A790000:error:8000006F:system library:BIO_connect:Connection refused:../crypto/bio/bio_sock2.c:183:calling connect()
+4057FF505A790000:error:10000067:BIO routines:BIO_connect:connect error:../crypto/bio/bio_sock2.c:185:
+connect:errno=111
+
+cert_pem_found=False
+PROTOCOL_PROBE_START
+TLSv1=rejected
+TLSv1.1=rejected
+TLSv1.2=rejected
+TLSv1.3=rejected
+PROTOCOL_PROBE_END

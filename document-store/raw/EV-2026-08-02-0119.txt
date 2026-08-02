@@ -1,0 +1,11 @@
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-02 17:12 UTC
+Nmap scan report for device-smartlock (172.30.0.3)
+Host is up (0.0000060s latency).
+rDNS record for 172.30.0.3: kaust-iot-lab-device-smartlock-1.kaust-iot-lab_audit-network
+Not shown: 65534 closed tcp ports (reset)
+PORT   STATE SERVICE VERSION
+80/tcp open  http    Uvicorn
+MAC Address: 82:4A:6B:03:74:0C (Unknown)
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 6.91 seconds

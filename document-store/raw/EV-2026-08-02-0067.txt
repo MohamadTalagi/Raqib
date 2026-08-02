@@ -1,0 +1,11 @@
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-02 17:11 UTC
+Nmap scan report for device-nvr (172.30.0.9)
+Host is up (0.000097s latency).
+rDNS record for 172.30.0.9: kaust-iot-lab-device-nvr-1.kaust-iot-lab_audit-network
+
+PORT    STATE SERVICE
+554/tcp open  rtsp
+|_rtsp-methods: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN
+MAC Address: 3A:AD:D6:78:E6:DB (Unknown)
+
+Nmap done: 1 IP address (1 host up) scanned in 0.15 seconds

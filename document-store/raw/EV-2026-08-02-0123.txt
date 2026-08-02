@@ -1,0 +1,1 @@
+{"locked":true,"tamper_detected":false,"tamper_detection_wired":false}
