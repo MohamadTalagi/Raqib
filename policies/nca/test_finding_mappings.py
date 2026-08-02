@@ -196,3 +196,24 @@ def test_mdns_voice_log_encrypted_does_not_map_to_data_protection_controls():
     matched = map_evidence_to_controls(evidence, MAPPINGS)
     assert control_id("2-6-2") not in matched
     assert control_id("2-6-3") not in matched
+
+
+def test_every_mapped_control_is_device_or_mobile_scope_never_orphaned():
+    """A real bug this guards against: GET /nca/devices/{id} only ever lists
+    controls with scope_type == "device" (see nca_routes.py's
+    get_nca_device_detail), so a finding mapping targeting any other scope
+    computes a real suggestion via GET /nca/devices/{id}/suggestions that no
+    device workspace can ever show a "Record" button for - an orphaned
+    suggestion, caught live once for 2-6-2/2-6-3/2-7-2 (fixed by adding them
+    to build_catalog.py's DEVICE_TESTABLE_GUIDELINES). This test locks the
+    invariant down so a future mapping addition can't reintroduce it."""
+    from policies.nca.build_catalog import _scope_and_assessment
+
+    for mapping in MAPPINGS:
+        guideline_id = mapping["control_id"].removeprefix("NCA-CGIoT-1_2024-")
+        scope_type, _ = _scope_and_assessment(guideline_id)
+        assert scope_type in ("device", "mobile"), (
+            f"{mapping['finding_key']} targets {guideline_id} (scope_type={scope_type!r}) - "
+            "a device-scope evidence mapping must target a device or mobile scope control, "
+            "or its suggestion can never be recorded through any device workspace"
+        )

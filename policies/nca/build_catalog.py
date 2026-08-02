@@ -44,24 +44,37 @@ PAGE_MARKER_RE = re.compile(r"^<!-- =+ PDF pages? ([\d–-]+).*-->$", re.MULTILI
 # audits, or supplier/cloud contract compliance (explicit brief requirement).
 DEVICE_TESTABLE_GUIDELINES: dict[str, tuple[str, str]] = {
     # guideline_id -> (scope_type, assessment_type)
+    #
+    # assessment_type is re-derived from the real collectors and finding
+    # mappings that exist today (policies/catalog/scan_tests.py,
+    # policies/nca/seed_finding_mappings.py), not assumed - several entries
+    # below were caught still saying "manual" even though a real automated
+    # collector had been added for them in a later session and this table
+    # was never revisited (2-4-2, 2-4-6, 2-9-1, 2-13-2, 2-15-1). "hybrid"
+    # means real automated evidence exists but doesn't cover every way the
+    # guideline could be satisfied or violated; "automated" means the
+    # automated signal alone is a defensible, complete verdict.
     "2-2-1": ("device", "hybrid"),      # access/permission restriction - partly observable, partly policy
     "2-2-2": ("device", "automated"),   # default/hard-coded creds - TEST-AUTH-DEFAULT-CREDS
-    "2-4-2": ("device", "manual"),      # peer authentication - not directly automatable today
+    "2-4-2": ("device", "hybrid"),      # peer authentication - TEST-MQTT-OPEN's mqtt_anonymous signal (MQTT devices only)
     "2-4-3": ("device", "automated"),   # encrypt/authenticate transactions - TEST-TLS-CONFIG / TEST-NET-PKTCAPTURE
     "2-4-5": ("device", "manual"),
-    "2-4-6": ("device", "manual"),      # secure update transport - no automated test yet
-    "2-9-1": ("device", "manual"),      # vulnerability identification - firmware manifest gives partial signal
+    "2-4-6": ("device", "hybrid"),      # secure update transport - update-script-present gives partial (review_required) signal
+    "2-7-2": ("device", "automated"),   # data encryption in transit - same TLS/MQTT/packet-capture signal set as 2-4-3
+    "2-9-1": ("device", "hybrid"),      # vulnerability identification - firmware manifest/banner give partial (review_required) signal
     "2-9-2": ("device", "manual"),
     "2-11-1": ("device", "manual"),     # device/security logs
     "2-11-2": ("device", "manual"),     # diagnostic monitoring
-    "2-13-2": ("device", "manual"),     # physical tamper protection - inherently manual/physical
+    "2-13-2": ("device", "hybrid"),     # physical tamper protection - TEST-PHYSICAL-TAMPER-STATUS checks self-reported wiring only
     "2-14-1": ("device", "hybrid"),     # exposed application interface - TEST-NET-HTTP-INSPECT/TEST-ADMIN-UNAUTH give partial signal
     "2-14-2": ("device", "manual"),     # application allowlisting
-    "2-15-1": ("device", "manual"),     # secure boot / root of trust
-    "2-15-2": ("device", "hybrid"),     # secure default config / unnecessary services - TEST-NET-PORTSCAN
+    "2-15-1": ("device", "hybrid"),     # secure boot / root of trust - firmware-cert-or-key-embedded gives partial signal
+    "2-15-2": ("device", "hybrid"),     # secure default config / unnecessary services - TEST-NET-PORTSCAN/TEST-MODBUS-PROBE/TEST-UPNP-PROBE
     "2-15-3": ("device", "manual"),     # end-of-life / disposal
     "3-1-1": ("device", "manual"),      # fail-safe capability
     "3-1-2": ("device", "manual"),
+    "2-6-2": ("device", "hybrid"),      # data protection in transit/at rest - TEST-RTSP-PROBE/TEST-MDNS-PROBE give partial signal
+    "2-6-3": ("device", "hybrid"),      # unnecessary sensitive-data collection - same RTSP/mDNS signal
 }
 
 MOBILE_GUIDELINES = {"2-5-1"}
