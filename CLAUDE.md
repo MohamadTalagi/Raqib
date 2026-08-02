@@ -12,7 +12,80 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **"Fully Automated Run" — one dashboard action drives Discovery
+**Phase:** **AI-Assisted Remediation (IoTGuard Stage 07) built out via
+Google Gemini's free tier — COMPLETE** (2026-08-02). The owner asked how to
+add AI-assisted remediation "worthwhile and cheap" - no money to spend.
+Chose Gemini specifically because its free tier needs no billing/card
+attached at all (unlike this project's own build-time tooling, Claude
+Opus 4.8, which is a paid API); planned via plan mode, one real scoping
+question confirmed with the owner up front: cover **both** SA-IOT verdicts
+*and* NCA CGIoT-1:2024 assessments in v1, not just the SA-IOT pilot the old
+stub already showed, since NCA's `remediation_guidance` is hardcoded `""`
+for every one of its 81 guidelines in `policies/nca/build_catalog.py` — a
+real, bigger gap than SA-IOT's one-line static remediation.
+- **`RemediationPage.tsx` rebuilt** from its long-standing "Not built yet"
+  stub: every currently failing/partial finding (SA-IOT verdict or NCA
+  assessment, tagged accordingly) gets a "Generate AI remediation" button;
+  the resulting structured blueprint (root cause, numbered steps, priority,
+  effort, caveats) renders behind a new `AiGeneratedBadge` (modeled on the
+  Fully Automated Run feature's own `AutoRecordedBadge`) until a human
+  types their name and clicks "Mark reviewed." A page-level "Generate all
+  missing" button paces itself 4s apart, safely under the free tier's rate
+  limit.
+- **New `lab/auditor/api/remediation_engine.py`** — pure, unit-testable
+  (same shape as `risk_engine.py`): builds the Gemini prompt, calls its
+  REST `generateContent` endpoint via plain `httpx.post` (no SDK, no new
+  dependency - `httpx` was already installed), and validates the
+  structured-JSON response. **Never raises** - a missing key, rate limit,
+  or malformed response all return `None`, so the caller reports an honest
+  failure instead of fabricating a blueprint, matching
+  `cisa_kev.fetch_and_cache_kev_feed()`'s own convention for a failed
+  external call. The prompt is explicit that the finding itself is already
+  decided by deterministic code and must never be second-guessed or
+  expanded with invented facts - a prompt instruction, not a hard
+  guarantee, which is exactly why every blueprint still needs a human
+  review before being treated as authoritative.
+- **New `remediation_blueprints` table** (migration `014`) - append-only,
+  same supersede pattern as `compliance_assessments`: a re-generate for a
+  finding supersedes the prior blueprint rather than overwriting it. Never
+  mutates `verdicts.remediation`/`compliance_assessments.remediation` -
+  purely additive display, so neither existing append-only table needed
+  any change. New flat `GET /nca/assessments` (fleet-wide, filterable by
+  status - the NCA equivalent of the already-existing `GET /verdicts`) so
+  the Remediation page can list every failing NCA finding in one call.
+- **A real bug caught by the first live call, not by planning alone**: the
+  originally planned default model, `gemini-2.0-flash`, returned `429
+  RESOURCE_EXHAUSTED` with `limit: 0` the instant a real key went live -
+  Google had reduced that model's free-tier allocation to zero for new
+  keys by the time this was built (its knowledge of "current" free-tier
+  models was stale). Queried Gemini's own live `ListModels` endpoint,
+  confirmed `gemini-3.5-flash-lite` has real free quota and correctly
+  honors structured JSON output, and switched the pinned default
+  everywhere (`GEMINI_MODEL` env var, so this can change again without a
+  code change if Google deprecates it too).
+- **Verified live end to end**: a real SA-IOT verdict (`SA-IOT-002`,
+  default credentials) and a real NCA assessment
+  (`NCA-CGIoT-1_2024-1-1-1`, organizational scope) both generated real,
+  sensible blueprints through the actual browser; the review flow
+  correctly cleared the AI-generated badge and showed the reviewer's name;
+  a regenerate correctly superseded the prior blueprint while both stayed
+  visible in the append-only history; the "Generate all missing" counter
+  decremented correctly as blueprints were generated one at a time.
+- **Key handling**: the owner generated a free Gemini API key via Google AI
+  Studio: a first key was accidentally pasted into chat and treated as
+  compromised (never used, instructed to revoke and regenerate); the real
+  key lives only in the gitignored `lab/.env` (`GEMINI_API_KEY`),
+  interpolated into `docker-compose.yml`'s `auditor-api` environment via
+  `${GEMINI_API_KEY}` so the literal value never touches a tracked file.
+- **Regression**: 370 `policies` + 289 `lab/auditor/api` (2 pre-existing
+  WeasyPrint gaps, unrelated) + 78 `lab/auditor/worker` + 294 frontend
+  tests (+3 net: 3 new suites replacing the old stub's 3) all passing,
+  `tsc -b`/`oxlint` clean. `auditor-api`/`auditor-web` rebuilt (baked-in
+  code changed).
+- **Docs**: new `docs/remediation.md` (architecture, prompt design, the
+  live model-availability correction, known limitations), this entry.
+
+Before that: **"Fully Automated Run" — one dashboard action drives Discovery
 through NCA sign-off end to end with zero further clicks — COMPLETE**
 (2026-08-02). The owner's own framing: "to ensure actual end users don't
 find this overwhelming or difficult," automate everything from network
@@ -2019,6 +2092,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-02 | **AI-Assisted Remediation (IoTGuard Stage 07) via Google Gemini's free tier** — see §0 for the full breakdown. Owner wanted this cheap - Gemini's free tier needs no billing attached at all. Scope confirmed with the owner up front: both SA-IOT verdicts and NCA CGIoT-1:2024 assessments, not just the SA-IOT pilot the old "Not built yet" stub showed, since NCA's `remediation_guidance` is hardcoded empty for every one of its 81 guidelines. New `remediation_engine.py` (pure, builds the Gemini prompt, calls its REST endpoint via plain `httpx.post` - no SDK, no new dependency, `httpx` was already installed - never raises, a failed/malformed call returns `None` so the caller reports an honest failure rather than fabricating a blueprint) + `remediation_routes.py` (generate/list/review, append-only `remediation_blueprints` table, migration 014, same supersede pattern as `compliance_assessments` - never mutates the existing `verdicts.remediation`/`compliance_assessments.remediation` fields). New flat `GET /nca/assessments` (fleet-wide, the NCA equivalent of `GET /verdicts`). Rebuilt `RemediationPage.tsx`: every failing/partial finding gets a "Generate AI remediation" button, the structured blueprint (root cause/steps/priority/effort/caveats) renders behind a new `AiGeneratedBadge` until a human marks it reviewed - a prompt instruction (not a hard guarantee) forbids the model from inventing facts beyond the given finding, which is exactly why the human-review gate exists. A real bug caught by the first live call: the planned default model, `gemini-2.0-flash`, returned 429 "limit: 0" the moment a real key went live (Google had zeroed its free-tier allocation for new keys since - stale model-availability knowledge) - queried Gemini's own ListModels endpoint live and switched the pinned default to `gemini-3.5-flash-lite`, confirmed real quota and correct structured-output support. Verified live end to end: real blueprints generated for both finding types through the browser, review/regenerate-supersede both confirmed correct. 370 `policies` + 289 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` + 294 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **"Fully Automated Run" — one dashboard action drives Discovery through NCA sign-off end to end, zero further clicks** — see §0 for the full breakdown. Owner's framing: automate everything from network scanning to fingerprinting to scoring so end users aren't overwhelmed. Goes further than the guided-workflow phase's own "a human always signs" rule by design (3 clarifying decisions, all confirmed with the owner, each more aggressive than the default recommendation): auto-*records* NCA assessments (not just suggests), auto-submits scan evidence with zero review, and scopes to the whole fleet including a fresh Discovery sweep. New `compliance_assessments.auto_recorded` flag (migration 013) reconciles this with the attestation CHECK constraint - an auto-recorded row still satisfies `attestation_confirmed=true` but is structurally distinguishable from a real human sign-off. New `automated_run_runner.py` (a new `job_runner.py` poll loop) drives every stage through auditor-api's existing endpoints only - no new bypass of device_validation/the scan-test whitelist/the finding-mapping table; scan-job/network-scan execution reuses `process_job()`/`process_network_scan()` directly rather than creating a row and waiting for the next poll iteration, which would deadlock against itself. New `automation_routes.py` (`POST/GET/PATCH /automation/runs`, cancel). New frontend: `AutomatedRunDialog` (states exactly what will run/what won't before starting), `AutomatedRunProgressPage`, `AutoRecordedBadge` + filter tab + "Review & confirm" action reopening the existing retest flow to let a human supersede an auto-recorded row with a real signed one. A real bug caught by the first live whole-fleet run (not unit tests): the runner passed POST /scan-jobs' response straight to `process_job()`, but that endpoint deliberately never returns host/service_type/port (scan_jobs is a pure audit row - only the list endpoint resolves it via a join) - 114 of 115 scan jobs failed with "invalid target: host is required" before being caught and fixed. Re-verified live end to end after the fix: a scoped run recorded 13/13 evidence, auto-recorded 9 real NCA assessments, and a real human "Review & confirm" through the browser correctly superseded one while preserving the full append-only audit trail. 370 `policies` + 266 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` (2 pre-existing yara gaps) + 291 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **Made NCA Compliance guided end to end — all 81 CGIoT-1:2024 guidelines now suggest a status + evidence for the auditor to review and formally sign** — see §0 for the full breakdown. Owner asked to automate every NCA section and gate recording behind an explicit sign-off, executed as a 9-phase approved plan. Phase 0 fixed a real orphaned-suggestion bug (2-6-2/2-6-3/2-7-2 misclassified as organization-scope, plus 5 more guidelines still marked "manual" despite real collectors existing). New `policies/nca/checklists.py` + `compliance_control_checklists` table give all 60 non-device guidelines a real guided checklist (`seed_checklists.py`, 3 reusable templates, every question drawn from real canonical text) evaluated with the same `condition_matches` predicate scan-evidence mappings already use. Every assessment now requires a formal "Confirm & Sign" step (`attested_role`/`attestation_confirmed`/`attestation_statement`, `CHECK`'d server-side) except the system's own `not_tested` placeholder. 3 new device-scope collectors (TLS client-auth, security-log endpoint, monitoring endpoint) raised real coverage to 76/81, honestly reported via a new live `GET /nca/coverage`. `OrganizationalCompliancePage` rebuilt in place into a guided workspace. Hit and fixed 2 real deployment incidents live (a container losing its network attachment mid-recovery, and discovering `lab/auditor/api/*.py` needs an image rebuild, not just a restart, to pick up changes — unlike bind-mounted `policies/`). 370 `policies` (+31) + 253 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 282 frontend tests passing, `tsc -b`/`oxlint` clean, verified live at every phase against the running stack. |
 | 2026-08-02 | **Added 5 non-camera IoT device fixtures (smart lock, industrial Modbus gateway, router/gateway with UPnP, NVR with RTSP, smart speaker with mDNS) for real protocol/domain variety, fully live-verified** — see §0 for the full breakdown. Grounded in a real, confirmed gap: NCA subdomains 2-13 (Physical Security) and 2-6 (Data Protection) had zero device-scope finding mappings despite being real seeded CGIoT-1:2024 controls. Each device is a small FastAPI app mirroring `smart-camera`'s layout; new worker collectors reuse nmap's real `modbus-discover`/`rtsp-methods` NSE scripts plus two new hand-rolled raw-UDP probes (`upnp_probe.py`/`mdns_probe.py`) for protocols nmap has no per-host script for — a real correction made mid-build after discovering nmap's UPnP script is broadcast-only, not per-host. 8 new NCA finding mappings close the 2-13-2/2-6-2/2-6-3 gap with real evidence. Found and fixed 4 real bugs during live verification (not caught by unit tests alone): a missing DB-level CHECK constraint update (`device_services_service_type_check`, new migration 010) that 500'd on first real registration; `nmap -sV` hanging against both custom protocol servers' non-standard probe responses (fixed by dropping `-sV` and adding `--script-timeout 10s`); an RTSP-methods regex whose own unit-test fixture had copied a wrong two-line output assumption, caught only by reading nmap's actual single-line output live; and `serviceIcons.ts`'s exhaustive `Record<ServiceType, LucideIcon>` correctly failing `tsc` until icons were added for all 4 new types. Verified live end to end against a rebuilt 16-container stack: all 5 devices registered, every new collector run for real with real evidence recorded, NCA recompute producing real auto-suggested FAILs on the target controls for all 5, and a real `TEST-NET-DISCOVERY` sweep classifying all 5 as `iot_device` (including the two UDP-only fixtures via their HTTP-port fallback, exactly as designed). 337 `policies` (+28) + 241 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 30 new per-device tests + 271 frontend tests passing, `tsc -b`/`oxlint` clean. |
