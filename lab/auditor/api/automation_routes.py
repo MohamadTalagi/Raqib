@@ -63,12 +63,16 @@ def create_automated_run(payload: dict | None = None):
 
 
 @router.get("/runs")
-def list_automated_runs():
+def list_automated_runs(status: str | None = None):
     conn = get_connection()
     try:
-        rows = conn.execute(
-            f"SELECT {RUN_COLUMNS} FROM automated_runs ORDER BY created_at DESC LIMIT 20"
-        ).fetchall()
+        query = f"SELECT {RUN_COLUMNS} FROM automated_runs WHERE 1=1"
+        params: list = []
+        if status is not None:
+            query += " AND status = %s"
+            params.append(status)
+        query += " ORDER BY created_at DESC LIMIT 20"
+        rows = conn.execute(query, params).fetchall()
     finally:
         conn.close()
     return [_row_to_run(r) for r in rows]
@@ -83,6 +87,51 @@ def get_automated_run(run_id: int):
         conn.close()
     if row is None:
         raise HTTPException(status_code=404, detail="automated run not found")
+    return _row_to_run(row)
+
+
+RUN_PATCHABLE_FIELDS = {"status", "current_stage", "summary", "error"}
+
+
+@router.patch("/runs/{run_id}")
+def patch_automated_run(run_id: int, payload: dict):
+    """Called only by automated_run_runner.py as it drives a run through its
+    stages - never by the frontend directly (it only ever creates/reads/
+    cancels). started_at/completed_at are set here, not by the caller, on
+    the same first-running/first-terminal transitions job_runner.py's other
+    poll loops already leave to the database layer."""
+    fields = {k: v for k, v in payload.items() if k in RUN_PATCHABLE_FIELDS}
+    if not fields:
+        raise HTTPException(status_code=422, detail="no valid fields to update")
+
+    conn = get_connection()
+    try:
+        current = conn.execute(
+            "SELECT status, started_at FROM automated_runs WHERE id = %s", (run_id,)
+        ).fetchone()
+        if current is None:
+            raise HTTPException(status_code=404, detail="automated run not found")
+        current_status, started_at = current
+
+        set_clauses = []
+        values: list = []
+        for key, value in fields.items():
+            set_clauses.append(f"{key} = %s")
+            values.append(json.dumps(value) if key == "summary" else value)
+
+        if fields.get("status") == "running" and started_at is None:
+            set_clauses.append("started_at = now()")
+        if fields.get("status") in ("completed", "failed", "cancelled"):
+            set_clauses.append("completed_at = now()")
+
+        values.append(run_id)
+        row = conn.execute(
+            f"UPDATE automated_runs SET {', '.join(set_clauses)} WHERE id = %s RETURNING {RUN_COLUMNS}",
+            values,
+        ).fetchone()
+        conn.commit()
+    finally:
+        conn.close()
     return _row_to_run(row)
 
 

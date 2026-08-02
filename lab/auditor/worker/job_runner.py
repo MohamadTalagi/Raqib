@@ -310,11 +310,19 @@ def poll_network_scans_once() -> int:
 
 
 def main() -> None:
+    # Imported here, not at module top-level: automated_run_runner.py itself
+    # imports process_job/process_network_scan from this module, so a
+    # top-level import here would be circular. By the time main() runs,
+    # job_runner is fully loaded, so automated_run_runner can safely import
+    # from it.
+    from automated_run_runner import poll_automated_runs_once
+
     print(f"job_runner: polling {API_URL} every {POLL_INTERVAL_SECONDS}s", flush=True)
     while True:
         try:
             poll_once()
             poll_network_scans_once()
+            poll_automated_runs_once()
             maybe_refresh_grype_db()
             maybe_refresh_cisa_kev()
         except Exception as exc:  # noqa: BLE001 - never let a poll failure kill the loop
