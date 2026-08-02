@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>IoTGuard — Executive Summary</title>
+{% if inline_css %}<style>{{ inline_css | safe }}</style>{% endif %}</head>
+<body>
+
+<h1>IoTGuard Executive Summary</h1>
+<p class="subtitle mono">AI-Assisted IoT Security Posture &middot; generated {{ generated_at }}</p>
+<p class="cite">Aggregates NCA CGIoT-1:2024 compliance, SA-IOT pilot compliance, vulnerability intelligence, dynamic risk scoring, and AI-assisted (human-reviewed) remediation guidance. Every figure below is a real, already-computed value - this document contains no AI-generated narrative text.</p>
+
+<h2>1. Fleet posture at a glance</h2>
+<div class="grid">
+  <div><div class="label">Devices</div><div class="value">{{ fleet_summary.total_devices }}</div></div>
+  <div><div class="label">Average risk score</div><div class="value">{% if fleet_summary.average_risk_score is not none %}{{ fleet_summary.average_risk_score }}{% else %}<span class="empty">n/a</span>{% endif %}</div></div>
+  <div><div class="label">Compliance gaps (SA-IOT + NCA)</div><div class="value">{{ fleet_summary.total_compliance_gaps }}</div></div>
+  <div><div class="label">Remediation generated</div><div class="value">{{ fleet_summary.remediation_generated }} ({{ fleet_summary.remediation_reviewed }} reviewed)</div></div>
+  <div><div class="label">Remediation coverage</div><div class="value">{% if fleet_summary.remediation_coverage_pct is not none %}{{ fleet_summary.remediation_coverage_pct }}%{% else %}<span class="empty">n/a</span>{% endif %}</div></div>
+</div>
+<table>
+  <thead><tr><th>Risk category</th><th>Devices</th></tr></thead>
+  <tbody>
+  {% for category in ["critical", "high", "medium", "low"] %}
+    <tr><td>{{ category }}</td><td>{{ fleet_summary.risk_by_category[category] }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>2. Priority recommendations</h2>
+<p class="cite">Every immediate-priority AI-generated remediation blueprint not yet reviewed by a human, worst-risk-device-first.</p>
+{% if priority_recommendations %}
+<table>
+  <thead><tr><th>Device</th><th>Control</th><th>Root cause</th><th>Effort</th></tr></thead>
+  <tbody>
+  {% for r in priority_recommendations %}
+    <tr>
+      <td class="mono">{{ r.device_display_name }} <span class="cite">({{ r.device_id }})</span></td>
+      <td class="mono">{{ r.control_id }}</td>
+      <td>{{ r.root_cause }}</td>
+      <td>{{ r.estimated_effort or "not estimated" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No unreviewed immediate-priority remediation right now.</p>{% endif %}
+
+<h2>3. Most significant compliance gaps</h2>
+<p class="cite">NCA CGIoT-1:2024 controls whose failure alone forces a device's readiness to Failed, currently failing.</p>
+{% if significant_compliance_gaps %}
+<table>
+  <thead><tr><th>Device</th><th>Guideline</th><th>Domain</th><th>Requirement</th></tr></thead>
+  <tbody>
+  {% for g in significant_compliance_gaps %}
+    <tr>
+      <td class="mono">{{ g.device_display_name }} <span class="cite">({{ g.device_id }})</span></td>
+      <td class="mono">{{ g.guideline_id }}</td>
+      <td>{{ g.domain_name }}</td>
+      <td>{{ g.canonical_requirement }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No blocking NCA controls are currently failing.</p>{% endif %}
+
+<h2>4. Devices, ranked by risk (highest first)</h2>
+{% if devices %}
+{% for d in devices %}
+<h3 class="mono">#{{ d.priority_rank }} &middot; {{ d.display_name }} ({{ d.device_id }}) &middot; risk {{ d.risk_score }} ({{ d.risk_category }})</h3>
+
+<p class="cite">Compliance gaps</p>
+{% if d.sa_iot_gaps or d.nca_gaps %}
+<table>
+  <thead><tr><th>Framework</th><th>Control</th><th>Status</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for c in d.sa_iot_gaps %}
+    <tr><td>SA-IOT</td><td class="mono">{{ c.control_id }}</td><td class="status status-{{ c.status }}">{{ c.status }}</td><td>{{ c.reason }}</td></tr>
+  {% endfor %}
+  {% for g in d.nca_gaps %}
+    <tr><td>NCA</td><td class="mono">{{ g.guideline_id }}</td><td class="status status-{{ g.status }}">{{ g.status }}</td><td>{{ g.canonical_requirement }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No compliance gaps recorded for this device.</p>{% endif %}
+
+<p class="cite">Evidence and tools</p>
+{% if d.evidence %}
+<table>
+  <thead><tr><th>Evidence</th><th>Test</th><th>Tool</th><th>Finding</th></tr></thead>
+  <tbody>
+  {% for e in d.evidence %}
+    <tr><td class="mono">{{ e.evidence_id }}</td><td class="mono">{{ e.test_id }}</td><td>{{ e.tool }} {{ e.tool_version }}</td><td>{{ e.finding }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No evidence recorded for this device.</p>{% endif %}
+
+<p class="cite">Remediation</p>
+{% if d.remediation %}
+<table>
+  <thead><tr><th>Control</th><th>Priority</th><th>Root cause</th><th>Reviewed</th></tr></thead>
+  <tbody>
+  {% for r in d.remediation %}
+    <tr>
+      <td class="mono">{{ r.control_id }}</td>
+      <td>{{ r.priority }}</td>
+      <td>{{ r.root_cause }}</td>
+      <td>{% if r.reviewed %}yes ({{ r.reviewed_by }}){% else %}<span class="empty">not yet reviewed</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty-state">No remediation blueprints generated for this device yet.</p>{% endif %}
+
+{% endfor %}
+{% else %}<p class="empty-state">No devices registered.</p>{% endif %}
+
+</body>
+</html>
