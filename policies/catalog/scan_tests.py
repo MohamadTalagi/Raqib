@@ -914,6 +914,81 @@ def _suggest_confidence_tls(observations: dict) -> str:
     return "high"
 
 
+TLS_CLIENT_AUTH_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/tls_client_auth_check.py"
+
+
+def _tls_client_auth_command(target: dict) -> list[str]:
+    return ["python3", TLS_CLIENT_AUTH_CHECK_SCRIPT, target["host"], str(target["port"])]
+
+
+def _parse_tls_client_auth_observations(target: dict, output: str) -> dict:
+    requested = "client_cert_requested=True" in output
+    notes = (
+        ["The server requests a client certificate during the TLS handshake - peer authentication is in place."]
+        if requested
+        else [
+            "The server never requests a client certificate during the TLS handshake - any TLS "
+            "client can connect with no cryptographic peer authentication.",
+        ]
+    )
+    return {"client_cert_requested": requested, "notes": notes}
+
+
+# Conventional paths checked for each of the next two collectors - a real,
+# if inherently heuristic, signal: this lab's own devices only ever expose
+# whatever path each one happens to implement (e.g. only device-smartlock
+# has /api/access-log), so a "not found" result here means exactly that -
+# no endpoint at these specific paths - never a claim that no logging or
+# monitoring exists anywhere on the device.
+SECURITY_LOG_ENDPOINT_PATHS = ("/api/access-log", "/api/voice-log", "/api/logs")
+MONITORING_ENDPOINT_PATHS = ("/health", "/metrics", "/status")
+
+
+def _chained_path_probe_command(target: dict, paths: tuple[str, ...]) -> list[str]:
+    scheme = _scheme_for(target)
+    authority = _authority_for(target, scheme)
+    command: list[str] = ["curl"]
+    for index, path in enumerate(paths):
+        if index > 0:
+            command.append("--next")
+        command += _http_flags(scheme, "-o", "/dev/null", "-w", f"{path} %{{http_code}}\n")
+        command.append(f"{scheme}://{authority}{path}")
+    return command
+
+
+def _parse_path_probe_observations(output: str, paths: tuple[str, ...]) -> tuple[bool, list[str]]:
+    found = re.findall(r"(\S+) 200", output)
+    return bool(found), found
+
+
+def _security_log_endpoint_command(target: dict) -> list[str]:
+    return _chained_path_probe_command(target, SECURITY_LOG_ENDPOINT_PATHS)
+
+
+def _parse_security_log_endpoint_observations(target: dict, output: str) -> dict:
+    present, found_paths = _parse_path_probe_observations(output, SECURITY_LOG_ENDPOINT_PATHS)
+    notes = (
+        [f"A security/access-log endpoint was found at {', '.join(found_paths)} - confirm it is access-controlled."]
+        if present
+        else [f"No conventional security/access-log endpoint (checked: {', '.join(SECURITY_LOG_ENDPOINT_PATHS)}) was found."]
+    )
+    return {"security_log_endpoint_present": present, "found_paths": found_paths, "notes": notes}
+
+
+def _monitoring_endpoint_command(target: dict) -> list[str]:
+    return _chained_path_probe_command(target, MONITORING_ENDPOINT_PATHS)
+
+
+def _parse_monitoring_endpoint_observations(target: dict, output: str) -> dict:
+    present, found_paths = _parse_path_probe_observations(output, MONITORING_ENDPOINT_PATHS)
+    notes = (
+        [f"A diagnostic/monitoring endpoint was found at {', '.join(found_paths)}."]
+        if present
+        else [f"No conventional diagnostic/monitoring endpoint (checked: {', '.join(MONITORING_ENDPOINT_PATHS)}) was found."]
+    )
+    return {"monitoring_endpoint_present": present, "found_paths": found_paths, "notes": notes}
+
+
 def _packet_capture_command(target: dict) -> list[str]:
     scheme = _scheme_for(target)
     return [
@@ -1355,6 +1430,36 @@ SCAN_CATALOG = {
         "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _packet_capture_command,
         "parse_observations": _parse_packet_capture_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+    },
+    "TEST-TLS-CLIENT-AUTH": {
+        "label": "TLS peer authentication",
+        "tool": "python3 (openssl)",
+        "tool_version_command": ["openssl", "version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": TLS_SERVICE_TYPES,
+        "build_command": _tls_client_auth_command,
+        "parse_observations": _parse_tls_client_auth_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+    },
+    "TEST-SECURITY-LOG-ENDPOINT": {
+        "label": "Security/access log endpoint",
+        "tool": "curl",
+        "tool_version_command": ["curl", "--version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": HTTP_SERVICE_TYPES,
+        "build_command": _security_log_endpoint_command,
+        "parse_observations": _parse_security_log_endpoint_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+    },
+    "TEST-MONITORING-ENDPOINT": {
+        "label": "Diagnostic monitoring endpoint",
+        "tool": "curl",
+        "tool_version_command": ["curl", "--version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": HTTP_SERVICE_TYPES,
+        "build_command": _monitoring_endpoint_command,
+        "parse_observations": _parse_monitoring_endpoint_observations,
         "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-FW-VERSION": {

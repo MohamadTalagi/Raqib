@@ -217,3 +217,33 @@ def test_every_mapped_control_is_device_or_mobile_scope_never_orphaned():
             "a device-scope evidence mapping must target a device or mobile scope control, "
             "or its suggestion can never be recorded through any device workspace"
         )
+
+
+def test_no_client_cert_required_maps_to_2_4_5():
+    evidence = {"test_id": "TEST-TLS-CLIENT-AUTH", "observations": {"client_cert_requested": False}}
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-4-5") in matched
+
+
+def test_client_cert_required_does_not_map_to_2_4_5():
+    evidence = {"test_id": "TEST-TLS-CLIENT-AUTH", "observations": {"client_cert_requested": True}}
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-4-5") not in matched
+
+
+def test_missing_security_log_endpoint_maps_to_2_11_1():
+    evidence = {"test_id": "TEST-SECURITY-LOG-ENDPOINT", "observations": {"security_log_endpoint_present": False}}
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-11-1") in matched
+
+
+def test_missing_monitoring_endpoint_maps_to_2_11_2():
+    evidence = {"test_id": "TEST-MONITORING-ENDPOINT", "observations": {"monitoring_endpoint_present": False}}
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-11-2") in matched
+
+
+def test_present_monitoring_endpoint_does_not_map_to_2_11_2():
+    evidence = {"test_id": "TEST-MONITORING-ENDPOINT", "observations": {"monitoring_endpoint_present": True}}
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-11-2") not in matched

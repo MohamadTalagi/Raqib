@@ -58,13 +58,13 @@ DEVICE_TESTABLE_GUIDELINES: dict[str, tuple[str, str]] = {
     "2-2-2": ("device", "automated"),   # default/hard-coded creds - TEST-AUTH-DEFAULT-CREDS
     "2-4-2": ("device", "hybrid"),      # peer authentication - TEST-MQTT-OPEN's mqtt_anonymous signal (MQTT devices only)
     "2-4-3": ("device", "automated"),   # encrypt/authenticate transactions - TEST-TLS-CONFIG / TEST-NET-PKTCAPTURE
-    "2-4-5": ("device", "manual"),
+    "2-4-5": ("device", "hybrid"),      # peer authentication (TLS) - TEST-TLS-CLIENT-AUTH's client_cert_requested signal
     "2-4-6": ("device", "hybrid"),      # secure update transport - update-script-present gives partial (review_required) signal
     "2-7-2": ("device", "automated"),   # data encryption in transit - same TLS/MQTT/packet-capture signal set as 2-4-3
     "2-9-1": ("device", "hybrid"),      # vulnerability identification - firmware manifest/banner give partial (review_required) signal
     "2-9-2": ("device", "manual"),
-    "2-11-1": ("device", "manual"),     # device/security logs
-    "2-11-2": ("device", "manual"),     # diagnostic monitoring
+    "2-11-1": ("device", "hybrid"),     # device/security logs - TEST-SECURITY-LOG-ENDPOINT checks conventional paths only
+    "2-11-2": ("device", "hybrid"),     # diagnostic monitoring - TEST-MONITORING-ENDPOINT checks conventional paths only
     "2-13-2": ("device", "hybrid"),     # physical tamper protection - TEST-PHYSICAL-TAMPER-STATUS checks self-reported wiring only
     "2-14-1": ("device", "hybrid"),     # exposed application interface - TEST-NET-HTTP-INSPECT/TEST-ADMIN-UNAUTH give partial signal
     "2-14-2": ("device", "manual"),     # application allowlisting

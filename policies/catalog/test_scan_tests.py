@@ -1164,6 +1164,9 @@ def test_every_test_id_has_the_expected_pipeline_phase():
         "TEST-UPNP-PROBE": PIPELINE_PHASE_FINGERPRINTING,
         "TEST-MDNS-PROBE": PIPELINE_PHASE_FINGERPRINTING,
         "TEST-PHYSICAL-TAMPER-STATUS": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-TLS-CLIENT-AUTH": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-SECURITY-LOG-ENDPOINT": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-MONITORING-ENDPOINT": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     }
     assert set(expected) == set(SCAN_CATALOG)  # catches a new test added with no phase decision made
     for test_id, phase in expected.items():
@@ -1366,3 +1369,81 @@ def test_upnp_probe_is_only_applicable_to_upnp_service_type():
 def test_mdns_probe_is_only_applicable_to_mdns_service_type():
     assert is_applicable(MDNS_TARGET, "TEST-MDNS-PROBE")
     assert not is_applicable(HTTP_TARGET, "TEST-MDNS-PROBE")
+
+
+def test_tls_client_auth_command_uses_the_worker_probe_script():
+    from policies.catalog.scan_tests import TLS_CLIENT_AUTH_CHECK_SCRIPT, _tls_client_auth_command
+
+    command = _tls_client_auth_command(HTTPS_TARGET)
+    assert command == ["python3", TLS_CLIENT_AUTH_CHECK_SCRIPT, "device-hardened", "443"]
+
+
+def test_tls_client_auth_parses_a_real_certificate_request():
+    from policies.catalog.scan_tests import _parse_tls_client_auth_observations
+
+    output = "client_cert_requested=True"
+    observations = _parse_tls_client_auth_observations(HTTPS_TARGET, output)
+    assert observations["client_cert_requested"] is True
+    assert "peer authentication is in place" in observations["notes"][0]
+
+
+def test_tls_client_auth_parses_no_certificate_request_honestly():
+    from policies.catalog.scan_tests import _parse_tls_client_auth_observations
+
+    output = "client_cert_requested=False"
+    observations = _parse_tls_client_auth_observations(HTTPS_TARGET, output)
+    assert observations["client_cert_requested"] is False
+    assert "no cryptographic peer authentication" in observations["notes"][0]
+
+
+def test_security_log_endpoint_command_chains_every_candidate_path():
+    from policies.catalog.scan_tests import SECURITY_LOG_ENDPOINT_PATHS, _security_log_endpoint_command
+
+    command = _security_log_endpoint_command(HTTP_TARGET)
+    for path in SECURITY_LOG_ENDPOINT_PATHS:
+        assert f"http://device-insecure{path}" in command
+
+
+def test_security_log_endpoint_parses_a_found_path():
+    from policies.catalog.scan_tests import _parse_security_log_endpoint_observations
+
+    output = "/api/access-log 200\n/api/voice-log 404\n/api/logs 404\n"
+    observations = _parse_security_log_endpoint_observations(HTTP_TARGET, output)
+    assert observations["security_log_endpoint_present"] is True
+    assert observations["found_paths"] == ["/api/access-log"]
+
+
+def test_security_log_endpoint_reports_absence_honestly():
+    from policies.catalog.scan_tests import _parse_security_log_endpoint_observations
+
+    output = "/api/access-log 404\n/api/voice-log 404\n/api/logs 404\n"
+    observations = _parse_security_log_endpoint_observations(HTTP_TARGET, output)
+    assert observations["security_log_endpoint_present"] is False
+    assert observations["found_paths"] == []
+
+
+def test_monitoring_endpoint_command_chains_every_candidate_path():
+    from policies.catalog.scan_tests import MONITORING_ENDPOINT_PATHS, _monitoring_endpoint_command
+
+    command = _monitoring_endpoint_command(HTTP_TARGET)
+    for path in MONITORING_ENDPOINT_PATHS:
+        assert f"http://device-insecure{path}" in command
+
+
+def test_monitoring_endpoint_parses_a_found_path():
+    from policies.catalog.scan_tests import _parse_monitoring_endpoint_observations
+
+    output = "/health 200\n/metrics 404\n/status 404\n"
+    observations = _parse_monitoring_endpoint_observations(HTTP_TARGET, output)
+    assert observations["monitoring_endpoint_present"] is True
+    assert observations["found_paths"] == ["/health"]
+
+
+def test_tls_client_auth_is_only_applicable_to_tls_service_types():
+    assert is_applicable(HTTPS_TARGET, "TEST-TLS-CLIENT-AUTH")
+    assert not is_applicable(MQTT_TARGET, "TEST-TLS-CLIENT-AUTH")
+
+
+def test_security_log_and_monitoring_endpoints_are_applicable_to_http_service_types():
+    assert is_applicable(HTTP_TARGET, "TEST-SECURITY-LOG-ENDPOINT")
+    assert is_applicable(HTTP_TARGET, "TEST-MONITORING-ENDPOINT")

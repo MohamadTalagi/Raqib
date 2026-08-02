@@ -247,6 +247,32 @@ MAPPINGS = [
         },
         "manufacturer_principle": None,
     },
+    # The 3 mappings below back the Phase 4 device-scope collectors added
+    # for peer authentication (2-4-5) and event logging/monitoring (2-11-1,
+    # 2-11-2) - each raised that guideline's assessment_type from "manual"
+    # to "hybrid" in build_catalog.py, since the signal is real but only
+    # ever a heuristic (a conventional-path check, not exhaustive proof).
+    {
+        "finding_key": "tls-no-client-certificate-required",
+        "description": "The TLS handshake never requests a client certificate - any TLS client can connect with no cryptographic peer authentication.",
+        "control_id": control_id("2-4-5"),
+        "match_rule": {"field": "observations.client_cert_requested", "op": "equals", "value": False},
+        "manufacturer_principle": None,
+    },
+    {
+        "finding_key": "no-security-log-endpoint",
+        "description": "No conventional security/access-log endpoint was found on this device.",
+        "control_id": control_id("2-11-1"),
+        "match_rule": {"field": "observations.security_log_endpoint_present", "op": "equals", "value": False},
+        "manufacturer_principle": None,
+    },
+    {
+        "finding_key": "no-diagnostic-monitoring-endpoint",
+        "description": "No conventional diagnostic/monitoring endpoint was found on this device.",
+        "control_id": control_id("2-11-2"),
+        "match_rule": {"field": "observations.monitoring_endpoint_present", "op": "equals", "value": False},
+        "manufacturer_principle": None,
+    },
 ]
 
 
