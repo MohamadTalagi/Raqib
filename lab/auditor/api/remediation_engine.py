@@ -121,7 +121,7 @@ def call_gemini(prompt_body: dict) -> dict | None:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return None
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
     url = GEMINI_API_URL.format(model=model)
 
     try:

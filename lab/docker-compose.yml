@@ -219,7 +219,7 @@ services:
       # never touches this tracked file. Free-tier Gemini; no billing
       # attached (see docs/remediation.md).
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
     volumes:
       - ../policies:/work/policies:ro
       - ../document-store:/work/document-store

@@ -185,7 +185,7 @@ def generate_remediation(payload: dict):
             """,
             (
                 new_id, finding_type, finding_id, finding["device_id"], finding["control_id"],
-                os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+                os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite"),
                 blueprint["root_cause"], json.dumps(blueprint["remediation_steps"]),
                 blueprint["priority"], blueprint["estimated_effort"], blueprint["caveats"],
             ),
