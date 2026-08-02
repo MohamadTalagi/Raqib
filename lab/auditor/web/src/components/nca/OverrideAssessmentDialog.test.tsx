@@ -32,6 +32,9 @@ const ASSESSMENT: NCAAssessment = {
   retested_at: null,
   superseded_by: null,
   created_at: "2026-07-20T00:00:00Z",
+  attested_role: "Lead Auditor",
+  attestation_confirmed: true,
+  attestation_statement: "Reviewed and certified.",
 };
 
 const OVERRIDDEN: NCAAssessment & { original_status: NCAStatus; override_justification: string } = {

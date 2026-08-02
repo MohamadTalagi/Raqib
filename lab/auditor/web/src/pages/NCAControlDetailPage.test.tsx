@@ -82,6 +82,9 @@ const DETAIL: NCAControlDetail = {
       retested_at: null,
       superseded_by: null,
       created_at: "2026-07-20T00:00:00Z",
+      attested_role: "Lead Auditor",
+      attestation_confirmed: true,
+      attestation_statement: "Reviewed and certified.",
     },
   ],
   audit_events: [
@@ -170,6 +173,8 @@ describe("NCAControlDetailPage", () => {
     await user.selectOptions(screen.getByLabelText("Device"), "device-insecure");
     await user.selectOptions(screen.getByLabelText("Status"), "pass");
     await user.type(screen.getByLabelText("Your name"), "auditor-3");
+    await user.type(screen.getByLabelText("Your role"), "Lead Auditor");
+    await user.click(screen.getByLabelText("Attestation confirmation"));
     await user.click(screen.getByRole("button", { name: /save assessment/i }));
 
     expect(await screen.findByText(/assessment asm-9 recorded/i)).toBeInTheDocument();

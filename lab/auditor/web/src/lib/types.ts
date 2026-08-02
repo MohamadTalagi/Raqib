@@ -416,6 +416,9 @@ export interface NCAAssessment {
   retested_at: string | null;
   superseded_by: string | null;
   created_at: string;
+  attested_role: string | null;
+  attestation_confirmed: boolean;
+  attestation_statement: string | null;
 }
 
 export interface NCAException {
@@ -570,6 +573,22 @@ export interface CreateNCAAssessmentPayload {
   remediation?: string | null;
   remediation_due_date?: string | null;
   reason?: string;
+  attested_role?: string | null;
+  attestation_confirmed?: boolean;
+  attestation_statement?: string | null;
+}
+
+export interface NCAChecklistQuestion {
+  key: string;
+  label: string;
+  type: "yes_no" | "text" | "date";
+  required: boolean;
+}
+
+export interface NCAChecklist {
+  control_id: string;
+  questions: NCAChecklistQuestion[];
+  suggestion_rule: unknown;
 }
 
 export interface OverrideNCAAssessmentPayload {

@@ -12,6 +12,7 @@ import type {
   EvidenceRecord,
   NetworkScan,
   NCAAssessment,
+  NCAChecklist,
   NCAControl,
   NCAControlDetail,
   NCADeviceComplianceRow,
@@ -269,6 +270,16 @@ export const api = {
   },
   ncaControl: (controlId: string): Promise<NCAControlDetail> =>
     getJson<NCAControlDetail>(`/nca/controls/${encodeURIComponent(controlId)}`),
+  /** 404 (thrown as ApiError) is the expected, common case here - most
+   * controls have no guided checklist authored yet. Callers should catch
+   * and fall back to the plain assessment dialog, not treat it as an error. */
+  ncaControlChecklist: (controlId: string): Promise<NCAChecklist> =>
+    getJson<NCAChecklist>(`/nca/controls/${encodeURIComponent(controlId)}/checklist`),
+  evaluateNcaChecklist: (
+    controlId: string,
+    answers: Record<string, unknown>,
+  ): Promise<{ control_id: string; suggested_status: NCAStatus | null }> =>
+    postJson(`/nca/controls/${encodeURIComponent(controlId)}/checklist/evaluate`, { answers }),
   ncaDevices: (status?: NCAStatus): Promise<NCADeviceComplianceRow[]> =>
     getJson<NCADeviceComplianceRow[]>(`/nca/devices${status ? `?status=${status}` : ""}`),
   ncaDevice: (deviceId: string): Promise<NCADeviceDetail> =>

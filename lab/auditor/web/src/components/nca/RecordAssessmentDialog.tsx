@@ -17,6 +17,14 @@ const STATUS_OPTIONS: NCAStatus[] = ["pass", "partial", "fail", "not_tested", "r
 const SEVERITY_OPTIONS: Severity[] = ["low", "medium", "high", "critical"];
 const TEST_METHOD_OPTIONS: NCAAssessmentType[] = ["manual", "automated", "hybrid"];
 
+// Shown verbatim to the auditor at signing time and stored verbatim on the
+// assessment (attestation_statement) - so a later dispute can see exactly
+// what was agreed to, not just infer it from whatever this component's
+// copy says today. Never edit this string without also updating what old,
+// already-signed assessments show when their stored statement is displayed.
+export const ATTESTATION_STATEMENT =
+  "I have reviewed the evidence and reasons above and certify this assessment finding.";
+
 interface RecordAssessmentDialogProps {
   open: boolean;
   control: NCAControl;
@@ -78,6 +86,8 @@ export function RecordAssessmentDialog({
   const [remediation, setRemediation] = useState("");
   const [remediationDueDate, setRemediationDueDate] = useState("");
   const [assessedBy, setAssessedBy] = useState("");
+  const [attestedRole, setAttestedRole] = useState("");
+  const [attestationChecked, setAttestationChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,6 +108,11 @@ export function RecordAssessmentDialog({
     setRemediation(source?.remediation ?? "");
     setRemediationDueDate(source?.remediation_due_date ?? "");
     setAssessedBy("");
+    // Never carried over from a prior assessment, even on a retest - a
+    // fresh sign-off is required every time, since what's being certified
+    // (the evidence/reasons above) is different each time.
+    setAttestedRole("");
+    setAttestationChecked(false);
     setError(null);
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -126,6 +141,14 @@ export function RecordAssessmentDialog({
       setError("Explain why this control doesn't apply.");
       return;
     }
+    if (!attestedRole.trim()) {
+      setError("Enter your role to sign this assessment.");
+      return;
+    }
+    if (!attestationChecked) {
+      setError("Confirm you have reviewed the evidence/reasons above before saving.");
+      return;
+    }
 
     setSubmitting(true);
     const payload: CreateNCAAssessmentPayload = {
@@ -146,6 +169,9 @@ export function RecordAssessmentDialog({
       remediation: remediation.trim() || null,
       remediation_due_date: remediationDueDate || null,
       assessed_by: assessedBy,
+      attested_role: attestedRole.trim(),
+      attestation_confirmed: true,
+      attestation_statement: ATTESTATION_STATEMENT,
     };
 
     try {
@@ -407,6 +433,39 @@ export function RecordAssessmentDialog({
             </div>
           </div>
 
+          <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <p className="text-xs font-semibold tracking-wide text-[var(--color-text)] uppercase">
+              Confirm &amp; sign
+            </p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={LABEL_CLASS} htmlFor="assessment-attested-role">
+                  Your role
+                </label>
+                <input
+                  id="assessment-attested-role"
+                  aria-label="Your role"
+                  value={attestedRole}
+                  onChange={(e) => setAttestedRole(e.target.value)}
+                  className={INPUT_CLASS}
+                  placeholder="e.g. Lead Auditor"
+                  required
+                />
+              </div>
+            </div>
+            <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs text-[var(--color-text-secondary)]">
+              <input
+                type="checkbox"
+                aria-label="Attestation confirmation"
+                checked={attestationChecked}
+                onChange={(e) => setAttestationChecked(e.target.checked)}
+                className="mt-0.5"
+                required
+              />
+              {ATTESTATION_STATEMENT}
+            </label>
+          </div>
+
           {error && <p className="text-sm text-[var(--color-critical)]">{error}</p>}
 
           <div className="flex justify-end gap-2 border-t border-[var(--color-border)] pt-4">
@@ -420,7 +479,7 @@ export function RecordAssessmentDialog({
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || !attestationChecked || !attestedRole.trim()}
               className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-foreground)] transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting ? "Saving…" : isRetest ? "Save retest" : "Save assessment"}

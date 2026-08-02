@@ -7,6 +7,11 @@ import type { Device, NCAAssessment, NCAControl } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
 
+async function signOff(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText("Your role"), "Lead Auditor");
+  await user.click(screen.getByLabelText("Attestation confirmation"));
+}
+
 const DEVICE_CONTROL: NCAControl = {
   id: "NCA-CGIoT-1_2024-2-2-2",
   framework: "NCA-CGIoT",
@@ -87,6 +92,9 @@ const EXISTING: NCAAssessment = {
   retested_at: null,
   superseded_by: null,
   created_at: "2026-07-20T00:00:00Z",
+  attested_role: "Lead Auditor",
+  attestation_confirmed: true,
+  attestation_statement: "Reviewed and certified.",
 };
 
 describe("RecordAssessmentDialog", () => {
@@ -126,6 +134,7 @@ describe("RecordAssessmentDialog", () => {
     await user.selectOptions(screen.getByLabelText("Status"), "pass");
     await user.type(screen.getByLabelText("Finding"), "Unique password enforced on first boot.");
     await user.type(screen.getByLabelText("Your name"), "auditor-1");
+    await signOff(user);
     await user.click(screen.getByRole("button", { name: /save assessment/i }));
 
     expect(createSpy).toHaveBeenCalledWith(
@@ -136,6 +145,8 @@ describe("RecordAssessmentDialog", () => {
         status: "pass",
         finding: "Unique password enforced on first boot.",
         assessed_by: "auditor-1",
+        attested_role: "Lead Auditor",
+        attestation_confirmed: true,
       }),
     );
     expect(onSaved).toHaveBeenCalled();
@@ -151,6 +162,7 @@ describe("RecordAssessmentDialog", () => {
 
     await user.selectOptions(screen.getByLabelText("Status"), "pass");
     await user.type(screen.getByLabelText("Your name"), "auditor-1");
+    await signOff(user);
     await user.click(screen.getByRole("button", { name: /save assessment/i }));
 
     expect(await screen.findByText(/choose a device/i)).toBeInTheDocument();
@@ -168,6 +180,7 @@ describe("RecordAssessmentDialog", () => {
     expect(screen.queryByLabelText("Device")).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Status"), "fail");
     await user.type(screen.getByLabelText("Your name"), "auditor-1");
+    await signOff(user);
     await user.click(screen.getByRole("button", { name: /save assessment/i }));
 
     expect(createSpy).toHaveBeenCalledWith(
@@ -191,6 +204,7 @@ describe("RecordAssessmentDialog", () => {
     await user.selectOptions(screen.getByLabelText("Applicability"), "not_applicable");
     await user.selectOptions(screen.getByLabelText("Status"), "not_tested");
     await user.type(screen.getByLabelText("Your name"), "auditor-1");
+    await signOff(user);
     await user.click(screen.getByRole("button", { name: /save assessment/i }));
 
     expect(await screen.findByText(/why doesn't this apply/i)).toBeInTheDocument();
@@ -220,6 +234,7 @@ describe("RecordAssessmentDialog", () => {
     await user.type(screen.getByLabelText("Finding"), "Password now unique per device.");
     await user.selectOptions(screen.getByLabelText("Status"), "pass");
     await user.type(screen.getByLabelText("Your name"), "auditor-2");
+    await signOff(user);
     await user.click(screen.getByRole("button", { name: /save retest/i }));
 
     expect(retestSpy).toHaveBeenCalledWith(
@@ -259,6 +274,7 @@ describe("RecordAssessmentDialog", () => {
     // Auditor still records the finding + their name, then confirms.
     await user.type(screen.getByLabelText("Finding"), "Confirmed: admin:admin accepted.");
     await user.type(screen.getByLabelText("Your name"), "auditor-1");
+    await signOff(user);
     await user.click(screen.getByRole("button", { name: /save assessment/i }));
 
     expect(createSpy).toHaveBeenCalledWith(
@@ -306,9 +322,55 @@ describe("RecordAssessmentDialog", () => {
 
     await user.selectOptions(screen.getByLabelText("Status"), "fail");
     await user.type(screen.getByLabelText("Your name"), "auditor-1");
+    await signOff(user);
     await user.click(screen.getByRole("button", { name: /save assessment/i }));
 
     expect(await screen.findByText(/could not save the assessment/i)).toBeInTheDocument();
+  });
+
+  it("disables Save until a role is entered and the attestation checkbox is checked", async () => {
+    const createSpy = vi.spyOn(api, "createNcaAssessment").mockResolvedValue(EXISTING);
+    const user = userEvent.setup();
+
+    render(
+      <RecordAssessmentDialog open control={ORG_CONTROL} devices={DEVICES} onSaved={() => {}} onCancel={() => {}} />,
+    );
+
+    await user.selectOptions(screen.getByLabelText("Status"), "fail");
+    await user.type(screen.getByLabelText("Your name"), "auditor-1");
+    const saveButton = screen.getByRole("button", { name: /save assessment/i });
+    expect(saveButton).toBeDisabled();
+
+    await user.type(screen.getByLabelText("Your role"), "Lead Auditor");
+    expect(saveButton).toBeDisabled();
+
+    await user.click(screen.getByLabelText("Attestation confirmation"));
+    expect(saveButton).toBeEnabled();
+
+    await user.click(saveButton);
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attested_role: "Lead Auditor",
+        attestation_confirmed: true,
+        attestation_statement: expect.stringContaining("reviewed the evidence"),
+      }),
+    );
+  });
+
+  it("resets the sign-off fields every time the dialog opens, including on retest", () => {
+    render(
+      <RecordAssessmentDialog
+        open
+        control={DEVICE_CONTROL}
+        devices={DEVICES}
+        existingAssessment={EXISTING}
+        onSaved={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText("Your role")).toHaveValue("");
+    expect(screen.getByLabelText("Attestation confirmation")).not.toBeChecked();
   });
 
   it("calls onCancel when Cancel is clicked", async () => {
