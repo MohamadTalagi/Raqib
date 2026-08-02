@@ -88,6 +88,16 @@ def test_manifest_check_reports_real_packages(fmt, tmp_path, monkeypatch):
     assert "grype_result=" not in output
 
 
+@BOTH_FORMATS
+def test_pqc_crypto_check_flags_the_outdated_openssl_and_leaves_busybox_unknown(fmt, tmp_path):
+    output = _run("pqc_crypto", _variant(fmt, "device-insecure", tmp_path))
+    assert "manifest_present=True" in output
+    line = next(l for l in output.splitlines() if l.startswith("pqc_results="))
+    results = {r["name"]: r["pqc_status"] for r in json.loads(line[len("pqc_results="):])}
+    assert results["openssl"] == "fail"  # 1.0.1e predates PQC support entirely
+    assert results["busybox"] == "unknown"  # not a recognized crypto library
+
+
 def test_manifest_check_includes_grype_result_when_available(tmp_path, monkeypatch):
     canned = [{
         "package": "openssl", "version": "1.0.1e", "id": "CVE-2014-0160",

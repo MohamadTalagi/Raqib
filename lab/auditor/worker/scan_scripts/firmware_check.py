@@ -24,6 +24,7 @@ from lab.auditor.worker.firmware.archive_reader import Member, open_archive
 from lab.auditor.worker.firmware.scan_firmware import MAX_MEMBER_BYTES, scan_archive
 from lab.auditor.worker.scan_scripts import cisa_kev
 from lab.auditor.worker.scan_scripts.sbom import build_cyclonedx_sbom
+from policies.catalog.pqc_crypto_reference import firmware_crypto_pqc_status
 
 DOCUMENT_STORE_DIR = Path(os.environ.get("DOCUMENT_STORE_DIR", "/work/document-store"))
 
@@ -191,6 +192,29 @@ def check_manifest(members: list[Member], archive_path: Path) -> None:
                 print(f"grype_db_checksum={db_status['checksum']}")
 
 
+def check_pqc_crypto(members: list[Member], archive_path: Path) -> None:
+    """Post-Quantum Readiness bonus stage (informational only - never
+    touches policies/risk/risk_engine.py): does this device's firmware
+    declare a crypto library version known to support PQC? Reuses the same
+    manifest.json package list check_manifest() already parses, classified
+    against pqc_crypto_reference.py's verified-not-guessed lookup table."""
+    member = next((m for m in members if m.is_file and m.name == "manifest.json"), None)
+    present = member is not None
+    packages: list[tuple[str, str]] = []
+    if present:
+        try:
+            manifest = json.loads(_read_member(member).decode(errors="replace"))
+            packages = [(p.get("name", ""), p.get("version", "")) for p in manifest.get("packages", [])]
+        except (json.JSONDecodeError, AttributeError):
+            pass
+    print(f"manifest_present={present}")
+    results = [
+        {"name": name, "version": version, "pqc_status": firmware_crypto_pqc_status(name, version)}
+        for name, version in packages
+    ]
+    print(f"pqc_results={json.dumps(results)}")
+
+
 def check_updatescript(members: list[Member], archive_path: Path) -> None:
     # Prefer the well-known name, then any executable-bit file. A zip made on
     # Windows carries no unix mode (mode == 0), so the name match is what
@@ -213,6 +237,7 @@ CHECKS = {
     "certkey": check_certkey,
     "manifest": check_manifest,
     "updatescript": check_updatescript,
+    "pqc_crypto": check_pqc_crypto,
 }
 
 

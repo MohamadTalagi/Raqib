@@ -47,6 +47,13 @@ names exactly, or verdict recomputation silently stops matching them.
 import json
 import re
 
+from policies.catalog.pqc_crypto_reference import (
+    TIP_CERT_SIGNATURE_FAIL,
+    TIP_FIRMWARE_CRYPTO_FAIL,
+    TIP_FIRMWARE_CRYPTO_UNKNOWN,
+    TIP_TLS_KEY_EXCHANGE_FAIL,
+    firmware_crypto_pqc_status,
+)
 from policies.catalog.vuln_reference import lookup_component
 
 HTTP_SERVICE_TYPES = ("http", "https")
@@ -78,6 +85,11 @@ CATEGORY_NETWORK_DISCOVERY = "network-discovery"
 PIPELINE_PHASE_FINGERPRINTING = "fingerprinting"
 PIPELINE_PHASE_SA_IOT_COMPLIANCE = "sa_iot_compliance"
 PIPELINE_PHASE_VULN_INTELLIGENCE = "vuln_intelligence"
+# Post-Quantum Readiness: a bonus stage beyond IoTGuard's original 10-stage
+# vision, sitting after AI Remediation and before the AI Executive Summary.
+# Purely informational - never feeds policies/risk/risk_engine.py, never a
+# fourth SA-IOT/NCA-style compliance framework requiring sign-off.
+PIPELINE_PHASE_PQC_READINESS = "pqc_readiness"
 
 # Mirrors device_validation.ALLOWED_NETWORK (audit-network) - duplicated as a
 # plain string here rather than imported, since scan_tests.py is shared code
@@ -914,6 +926,73 @@ def _suggest_confidence_tls(observations: dict) -> str:
     return "high"
 
 
+PQC_READINESS_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/pqc_readiness_check.py"
+
+# The 4 hybrid PQC group names and the classical signature-algorithm names
+# below were confirmed live against this project's own auditor-worker image
+# (OpenSSL 3.5.6) via `openssl list -kem-algorithms`/`-signature-algorithms`
+# before being written down - never assumed from documentation alone (see
+# docs/pqc-readiness.md).
+PQC_HYBRID_GROUPS = {"X25519MLKEM768", "SecP256r1MLKEM768", "X448MLKEM1024", "SecP384r1MLKEM1024"}
+PQC_SIGNATURE_MARKERS = ("ml-dsa", "dilithium", "slh-dsa", "sphincs")
+
+
+def _pqc_tls_command(target: dict) -> list[str]:
+    return ["python3", PQC_READINESS_CHECK_SCRIPT, target["host"], str(target["port"])]
+
+
+def _parse_pqc_tls_observations(target: dict, output: str) -> dict:
+    group_match = re.search(r"Negotiated TLS1\.3 group:\s*(\S+)", output)
+    negotiated_group = group_match.group(1) if group_match else None
+    cert_found = "cert_pem_found=True" in output
+    sig_match = re.search(r"Signature Algorithm:\s*(\S+)", output)
+    signature_algorithm = sig_match.group(1) if sig_match else None
+
+    # A device with a registered TLS service that's simply unreachable at
+    # scan time (real infra flakiness) must read as indeterminate, never a
+    # fabricated FAIL - distinct from a real handshake that negotiated a
+    # classical group on purpose.
+    connection_error = negotiated_group is None and not cert_found
+
+    is_pqc_kem = negotiated_group in PQC_HYBRID_GROUPS if negotiated_group else None
+    is_pqc_signature = (
+        any(marker in signature_algorithm.lower() for marker in PQC_SIGNATURE_MARKERS)
+        if signature_algorithm
+        else None
+    )
+
+    notes = []
+    if connection_error:
+        notes.append(
+            "Could not complete a TLS handshake against this service to check post-quantum "
+            "readiness - the service may be down or unreachable right now.",
+        )
+    else:
+        if is_pqc_kem is False:
+            notes.append(TIP_TLS_KEY_EXCHANGE_FAIL)
+        elif is_pqc_kem is True:
+            notes.append(f"Negotiated a hybrid post-quantum key exchange group ({negotiated_group}).")
+        if is_pqc_signature is False:
+            notes.append(TIP_CERT_SIGNATURE_FAIL)
+        elif is_pqc_signature is True:
+            notes.append(f"Certificate is signed with a post-quantum algorithm ({signature_algorithm}).")
+    if not cert_found and not connection_error:
+        notes.append("Could not extract a certificate from the handshake to check its signature algorithm.")
+
+    return {
+        "negotiated_group": negotiated_group,
+        "is_pqc_kem": is_pqc_kem,
+        "cert_signature_algorithm": signature_algorithm,
+        "is_pqc_signature": is_pqc_signature,
+        "connection_error": connection_error,
+        "notes": notes,
+    }
+
+
+def _suggest_confidence_pqc_tls(observations: dict) -> str:
+    return "medium" if observations.get("connection_error") else "high"
+
+
 TLS_CLIENT_AUTH_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/tls_client_auth_check.py"
 
 
@@ -1225,6 +1304,40 @@ def _suggest_confidence_fw_manifest(observations: dict) -> str:
     return "high"
 
 
+def _parse_pqc_firmware_observations(target: dict, output: str) -> dict:
+    present = "manifest_present=True" in output
+    results_line = re.search(r"^pqc_results=(.*)$", output, re.MULTILINE)
+    packages = []
+    if present and results_line and results_line.group(1):
+        try:
+            packages = json.loads(results_line.group(1))
+        except json.JSONDecodeError:
+            packages = []
+
+    notes = []
+    if not present:
+        notes.append("No firmware manifest was found - this criterion is not yet assessable for this device.")
+    else:
+        failing = [p for p in packages if p["pqc_status"] == "fail"]
+        unknown = [p for p in packages if p["pqc_status"] == "unknown"]
+        if failing:
+            notes.append(TIP_FIRMWARE_CRYPTO_FAIL)
+        if unknown and not failing:
+            notes.append(TIP_FIRMWARE_CRYPTO_UNKNOWN)
+        if not failing and not unknown and packages:
+            notes.append("Every recognized crypto library in this firmware's manifest supports post-quantum cryptography.")
+
+    return {
+        "manifest_present": present,
+        "packages": packages,
+        "notes": notes,
+    }
+
+
+def _suggest_confidence_pqc_firmware(observations: dict) -> str:
+    return "high" if observations.get("manifest_present") else "medium"
+
+
 def _parse_fw_updatescript_observations(target: dict, output: str) -> dict:
     present = "update_script_present=True" in output
     first_line = re.search(r"^first_line=(.*)$", output, re.MULTILINE)
@@ -1442,6 +1555,22 @@ SCAN_CATALOG = {
         "parse_observations": _parse_tls_client_auth_observations,
         "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
+    "TEST-PQC-TLS-HANDSHAKE": {
+        "label": "Post-quantum TLS readiness",
+        "tool": "python3 (openssl)",
+        "tool_version_command": ["openssl", "version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": TLS_SERVICE_TYPES,
+        "build_command": _pqc_tls_command,
+        "parse_observations": _parse_pqc_tls_observations,
+        "suggest_confidence": _suggest_confidence_pqc_tls,
+        "pipeline_phase": PIPELINE_PHASE_PQC_READINESS,
+        # Two handshakes (negotiated group, then a second for the cert's own
+        # signature algorithm) - same 2-handshake shape as TEST-TLS-CONFIG,
+        # generous headroom above job_runner.py's 30s default for the same
+        # reason.
+        "timeout_seconds": 60,
+    },
     "TEST-SECURITY-LOG-ENDPOINT": {
         "label": "Security/access log endpoint",
         "tool": "curl",
@@ -1522,6 +1651,17 @@ SCAN_CATALOG = {
         "parse_observations": _parse_fw_manifest_observations,
         "suggest_confidence": _suggest_confidence_fw_manifest,
         "pipeline_phase": PIPELINE_PHASE_VULN_INTELLIGENCE,
+    },
+    "TEST-PQC-FIRMWARE-CRYPTO": {
+        "label": "Post-quantum firmware crypto currency",
+        "tool": "python3",
+        "tool_version_command": ["python3", "--version"],
+        "category": CATEGORY_FIRMWARE,
+        "applicable_service_types": (),
+        "build_command": _firmware_command("pqc_crypto"),
+        "parse_observations": _parse_pqc_firmware_observations,
+        "suggest_confidence": _suggest_confidence_pqc_firmware,
+        "pipeline_phase": PIPELINE_PHASE_PQC_READINESS,
     },
     "TEST-FW-UPDATESCRIPT": {
         "label": "Update script",

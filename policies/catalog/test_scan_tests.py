@@ -3,6 +3,7 @@ import json
 from policies.catalog.scan_tests import (
     ALL_SERVICE_TYPES,
     PIPELINE_PHASE_FINGERPRINTING,
+    PIPELINE_PHASE_PQC_READINESS,
     PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     PIPELINE_PHASE_VULN_INTELLIGENCE,
     SCAN_CATALOG,
@@ -1167,6 +1168,8 @@ def test_every_test_id_has_the_expected_pipeline_phase():
         "TEST-TLS-CLIENT-AUTH": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         "TEST-SECURITY-LOG-ENDPOINT": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         "TEST-MONITORING-ENDPOINT": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+        "TEST-PQC-TLS-HANDSHAKE": PIPELINE_PHASE_PQC_READINESS,
+        "TEST-PQC-FIRMWARE-CRYPTO": PIPELINE_PHASE_PQC_READINESS,
     }
     assert set(expected) == set(SCAN_CATALOG)  # catches a new test added with no phase decision made
     for test_id, phase in expected.items():
@@ -1394,6 +1397,112 @@ def test_tls_client_auth_parses_no_certificate_request_honestly():
     observations = _parse_tls_client_auth_observations(HTTPS_TARGET, output)
     assert observations["client_cert_requested"] is False
     assert "no cryptographic peer authentication" in observations["notes"][0]
+
+
+def test_pqc_tls_command_uses_the_worker_probe_script():
+    from policies.catalog.scan_tests import PQC_READINESS_CHECK_SCRIPT, _pqc_tls_command
+
+    command = _pqc_tls_command(HTTPS_TARGET)
+    assert command == ["python3", PQC_READINESS_CHECK_SCRIPT, "device-hardened", "443"]
+
+
+def test_pqc_tls_parses_a_real_hybrid_kem_and_classical_signature():
+    from policies.catalog.scan_tests import _parse_pqc_tls_observations
+
+    # Matches the real shape confirmed live against device-hardened in this
+    # lab: hybrid KEM negotiated, but the cert is still classically signed.
+    output = (
+        "Negotiated TLS1.3 group: X25519MLKEM768\n"
+        "cert_pem_found=True\n"
+        "        Signature Algorithm: sha256WithRSAEncryption\n"
+    )
+    observations = _parse_pqc_tls_observations(HTTPS_TARGET, output)
+    assert observations["negotiated_group"] == "X25519MLKEM768"
+    assert observations["is_pqc_kem"] is True
+    assert observations["cert_signature_algorithm"] == "sha256WithRSAEncryption"
+    assert observations["is_pqc_signature"] is False
+    assert observations["connection_error"] is False
+    assert any("post-quantum signature algorithm" in n.lower() for n in observations["notes"])
+
+
+def test_pqc_tls_parses_a_classical_only_kem_as_failing():
+    from policies.catalog.scan_tests import _parse_pqc_tls_observations
+
+    output = "Negotiated TLS1.3 group: X25519\ncert_pem_found=False\n"
+    observations = _parse_pqc_tls_observations(HTTPS_TARGET, output)
+    assert observations["is_pqc_kem"] is False
+    assert observations["connection_error"] is False
+    assert any("classical-only" in n for n in observations["notes"])
+
+
+def test_pqc_tls_reports_connection_error_honestly_not_as_a_failure():
+    from policies.catalog.scan_tests import _parse_pqc_tls_observations
+
+    output = "BIO_connect:Connection refused\n"
+    observations = _parse_pqc_tls_observations(HTTPS_TARGET, output)
+    assert observations["connection_error"] is True
+    assert observations["is_pqc_kem"] is None
+    assert observations["is_pqc_signature"] is None
+    assert any("could not complete a tls handshake" in n.lower() for n in observations["notes"])
+
+
+def test_pqc_tls_recognizes_a_post_quantum_signature_algorithm():
+    from policies.catalog.scan_tests import _parse_pqc_tls_observations
+
+    output = (
+        "Negotiated TLS1.3 group: X25519MLKEM768\n"
+        "cert_pem_found=True\n"
+        "        Signature Algorithm: id-ml-dsa-65\n"
+    )
+    observations = _parse_pqc_tls_observations(HTTPS_TARGET, output)
+    assert observations["is_pqc_signature"] is True
+
+
+def test_suggest_confidence_pqc_tls_is_medium_on_connection_error():
+    from policies.catalog.scan_tests import _suggest_confidence_pqc_tls
+
+    assert _suggest_confidence_pqc_tls({"connection_error": True}) == "medium"
+    assert _suggest_confidence_pqc_tls({"connection_error": False}) == "high"
+
+
+def test_pqc_firmware_command_uses_the_firmware_check_script_with_pqc_crypto_check():
+    from policies.catalog.scan_tests import FIRMWARE_CHECK_SCRIPT, _firmware_command
+
+    command = _firmware_command("pqc_crypto")(FIRMWARE_TARGET)
+    assert command == ["python3", FIRMWARE_CHECK_SCRIPT, "device-insecure", "pqc_crypto"]
+
+
+def test_parse_pqc_firmware_observations_flags_an_outdated_library():
+    from policies.catalog.scan_tests import _parse_pqc_firmware_observations
+
+    output = (
+        "manifest_present=True\n"
+        'pqc_results=[{"name": "openssl", "version": "1.0.1e", "pqc_status": "fail"}]\n'
+    )
+    observations = _parse_pqc_firmware_observations(FIRMWARE_TARGET, output)
+    assert observations["manifest_present"] is True
+    assert observations["packages"][0]["pqc_status"] == "fail"
+    assert any("predates post-quantum support" in n for n in observations["notes"])
+
+
+def test_parse_pqc_firmware_observations_passes_a_current_library():
+    from policies.catalog.scan_tests import _parse_pqc_firmware_observations
+
+    output = (
+        "manifest_present=True\n"
+        'pqc_results=[{"name": "openssl", "version": "3.5.6", "pqc_status": "pass"}]\n'
+    )
+    observations = _parse_pqc_firmware_observations(FIRMWARE_TARGET, output)
+    assert any("supports post-quantum cryptography" in n for n in observations["notes"])
+
+
+def test_parse_pqc_firmware_observations_is_honest_about_no_manifest():
+    from policies.catalog.scan_tests import _parse_pqc_firmware_observations
+
+    observations = _parse_pqc_firmware_observations(FIRMWARE_TARGET, "manifest_present=False\n")
+    assert observations["manifest_present"] is False
+    assert observations["packages"] == []
+    assert any("not yet assessable" in n for n in observations["notes"])
 
 
 def test_security_log_endpoint_command_chains_every_candidate_path():
