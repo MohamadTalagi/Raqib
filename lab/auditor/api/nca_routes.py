@@ -1235,6 +1235,33 @@ def reject_exception(exception_id: str, payload: dict):
     return after_value
 
 
+@router.get("/assessments")
+def list_all_assessments(status: str | None = None):
+    """Flat, fleet-wide list of the latest non-superseded assessment per
+    (control_id, scope) - the NCA equivalent of GET /verdicts. Every other
+    NCA read endpoint is scoped to one device, one control, or the single
+    organizational scope; nothing lists "every currently-failing assessment
+    across the whole fleet" in one call - built for the Remediation page,
+    but generically useful beyond it, same as GET /verdicts already is."""
+    conn = get_connection()
+    try:
+        query = f"""
+            SELECT DISTINCT ON (control_id, COALESCE(device_id, organizational_scope_id))
+                   {ASSESSMENT_COLUMNS}
+            FROM compliance_assessments
+            WHERE superseded_by IS NULL
+        """
+        params: list = []
+        if status is not None:
+            query += " AND status = %s"
+            params.append(status)
+        query += " ORDER BY control_id, COALESCE(device_id, organizational_scope_id), assessed_at DESC"
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+    return [_row_to_assessment(r) for r in rows]
+
+
 # ---------------------------------------------------------------------------
 # Organizational compliance (single fixed scope: "default")
 # ---------------------------------------------------------------------------

@@ -866,3 +866,59 @@ def test_coverage_reports_total_and_guided_or_automated_counts(client, conn):
     assert body["automated_or_hybrid_count"] == 2
     assert body["checklist_count"] == 1
     assert body["guided_or_automated_count"] == 3
+
+
+def _assessment_payload(**overrides):
+    payload = {
+        "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+        "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+        "attested_role": "Lead Auditor", "attestation_confirmed": True,
+        "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_list_all_assessments_returns_only_the_latest_non_superseded_row(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    first = client.post("/nca/assessments", json=_assessment_payload()).json()
+    client.post(f"/nca/assessments/{first['id']}/retest", json=_assessment_payload(status="pass"))
+
+    body = client.get("/nca/assessments").json()
+    matching = [a for a in body if a["control_id"] == CONTROL_ID and a["device_id"] == "cam-1"]
+    assert len(matching) == 1
+    assert matching[0]["status"] == "pass"
+    assert matching[0]["superseded_by"] is None
+
+
+def test_list_all_assessments_filters_by_status(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "cam-1")
+    _register_device(conn, "cam-2")
+    client.post("/nca/assessments", json=_assessment_payload(device_id="cam-1", status="fail"))
+    client.post("/nca/assessments", json=_assessment_payload(device_id="cam-2", status="pass"))
+
+    failing = client.get("/nca/assessments", params={"status": "fail"}).json()
+    assert all(a["status"] == "fail" for a in failing)
+    assert any(a["device_id"] == "cam-1" for a in failing)
+    assert not any(a["device_id"] == "cam-2" for a in failing)
+
+
+def test_list_all_assessments_spans_device_and_organizational_scope(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _seed_control(conn, "NCA-CGIoT-1_2024-1-1-1", domain_id="1", scope_type="organization")
+    _register_device(conn)
+    client.post("/nca/assessments", json=_assessment_payload())
+    client.post(
+        "/nca/assessments",
+        json=_assessment_payload(
+            control_id="NCA-CGIoT-1_2024-1-1-1", device_id=None,
+            organizational_scope_id="default", status="pass", test_method="manual",
+        ),
+    )
+
+    body = client.get("/nca/assessments").json()
+    control_ids = {a["control_id"] for a in body}
+    assert CONTROL_ID in control_ids
+    assert "NCA-CGIoT-1_2024-1-1-1" in control_ids

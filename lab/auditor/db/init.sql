@@ -329,3 +329,26 @@ CREATE TABLE report_records (
 );
 
 CREATE INDEX idx_report_records_device_id ON report_records(device_id);
+
+-- AI-Assisted Remediation (IoTGuard Stage 07) - see
+-- 014-remediation-blueprints.sql for the full rationale.
+CREATE TABLE remediation_blueprints (
+    id                 TEXT PRIMARY KEY,
+    finding_type       TEXT NOT NULL CHECK (finding_type IN ('sa_iot_verdict', 'nca_assessment')),
+    finding_id         TEXT NOT NULL,
+    device_id          TEXT REFERENCES devices(device_id) ON DELETE SET NULL,
+    control_id         TEXT NOT NULL,
+    model              TEXT NOT NULL,
+    root_cause         TEXT NOT NULL,
+    remediation_steps  JSONB NOT NULL,
+    priority           TEXT NOT NULL CHECK (priority IN ('immediate', 'short_term', 'long_term')),
+    estimated_effort   TEXT,
+    caveats            TEXT,
+    generated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    reviewed           BOOLEAN NOT NULL DEFAULT false,
+    reviewed_by        TEXT,
+    reviewed_at        TIMESTAMPTZ,
+    superseded_by      TEXT REFERENCES remediation_blueprints(id)
+);
+
+CREATE INDEX idx_remediation_blueprints_finding ON remediation_blueprints (finding_type, finding_id);
