@@ -52,7 +52,13 @@ from policies.catalog.vuln_reference import lookup_component
 HTTP_SERVICE_TYPES = ("http", "https")
 MQTT_SERVICE_TYPES = ("mqtt", "mqtts")
 TLS_SERVICE_TYPES = ("https", "mqtts")
-ALL_SERVICE_TYPES = ("http", "https", "mqtt", "mqtts", "telnet", "ssh")
+MODBUS_SERVICE_TYPES = ("modbus",)
+RTSP_SERVICE_TYPES = ("rtsp",)
+UPNP_SERVICE_TYPES = ("upnp",)
+MDNS_SERVICE_TYPES = ("mdns",)
+ALL_SERVICE_TYPES = (
+    "http", "https", "mqtt", "mqtts", "telnet", "ssh", "modbus", "rtsp", "upnp", "mdns",
+)
 
 DEFAULT_SCHEME_PORTS = {"http": 80, "https": 443}
 
@@ -188,6 +194,156 @@ def _parse_nmap_observations(target: dict, output: str) -> dict:
     }
 
 
+def _modbus_probe_command(target: dict) -> list[str]:
+    # No -sV: confirmed live that nmap's generic service-version probes hang
+    # against this fixture's minimal pymodbus TCP server, which (like many
+    # real Modbus devices) never responds to a malformed/non-Modbus probe at
+    # all rather than rejecting it - nmap then waits out its full per-probe
+    # timeout. The modbus-discover script alone already identifies the
+    # service and is real Modbus traffic our server does answer.
+    # --script-timeout bounds the script itself: it can genuinely hang on a
+    # server that doesn't answer whatever slave-id/function-code it tries,
+    # which is itself an honest, real finding (see
+    # _parse_modbus_probe_observations's "port open but no script data"
+    # branch), not something to retry indefinitely for.
+    return [
+        "nmap", "--script-timeout", "10s", "--script", "modbus-discover",
+        "-p", str(target["port"]), target["host"],
+    ]
+
+
+def _parse_modbus_probe_observations(target: dict, output: str) -> dict:
+    port_open = re.search(rf"{target['port']}/tcp\s+open", output) is not None
+    script_match = re.search(r"modbus-discover:\s*\n((?:\|.*\n?)*)", output)
+    script_output = script_match.group(1).strip() if script_match else None
+    if port_open and script_output:
+        notes = [
+            "Modbus TCP answered an unauthenticated discovery probe - the protocol "
+            "has no native authentication or encryption, so any network-adjacent "
+            "client can read or write this device's registers and coils.",
+        ]
+    elif port_open:
+        notes = [
+            "Modbus TCP port is open but the discovery script returned no data - "
+            "manually verify read/write access with a Modbus client.",
+        ]
+    else:
+        notes = [f"Modbus TCP port {target['port']} did not respond as open."]
+    return {"modbus_port_open": port_open, "script_output": script_output, "notes": notes}
+
+
+def _rtsp_probe_command(target: dict) -> list[str]:
+    # No -sV, same reason as _modbus_probe_command: confirmed live it hangs
+    # against this fixture's minimal RTSP responder, which keeps a
+    # connection open rather than closing it the way nmap's generic probes
+    # expect. rtsp-methods alone (real RTSP OPTIONS traffic) already
+    # identifies the service and completes in well under a second.
+    return [
+        "nmap", "--script-timeout", "10s", "--script", "rtsp-methods",
+        "-p", str(target["port"]), target["host"],
+    ]
+
+
+def _parse_rtsp_probe_observations(target: dict, output: str) -> dict:
+    port_open = re.search(rf"{target['port']}/tcp\s+open", output) is not None
+    # nmap actually prints this on one line (confirmed live):
+    # "|_rtsp-methods: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN" -
+    # not the 2-line "label, then |_ continuation" shape modbus-discover
+    # uses. \n? tolerates either shape rather than assuming one.
+    methods_match = re.search(r"rtsp-methods:\s*\n?\|?_?\s*(.+)", output)
+    methods = [m.strip() for m in methods_match.group(1).split(",")] if methods_match else []
+    unauthenticated_stream_access = "DESCRIBE" in methods or "PLAY" in methods
+    if unauthenticated_stream_access:
+        notes = [
+            "RTSP responded to DESCRIBE/PLAY with no authentication challenge - "
+            "the video stream can be viewed by any network-adjacent client.",
+        ]
+    elif port_open:
+        notes = ["RTSP port is open but did not advertise DESCRIBE/PLAY - re-check manually."]
+    else:
+        notes = [f"RTSP port {target['port']} did not respond as open."]
+    return {
+        "rtsp_port_open": port_open,
+        "methods": methods,
+        "unauthenticated_stream_access": unauthenticated_stream_access,
+        "notes": notes,
+    }
+
+
+UPNP_PROBE_SCRIPT = "/work/lab/auditor/worker/scan_scripts/upnp_probe.py"
+
+
+def _upnp_probe_command(target: dict) -> list[str]:
+    return ["python3", UPNP_PROBE_SCRIPT, target["host"], str(target["port"])]
+
+
+def _parse_upnp_probe_observations(target: dict, output: str) -> dict:
+    reachable = "reachable=True" in output
+    response_match = re.search(r"response_start\n(.*?)\nresponse_end", output, re.DOTALL)
+    response = response_match.group(1) if response_match else None
+    server_match = re.search(r"^SERVER:\s*(.+)$", response or "", re.IGNORECASE | re.MULTILINE)
+    server = server_match.group(1).strip() if server_match else None
+    if reachable:
+        detail = f" (SERVER: {server})" if server else ""
+        notes = [
+            f"Device answered an unauthenticated SSDP M-SEARCH query{detail} - "
+            "UPnP discovery requires no credentials by protocol design, and this "
+            "device's port-mapping API accepts requests the same way.",
+        ]
+    else:
+        notes = ["No SSDP response received."]
+    return {"upnp_reachable": reachable, "server_banner": server, "notes": notes}
+
+
+MDNS_PROBE_SCRIPT = "/work/lab/auditor/worker/scan_scripts/mdns_probe.py"
+
+
+def _mdns_probe_command(target: dict) -> list[str]:
+    return ["python3", MDNS_PROBE_SCRIPT, target["host"], str(target["port"])]
+
+
+def _decode_mdns_txt_record(packet: bytes) -> dict | None:
+    """Decodes the TXT record produced by device-speaker's own responder
+    (lab/devices/smart-speaker/app/mdns_server.py) - a private wire-format
+    contract between that fixture and this probe, not a general-purpose
+    mDNS/DNS-SD parser. Returns None rather than raising on anything
+    malformed or truncated, since a real device might not use this exact
+    shape."""
+    try:
+        offset = 12
+        labels = []
+        while packet[offset] != 0:
+            length = packet[offset]
+            offset += 1
+            labels.append(packet[offset : offset + length].decode())
+            offset += length
+        offset += 1
+        name = ".".join(labels)
+        offset += 8
+        offset += 2  # RDLENGTH
+        txt_length = packet[offset]
+        txt = packet[offset + 1 : offset + 1 + txt_length].decode()
+        return {"name": name, "txt": dict(pair.split("=", 1) for pair in txt.split(";"))}
+    except (IndexError, UnicodeDecodeError, ValueError):
+        return None
+
+
+def _parse_mdns_probe_observations(target: dict, output: str) -> dict:
+    reachable = "reachable=True" in output
+    hex_match = re.search(r"response_hex=([0-9a-f]+)", output)
+    record = _decode_mdns_txt_record(bytes.fromhex(hex_match.group(1))) if hex_match else None
+    if record:
+        notes = [
+            f"Device answered an unauthenticated mDNS query, disclosing "
+            f"{record['txt']} in plaintext - mDNS has no access control by design.",
+        ]
+    elif reachable:
+        notes = ["mDNS responder answered but the record could not be decoded."]
+    else:
+        notes = ["No mDNS response received."]
+    return {"mdns_reachable": reachable, "txt_record": record, "notes": notes}
+
+
 # Signature ports used to classify a discovered host without a live target
 # (this test scans the whole audit-network subnet, not one registered
 # device - see _network_discovery_command). Split into two tiers rather than
@@ -197,7 +353,16 @@ def _parse_nmap_observations(target: dict, output: str) -> dict:
 # remote-administration protocols that plenty of non-IoT network gear (a
 # switch, a legacy print server, a jump host) also expose - conflating the
 # two would overclaim confidence the port alone doesn't support.
-IOT_SIGNATURE_PORTS = frozenset({80, 443, 1883, 8883})
+#
+# 502 (Modbus) and 554 (RTSP) are added here since both are TCP and this
+# sweep's nmap invocation is TCP-only (-sV with no -sU). 1900 (SSDP/UPnP) and
+# 5353 (mDNS) are deliberately NOT added - both are UDP-only services, so a
+# TCP-only sweep can never see them "open" no matter what's in this port
+# list. This is a real, documented scope limit, not an oversight: both of
+# this project's UDP-only fixtures (device-router-gw, device-speaker) also
+# expose an HTTP admin UI on port 80, so they still classify as iot_device
+# via that signature alone.
+IOT_SIGNATURE_PORTS = frozenset({80, 443, 1883, 8883, 502, 554})
 AMBIGUOUS_PORTS = frozenset({22, 23})
 NETWORK_DISCOVERY_PORTS = sorted(IOT_SIGNATURE_PORTS | AMBIGUOUS_PORTS)
 
@@ -455,6 +620,28 @@ def _parse_anon_access_observations(target: dict, output: str) -> dict:
         "api_key_exposed": api_key_exposed,
         "notes": notes,
     }
+
+
+def _tamper_status_command(target: dict) -> list[str]:
+    scheme = _scheme_for(target)
+    flags = _http_flags(scheme)
+    authority = _authority_for(target, scheme)
+    return ["curl", *flags, f"{scheme}://{authority}/api/status"]
+
+
+def _parse_tamper_status_observations(target: dict, output: str) -> dict:
+    wired_match = re.search(r'"tamper_detection_wired"\s*:\s*(true|false)', output, re.IGNORECASE)
+    tamper_detection_wired = bool(wired_match) and wired_match.group(1).lower() == "true"
+    if wired_match and not tamper_detection_wired:
+        notes = [
+            "This device reports no hardware tamper-detection mechanism wired "
+            "up - physical tampering or removal would go undetected.",
+        ]
+    elif wired_match:
+        notes = ["Hardware tamper detection is reported as wired up on this device."]
+    else:
+        notes = ["This endpoint did not report a tamper-detection status."]
+    return {"tamper_detection_wired": tamper_detection_wired, "notes": notes}
 
 
 def _session_command(target: dict) -> list[str]:
@@ -1022,6 +1209,46 @@ SCAN_CATALOG = {
         "parse_observations": _parse_nmap_observations,
         "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
     },
+    "TEST-MODBUS-PROBE": {
+        "label": "Modbus TCP discovery",
+        "tool": "nmap",
+        "tool_version_command": ["nmap", "--version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": MODBUS_SERVICE_TYPES,
+        "build_command": _modbus_probe_command,
+        "parse_observations": _parse_modbus_probe_observations,
+        "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
+    },
+    "TEST-RTSP-PROBE": {
+        "label": "RTSP stream authentication",
+        "tool": "nmap",
+        "tool_version_command": ["nmap", "--version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": RTSP_SERVICE_TYPES,
+        "build_command": _rtsp_probe_command,
+        "parse_observations": _parse_rtsp_probe_observations,
+        "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
+    },
+    "TEST-UPNP-PROBE": {
+        "label": "UPnP/SSDP discovery",
+        "tool": "python3 (socket)",
+        "tool_version_command": ["python3", "--version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": UPNP_SERVICE_TYPES,
+        "build_command": _upnp_probe_command,
+        "parse_observations": _parse_upnp_probe_observations,
+        "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
+    },
+    "TEST-MDNS-PROBE": {
+        "label": "mDNS discovery",
+        "tool": "python3 (socket)",
+        "tool_version_command": ["python3", "--version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": MDNS_SERVICE_TYPES,
+        "build_command": _mdns_probe_command,
+        "parse_observations": _parse_mdns_probe_observations,
+        "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
+    },
     "TEST-AUTH-DEFAULT-CREDS": {
         "label": "Default credentials",
         "tool": "curl",
@@ -1051,6 +1278,16 @@ SCAN_CATALOG = {
         "applicable_service_types": HTTP_SERVICE_TYPES,
         "build_command": _anon_access_command,
         "parse_observations": _parse_anon_access_observations,
+        "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+    },
+    "TEST-PHYSICAL-TAMPER-STATUS": {
+        "label": "Hardware tamper detection status",
+        "tool": "curl",
+        "tool_version_command": ["curl", "--version"],
+        "category": CATEGORY_WEB_AUTH,
+        "applicable_service_types": HTTP_SERVICE_TYPES,
+        "build_command": _tamper_status_command,
+        "parse_observations": _parse_tamper_status_observations,
         "pipeline_phase": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     },
     "TEST-AUTH-SESSION": {

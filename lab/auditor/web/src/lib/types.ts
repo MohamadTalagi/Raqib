@@ -230,7 +230,17 @@ export interface CreateAssessmentResult extends Assessment {
   errors: Record<string, string>;
 }
 
-export type ServiceType = "http" | "https" | "mqtt" | "mqtts" | "telnet" | "ssh";
+export type ServiceType =
+  | "http"
+  | "https"
+  | "mqtt"
+  | "mqtts"
+  | "telnet"
+  | "ssh"
+  | "modbus"
+  | "rtsp"
+  | "upnp"
+  | "mdns";
 export type DeviceTier = "insecure" | "partial" | "hardened" | "unknown";
 
 // Dynamic Risk Assessment (Stage 06) device-level inputs - auditor-set, no

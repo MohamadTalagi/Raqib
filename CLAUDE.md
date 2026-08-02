@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-08-01
+> **Last updated:** 2026-08-02
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,126 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Dashboard overhaul (guided pipeline) — all 13 planned phases COMPLETE
+**Phase:** **5 new non-camera IoT device fixtures added for protocol/domain
+variety, fully wired into the scan/policy/NCA pipeline and live-verified end
+to end — COMPLETE** (2026-08-02). Every device in the lab until now was a
+posture variant of the same `smart-camera` app (HTTP/HTTPS + MQTT + Telnet) —
+the owner asked for real variety to stress-test assumptions baked in from
+camera-only testing. Planned via plan mode (grounded in a real gap found
+before designing anything: `policies/nca/seed_finding_mappings.py`'s 20
+mappings only ever touched NCA subdomains 2-2/2-4/2-7/2-9/2-14/2-15 — **2-13
+Physical Security and 2-6 Data and Information Protection had zero
+device-scope evidence at all**, despite being real, already-seeded
+CGIoT-1:2024 controls) and confirmed with the owner up front: 5 device
+*types*, one posture each (breadth over depth — the camera trio already
+proves posture-depth), reusing nmap's own NSE scripts for Modbus/RTSP over
+hand-rolled protocol clients where practical.
+- **The 5 devices** (`lab/devices/`, each a small FastAPI app mirroring
+  `smart-camera`'s file layout — `app/config.py`/`main.py`/Dockerfile/
+  `entrypoint.sh`/`profiles/insecure.env`/`tests/`): **`smart-lock`**
+  (`device-smartlock`, HTTP REST `/lock`/`/unlock`/`/api/access-log`, default
+  PIN `0000` never forced to rotate, unauthenticated unlock, a
+  `tamper_detection_wired: false` status field that's always false —
+  deliberately never wired to anything real); **`plc-gateway`**
+  (`device-plc-gateway`, a real Modbus TCP server on 502 via `pymodbus`
+  simulating a temperature/valve sensor gateway, no auth at all since the
+  protocol itself has none); **`router-gateway`** (`device-router-gw`, HTTP
+  admin with the same default-creds pattern as the camera + a hand-rolled
+  UPnP/SSDP responder on 1900/udp answering any M-SEARCH unauthenticated, and
+  a `/api/portmap` endpoint that accepts arbitrary port-forward rules from
+  any caller — the real UPnP IGD exposure class); **`nvr`** (`device-nvr`, HTTP
+  admin + a hand-rolled RTSP responder on 554 answering OPTIONS/DESCRIBE/PLAY
+  with zero authentication, `/api/clips` listing indefinitely-retained
+  recordings with `retention_policy: "none"`); **`smart-speaker`**
+  (`device-speaker`, HTTP + a hand-rolled mDNS responder on 5353/udp
+  answering any datagram with a plaintext TXT record disclosing
+  `voice_log_encrypted: false`, `/api/voice-log` storing raw transcripts
+  unencrypted forever). The UPnP and mDNS responders are small, deterministic
+  raw-socket services (background thread off FastAPI's startup event, same
+  pattern `smart-camera/app/telnet_server.py` already established) — a real
+  design correction made mid-build: the plan's original assumption that nmap
+  ships a per-host UPnP NSE script was wrong (nmap's own UPnP script is
+  broadcast-class, scoped to a whole subnet, not one target), caught before
+  writing the worker collector, not after.
+- **New worker collectors** (`policies/catalog/scan_tests.py`): `TEST-MODBUS-PROBE`
+  and `TEST-RTSP-PROBE` reuse nmap's real `modbus-discover`/`rtsp-methods` NSE
+  scripts; `TEST-UPNP-PROBE`/`TEST-MDNS-PROBE` are new small raw-UDP Python
+  probes (`lab/auditor/worker/scan_scripts/upnp_probe.py`/`mdns_probe.py`),
+  the same raw-protocol-probe technique this project already used to
+  diagnose the Docker embedded DNS resolver (`docs/errors/032`). A 5th test,
+  not in the original 4-test plan, was added once actually wiring up the
+  finding mappings surfaced a real gap: the smart lock's `tamper_detection_wired`
+  field had no collector at all, so `TEST-PHYSICAL-TAMPER-STATUS` (a plain
+  curl against `/api/status`) was added to give NCA 2-13-2 real evidence to
+  point at, rather than skip that domain's coverage silently. New
+  `MODBUS_SERVICE_TYPES`/`RTSP_SERVICE_TYPES`/`UPNP_SERVICE_TYPES`/
+  `MDNS_SERVICE_TYPES` and 4 new `SERVICE_TYPES` entries mirrored across
+  `lab/auditor/api/device_validation.py` (the actual scan-target security
+  boundary), `lab/auditor/web/src/lib/types.ts`'s `ServiceType` union, and
+  `RegisterDeviceForm.tsx`'s picker. `IOT_SIGNATURE_PORTS` gained 502/554
+  (both TCP, so a TCP-only Discovery sweep detects them) with 1900/5353
+  deliberately **not** added — both are UDP-only protocols a TCP-only nmap
+  sweep can never see as "open" regardless of what's in the port list; both
+  affected devices already expose HTTP on port 80 too, so they still
+  classify correctly via that signature, documented in-code rather than
+  silently worked around.
+- **New migration `010-device-services-new-service-types.sql`** (+ `init.sql`
+  updated for fresh volumes) — widens `device_services.service_type`'s
+  Postgres CHECK constraint to match the widened Python `SERVICE_TYPES`
+  tuple. **A real bug caught live, not by unit tests**: registering
+  `device-plc-gateway` 500'd with `psycopg.errors.CheckViolation` the moment
+  live verification tried it — the DB-level CHECK constraint is a second
+  place the same enum lives, missed on the first pass since nothing in the
+  Python layer would ever catch a mismatch between the two.
+- **8 new `compliance_finding_mappings`** (`policies/nca/seed_finding_mappings.py`,
+  20 → 28) tying the new collectors' real observation fields into 2-13-2,
+  2-6-2, 2-6-3 (new ground), and reusing 2-15-2/2-4-3 where a device's flaw
+  is the same underlying issue as the camera's (default creds, unencrypted
+  protocol). Live-verified this is exactly the closure the whole effort was
+  for: `GET /nca/devices/{id}/suggestions` now returns real auto-suggested
+  FAIL verdicts on 2-13-2 for `device-smartlock` and on 2-6-2/2-6-3 for both
+  `device-nvr` and `device-speaker` — the first device-scope evidence either
+  NCA subdomain has ever had in this project.
+- **Two more real bugs caught live during verification, both fixed on the
+  spot with regression tests**: (1) `nmap -sV` genuinely hangs against both
+  the Modbus and RTSP fixtures' minimal custom protocol servers, which (like
+  many real embedded devices) never respond to a probe they don't recognize
+  rather than rejecting it, so nmap's generic version-detection probes wait
+  out their full timeout - fixed by dropping `-sV` (the NSE scripts alone
+  already identify the service and run in under a second) and adding
+  `--script-timeout 10s` as a safety bound, confirmed live on both. (2)
+  `_parse_rtsp_probe_observations`'s regex assumed `rtsp-methods` prints on
+  two lines (matching `modbus-discover`'s own shape); nmap actually prints it
+  on one line (`|_rtsp-methods: OPTIONS, DESCRIBE, ...`), confirmed by
+  reading the real command output - the **unit test's own fixture had copied
+  the same wrong two-line assumption**, so it passed against fabricated data
+  that didn't match reality until this live pass caught it. Both fixes
+  verified live afterward: `device-plc-gateway`'s Modbus port now honestly
+  reports "open but the discovery script returned no data" (a real, if
+  unhelpful, outcome - the pymodbus fixture apparently doesn't answer
+  whatever slave-id/function-code `modbus-discover` tries, itself a realistic
+  Modbus behavior), and `device-nvr`'s RTSP methods now parse correctly
+  (`OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN`, `unauthenticated_stream_access: true`).
+- **Verified live end to end against a freshly-rebuilt 16-container stack**
+  (all 11 original + these 5 new): registered all 5 real devices via the
+  API, ran every new collector against its real device, recorded real
+  evidence (`EV-2026-08-02-0004` through `-0012`), recomputed NCA
+  assessments, and confirmed real auto-suggestions on the target controls
+  for all 5. Re-ran `TEST-NET-DISCOVERY`'s real subnet sweep and confirmed
+  all 5 new hosts classify as `iot_device` (including via the HTTP-port-80
+  fallback for the two UDP-only fixtures, exactly as designed) - `device-nvr`
+  and `device-plc-gateway` correctly show their extra TCP ports (554, 502)
+  open in the same sweep now that those are in `IOT_SIGNATURE_PORTS`.
+  Regression: 337 `policies` tests passing (was ~309, +28 new), 241
+  `lab/auditor/api` tests passing (2 pre-existing WeasyPrint failures,
+  unrelated), 30 new per-device app tests (8+3+7+7+5) passing on the host
+  venv, `tsc -b --force`/`oxlint` clean (same 5 pre-existing warnings — one
+  real gap caught here too: `lib/serviceIcons.ts`'s `Record<ServiceType,
+  LucideIcon>` doesn't tolerate a partial mapping, so `tsc` correctly failed
+  until icons were added for all 4 new types), full Vitest suite still
+  271/271. Not yet committed to git.
+
+Before that: **Dashboard overhaul (guided pipeline) — all 13 planned phases COMPLETE
 and fully live-verified end to end, 3 real bugs found and fixed in that verification
 pass** (2026-08-01). The overhaul itself (Discovery → Devices → Fingerprinting →
 SA-IOT Compliance → NCA Compliance → Vulnerability Intelligence → Risk Assessment →
@@ -1703,6 +1822,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-02 | **Added 5 non-camera IoT device fixtures (smart lock, industrial Modbus gateway, router/gateway with UPnP, NVR with RTSP, smart speaker with mDNS) for real protocol/domain variety, fully live-verified** — see §0 for the full breakdown. Grounded in a real, confirmed gap: NCA subdomains 2-13 (Physical Security) and 2-6 (Data Protection) had zero device-scope finding mappings despite being real seeded CGIoT-1:2024 controls. Each device is a small FastAPI app mirroring `smart-camera`'s layout; new worker collectors reuse nmap's real `modbus-discover`/`rtsp-methods` NSE scripts plus two new hand-rolled raw-UDP probes (`upnp_probe.py`/`mdns_probe.py`) for protocols nmap has no per-host script for — a real correction made mid-build after discovering nmap's UPnP script is broadcast-only, not per-host. 8 new NCA finding mappings close the 2-13-2/2-6-2/2-6-3 gap with real evidence. Found and fixed 4 real bugs during live verification (not caught by unit tests alone): a missing DB-level CHECK constraint update (`device_services_service_type_check`, new migration 010) that 500'd on first real registration; `nmap -sV` hanging against both custom protocol servers' non-standard probe responses (fixed by dropping `-sV` and adding `--script-timeout 10s`); an RTSP-methods regex whose own unit-test fixture had copied a wrong two-line output assumption, caught only by reading nmap's actual single-line output live; and `serviceIcons.ts`'s exhaustive `Record<ServiceType, LucideIcon>` correctly failing `tsc` until icons were added for all 4 new types. Verified live end to end against a rebuilt 16-container stack: all 5 devices registered, every new collector run for real with real evidence recorded, NCA recompute producing real auto-suggested FAILs on the target controls for all 5, and a real `TEST-NET-DISCOVERY` sweep classifying all 5 as `iot_device` (including the two UDP-only fixtures via their HTTP-port fallback, exactly as designed). 337 `policies` (+28) + 241 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 30 new per-device tests + 271 frontend tests passing, `tsc -b`/`oxlint` clean. Not yet committed. |
 | 2026-08-01 | **Dashboard overhaul (guided pipeline) — all 13 phases live-verified end to end, 3 real bugs found and fixed** — see §0 for the full breakdown. The 13-phase guided-pipeline overhaul itself was built in the prior session but never written up here since that session's final live-verification step was interrupted by a Docker Desktop networking failure serious enough to require a full OS reboot (`docker_networking_saga` preserved in the now-deleted `handoff.txt`). This session resumed after the reboot, found the DNS bug had survived it too, diagnosed it further via raw UDP queries to `127.0.0.11:53` (inconsistent per-name resolver behavior on `internal-network` only — not a compose config or host-firewall issue), and the user ran Docker Desktop's Troubleshoot → Clean/Purge data, which fixed it (`docs/errors/032`). Re-ran the lab's documented first-time setup (cert-init, mqtt secure-broker password) plus a previously-undocumented one — the NCA catalog's 81 guidelines/~20 finding mappings are seeded imperatively (`policies.nca.seed_catalog`/`seed_finding_mappings`), not via `init.sql`, and needed re-running against the purge-wiped volume. Then drove the entire pipeline live through a real browser (Claude-in-Chrome): Discovery's bulk-register flow (never exercised against a real backend before) registered 3 real devices from a real network scan; Fingerprinting ran a real `nmap` scan and recorded real evidence; SA-IOT Compliance ran a real 10-credential-pair default-creds test and recomputed real FAIL verdicts; Vulnerability Intelligence uploaded real generated firmware and got back real Grype-scanned CVE/KEV data (77 openssl CVEs, matching this project's own historical count); NCA Compliance's cohort "Assess selected" opened a real new browser tab and recorded a real blocking-control failure; Risk Assessment's 7-factor breakdown summed exactly to its displayed score; Remediation's stub correctly showed only real static remediation text. Found and fixed 3 real bugs this live pass exposed that mocked tests couldn't have caught: `risk_assessment` was trivially "reached" the instant any device was registered (`risk.known` means "device exists," not "assessed" — fixed to require real upstream SA-IOT/NCA/vuln signal, deliberately excluding fingerprinting since risk's own inputs never derive from it); `hasSaIotVerdict` counted a `NOT_APPLICABLE` placeholder verdict (created fleet-wide by any recompute) as "compliance reached" for devices that were never actually tested; and `SAIOTCompliancePage` never refetched verdicts after "Recompute verdicts" succeeded, leaving its own counts stale. All three fixed with regression tests (271/271 frontend passing, was 266), `tsc -b`/`oxlint` clean, `auditor-web` rebuilt/redeployed and re-verified live after each fix. |
 | 2026-07-31 | **Closed all 4 remaining Week 1 gaps found by the task-by-task audit** — see §0 for the full breakdown. (1) A real complete-assessment test for the partially-hardened profile, mixed 3-PASS/2-FAIL against the real controls. (2) `TEST-TLS-CONFIG` now forces a handshake at each of TLSv1/1.1/1.2/1.3 and reports a real 3-state (`accepted`/`rejected`/`untestable`) per-version enumeration instead of one default-negotiated value — confirmed live that this host's own OpenSSL genuinely can't offer TLSv1/1.1, a distinct honest state from a real server rejection. (3) `collector_versions` on an assessment, derived live from its child scan_jobs (never a new stored column, matching every other rollup in this codebase). (4) `confidence_reason` now auto-fills with a fixed template on both automated evidence-recording paths; new `report_records` audit-trail table + `GET /devices/{id}/report-history`, directly analogous to `compliance_audit_events`. Also fixed two real, unrelated bugs caught along the way: `test_assessments.py` was silently overwriting real evidence files on disk (fixed to isolate `DOCUMENT_STORE_DIR` like its sibling test file already does), and `tsc --noEmit` had been checking nothing all session because this project's root `tsconfig.json` needs `-b` to actually run its project references — `tsc -b --force` immediately caught 2 real errors, now fixed. 297 `policies` + 236 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 236 frontend tests passing, `tsc -b`/`oxlint` clean. Migration 009 applied live; all 3 changed images rebuilt/redeployed; verified live end to end for all 4 gaps at once against a real `device-hardened` HTTPS service (brought up for the first time this session via `cert-init`). |
 | 2026-07-31 | **Added the assessment history UI to the device detail page, closing the last real gap from a full Week 1 brief re-audit** — see §0 for the full breakdown and `docs/week1-completion-report.md` for the complete task-by-task verification against `week-1-tasks.txt`. 9 of the brief's 10 tasks were already done; the one real gap was that `GET /assessments?device_id=` had no UI caller at all. New "Assessment history" card lists every past Assessment for a device with status/policy version/timestamp, expanding in place to lazily fetch and cache its child collector jobs. New shared `AssessmentStatusBadge` (`severity-badge.tsx`) replaces `RunScanPage`'s own local status-label mapping, so the same Assessment status renders identically on both pages. No backend changes — the endpoint already existed and was already tested. `tsc`/`oxlint` clean, 3 new frontend tests, full suite green except the already-known pre-existing `RunScanPage.test.tsx` timing flake (reproduced identically on the unmodified code, confirmed unrelated). Not yet rebuilt/redeployed to the live images. |

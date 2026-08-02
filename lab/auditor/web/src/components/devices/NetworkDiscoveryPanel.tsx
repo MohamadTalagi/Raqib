@@ -14,6 +14,10 @@ const PORT_SERVICE_TYPE: Record<number, ServiceType> = {
   8883: "mqtts",
   23: "telnet",
   22: "ssh",
+  502: "modbus",
+  554: "rtsp",
+  1900: "upnp",
+  5353: "mdns",
 };
 
 export interface DeviceRegistrationPrefill {

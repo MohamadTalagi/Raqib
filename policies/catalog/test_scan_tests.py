@@ -856,7 +856,9 @@ def test_network_discovery_command_sweeps_the_audit_network_subnet():
     # the classifier actually knows how to interpret.
     assert "-p" in command
     ports_arg = command[command.index("-p") + 1]
-    assert set(ports_arg.split(",")) == {"22", "23", "80", "443", "1883", "8883"}
+    assert set(ports_arg.split(",")) == {
+        "22", "23", "80", "443", "1883", "8883", "502", "554",
+    }
 
 
 def test_network_discovery_command_is_tuned_gentle_for_resource_constrained_devices():
@@ -1157,7 +1159,210 @@ def test_every_test_id_has_the_expected_pipeline_phase():
         "TEST-FW-UPDATESCRIPT": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         "TEST-FW-MANIFEST": PIPELINE_PHASE_VULN_INTELLIGENCE,
         "TEST-NET-DISCOVERY": None,
+        "TEST-MODBUS-PROBE": PIPELINE_PHASE_FINGERPRINTING,
+        "TEST-RTSP-PROBE": PIPELINE_PHASE_FINGERPRINTING,
+        "TEST-UPNP-PROBE": PIPELINE_PHASE_FINGERPRINTING,
+        "TEST-MDNS-PROBE": PIPELINE_PHASE_FINGERPRINTING,
+        "TEST-PHYSICAL-TAMPER-STATUS": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     }
     assert set(expected) == set(SCAN_CATALOG)  # catches a new test added with no phase decision made
     for test_id, phase in expected.items():
         assert SCAN_CATALOG[test_id].get("pipeline_phase") == phase, test_id
+
+
+MODBUS_TARGET = {
+    "device_id": "device-plc-gateway", "host": "device-plc-gateway",
+    "service_type": "modbus", "port": 502,
+}
+RTSP_TARGET = {
+    "device_id": "device-nvr", "host": "device-nvr",
+    "service_type": "rtsp", "port": 554,
+}
+UPNP_TARGET = {
+    "device_id": "device-router-gw", "host": "device-router-gw",
+    "service_type": "upnp", "port": 1900,
+}
+MDNS_TARGET = {
+    "device_id": "device-speaker", "host": "device-speaker",
+    "service_type": "mdns", "port": 5353,
+}
+
+MODBUS_DISCOVER_OUTPUT = """PORT    STATE SERVICE
+502/tcp open  modbus
+
+Host script results:
+| modbus-discover:
+|_  sid 0x1: unknown
+"""
+
+RTSP_METHODS_OUTPUT = """PORT    STATE SERVICE
+554/tcp open  rtsp
+|_rtsp-methods: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN
+"""
+
+UPNP_PROBE_OUTPUT = (
+    "reachable=True\n"
+    "response_start\n"
+    "HTTP/1.1 200 OK\r\n"
+    "SERVER: Linux/1.0 UPnP/1.0 NetCore/NC-WR1200\r\n"
+    "ST: upnp:rootdevice\r\n"
+    "\n"
+    "response_end\n"
+)
+
+
+def test_modbus_probe_command_targets_the_registered_port():
+    from policies.catalog.scan_tests import _modbus_probe_command
+
+    command = _modbus_probe_command(MODBUS_TARGET)
+    assert command == [
+        "nmap", "--script-timeout", "10s", "--script", "modbus-discover",
+        "-p", "502", "device-plc-gateway",
+    ]
+
+
+def test_modbus_probe_parses_unauthenticated_response():
+    from policies.catalog.scan_tests import _parse_modbus_probe_observations
+
+    observations = _parse_modbus_probe_observations(MODBUS_TARGET, MODBUS_DISCOVER_OUTPUT)
+    assert observations["modbus_port_open"] is True
+    assert observations["script_output"]
+    assert "no native authentication" in observations["notes"][0]
+
+
+def test_modbus_probe_reports_closed_port_honestly():
+    from policies.catalog.scan_tests import _parse_modbus_probe_observations
+
+    observations = _parse_modbus_probe_observations(MODBUS_TARGET, "502/tcp closed modbus\n")
+    assert observations["modbus_port_open"] is False
+
+
+def test_rtsp_probe_command_targets_the_registered_port():
+    from policies.catalog.scan_tests import _rtsp_probe_command
+
+    command = _rtsp_probe_command(RTSP_TARGET)
+    assert command == [
+        "nmap", "--script-timeout", "10s", "--script", "rtsp-methods",
+        "-p", "554", "device-nvr",
+    ]
+
+
+def test_rtsp_probe_parses_unauthenticated_stream_access():
+    from policies.catalog.scan_tests import _parse_rtsp_probe_observations
+
+    observations = _parse_rtsp_probe_observations(RTSP_TARGET, RTSP_METHODS_OUTPUT)
+    assert observations["rtsp_port_open"] is True
+    assert observations["unauthenticated_stream_access"] is True
+    assert "DESCRIBE" in observations["methods"]
+
+
+def test_upnp_probe_command_uses_the_worker_probe_script():
+    from policies.catalog.scan_tests import UPNP_PROBE_SCRIPT, _upnp_probe_command
+
+    command = _upnp_probe_command(UPNP_TARGET)
+    assert command == ["python3", UPNP_PROBE_SCRIPT, "device-router-gw", "1900"]
+
+
+def test_upnp_probe_parses_unauthenticated_ssdp_response():
+    from policies.catalog.scan_tests import _parse_upnp_probe_observations
+
+    observations = _parse_upnp_probe_observations(UPNP_TARGET, UPNP_PROBE_OUTPUT)
+    assert observations["upnp_reachable"] is True
+    assert observations["server_banner"] == "Linux/1.0 UPnP/1.0 NetCore/NC-WR1200"
+
+
+def test_upnp_probe_reports_no_response_honestly():
+    from policies.catalog.scan_tests import _parse_upnp_probe_observations
+
+    observations = _parse_upnp_probe_observations(UPNP_TARGET, "reachable=False\nerror=timed out\n")
+    assert observations["upnp_reachable"] is False
+
+
+def test_mdns_probe_command_uses_the_worker_probe_script():
+    from policies.catalog.scan_tests import MDNS_PROBE_SCRIPT, _mdns_probe_command
+
+    command = _mdns_probe_command(MDNS_TARGET)
+    assert command == ["python3", MDNS_PROBE_SCRIPT, "device-speaker", "5353"]
+
+
+def test_mdns_probe_decodes_the_txt_record_from_the_real_responder_wire_format():
+    from policies.catalog.scan_tests import _parse_mdns_probe_observations
+
+    # Real packet bytes produced by lab/devices/smart-speaker/app/mdns_server.py's
+    # own _build_response(), hand-verified against that responder's wire format.
+    header = (
+        b"\x00\x00"  # ID
+        b"\x84\x00"  # flags
+        b"\x00\x00"  # QDCOUNT
+        b"\x00\x01"  # ANCOUNT
+        b"\x00\x00"  # NSCOUNT
+        b"\x00\x00"  # ARCOUNT
+    )
+    name = b"\x0edevice-speaker\x05local\x00"
+    txt_payload = b"vendor=VoxHome;model=VH-Speaker-2;voice_log_encrypted=false"
+    rdata = bytes([len(txt_payload)]) + txt_payload
+    packet = (
+        header
+        + name
+        + b"\x00\x10\x00\x01\x00\x00\x00\x78"
+        + len(rdata).to_bytes(2, "big")
+        + rdata
+    )
+    output = f"reachable=True\nresponse_hex={packet.hex()}\n"
+
+    observations = _parse_mdns_probe_observations(MDNS_TARGET, output)
+    assert observations["mdns_reachable"] is True
+    assert observations["txt_record"]["name"] == "device-speaker.local"
+    assert observations["txt_record"]["txt"]["voice_log_encrypted"] == "false"
+
+
+def test_mdns_probe_reports_no_response_honestly():
+    from policies.catalog.scan_tests import _parse_mdns_probe_observations
+
+    observations = _parse_mdns_probe_observations(MDNS_TARGET, "reachable=False\nerror=timed out\n")
+    assert observations["mdns_reachable"] is False
+    assert observations["txt_record"] is None
+
+
+def test_tamper_status_command_hits_the_status_endpoint():
+    from policies.catalog.scan_tests import _tamper_status_command
+
+    command = _tamper_status_command(HTTP_TARGET)
+    assert command[-1] == "http://device-insecure/api/status"
+
+
+def test_tamper_status_parses_unwired_detection_honestly():
+    from policies.catalog.scan_tests import _parse_tamper_status_observations
+
+    output = '{"locked": true, "tamper_detected": false, "tamper_detection_wired": false}'
+    observations = _parse_tamper_status_observations(HTTP_TARGET, output)
+    assert observations["tamper_detection_wired"] is False
+    assert "no hardware tamper-detection" in observations["notes"][0]
+
+
+def test_tamper_status_reports_wired_detection():
+    from policies.catalog.scan_tests import _parse_tamper_status_observations
+
+    output = '{"locked": true, "tamper_detected": false, "tamper_detection_wired": true}'
+    observations = _parse_tamper_status_observations(HTTP_TARGET, output)
+    assert observations["tamper_detection_wired"] is True
+
+
+def test_modbus_probe_is_only_applicable_to_modbus_service_type():
+    assert is_applicable(MODBUS_TARGET, "TEST-MODBUS-PROBE")
+    assert not is_applicable(HTTP_TARGET, "TEST-MODBUS-PROBE")
+
+
+def test_rtsp_probe_is_only_applicable_to_rtsp_service_type():
+    assert is_applicable(RTSP_TARGET, "TEST-RTSP-PROBE")
+    assert not is_applicable(HTTP_TARGET, "TEST-RTSP-PROBE")
+
+
+def test_upnp_probe_is_only_applicable_to_upnp_service_type():
+    assert is_applicable(UPNP_TARGET, "TEST-UPNP-PROBE")
+    assert not is_applicable(HTTP_TARGET, "TEST-UPNP-PROBE")
+
+
+def test_mdns_probe_is_only_applicable_to_mdns_service_type():
+    assert is_applicable(MDNS_TARGET, "TEST-MDNS-PROBE")
+    assert not is_applicable(HTTP_TARGET, "TEST-MDNS-PROBE")

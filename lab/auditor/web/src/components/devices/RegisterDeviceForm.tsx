@@ -5,7 +5,18 @@ import { api, ApiError, type CreateDevicePayload } from "@/lib/api";
 import type { DeviceMutationResult, ServiceType } from "@/lib/types";
 import { useToast } from "@/lib/useToast";
 
-const SERVICE_TYPES: ServiceType[] = ["http", "https", "mqtt", "mqtts", "telnet", "ssh"];
+const SERVICE_TYPES: ServiceType[] = [
+  "http",
+  "https",
+  "mqtt",
+  "mqtts",
+  "telnet",
+  "ssh",
+  "modbus",
+  "rtsp",
+  "upnp",
+  "mdns",
+];
 
 interface ServiceRow {
   service_type: ServiceType;

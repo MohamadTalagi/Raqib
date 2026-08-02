@@ -22,7 +22,7 @@ INFRASTRUCTURE_HOSTS = frozenset(
 # "--script=http-shellshock" from becoming a command-line FLAG in the argv list.
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 
-SERVICE_TYPES = ("http", "https", "mqtt", "mqtts", "telnet", "ssh")
+SERVICE_TYPES = ("http", "https", "mqtt", "mqtts", "telnet", "ssh", "modbus", "rtsp", "upnp", "mdns")
 TIERS = ("insecure", "partial", "hardened", "unknown")
 
 

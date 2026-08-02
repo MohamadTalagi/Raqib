@@ -24,6 +24,25 @@ services:
   device-hardened:
     ports:
       - "8083:443"
+  device-smartlock:
+    ports:
+      - "8084:80"
+  device-plc-gateway:
+    ports:
+      - "8085:80"
+      - "5020:502"
+  device-router-gw:
+    ports:
+      - "8086:80"
+      - "19000:1900/udp"
+  device-nvr:
+    ports:
+      - "8087:80"
+      - "5540:554"
+  device-speaker:
+    ports:
+      - "8088:80"
+      - "15353:5353/udp"
   mqtt-broker-insecure:
     ports:
       - "18830:1883"

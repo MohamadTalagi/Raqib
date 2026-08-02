@@ -1,0 +1,10 @@
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-02 12:05 UTC
+Nmap scan report for device-plc-gateway (172.30.0.9)
+Host is up (0.000071s latency).
+rDNS record for 172.30.0.9: kaust-iot-lab-device-plc-gateway-1.kaust-iot-lab_audit-network
+
+PORT    STATE SERVICE
+502/tcp open  mbap
+MAC Address: CA:3B:9D:7D:5C:A8 (Unknown)
+
+Nmap done: 1 IP address (1 host up) scanned in 10.35 seconds

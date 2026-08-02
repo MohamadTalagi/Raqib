@@ -128,7 +128,7 @@ CREATE TABLE devices (
 CREATE TABLE device_services (
     id               SERIAL PRIMARY KEY,
     device_id        TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
-    service_type     TEXT NOT NULL CHECK (service_type IN ('http', 'https', 'mqtt', 'mqtts', 'telnet', 'ssh')),
+    service_type     TEXT NOT NULL CHECK (service_type IN ('http', 'https', 'mqtt', 'mqtts', 'telnet', 'ssh', 'modbus', 'rtsp', 'upnp', 'mdns')),
     port             INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
     published_port   INTEGER CHECK (published_port BETWEEN 1 AND 65535),
     enabled          BOOLEAN NOT NULL DEFAULT true,

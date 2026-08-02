@@ -115,3 +115,84 @@ def test_no_mapping_ever_targets_domain_1_governance_or_supplier_cloud_groups():
         guideline_id = mapping["control_id"].removeprefix("NCA-CGIoT-1_2024-")
         assert not guideline_id.startswith("1-")
         assert mapping["control_id"] not in supplier_cloud_ids
+
+
+def test_tamper_detection_not_wired_maps_to_2_13_2():
+    evidence = {
+        "test_id": "TEST-PHYSICAL-TAMPER-STATUS",
+        "observations": {"tamper_detection_wired": False},
+    }
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-13-2") in matched
+
+
+def test_tamper_detection_wired_does_not_map_to_2_13_2():
+    evidence = {
+        "test_id": "TEST-PHYSICAL-TAMPER-STATUS",
+        "observations": {"tamper_detection_wired": True},
+    }
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-13-2") not in matched
+
+
+def test_modbus_open_port_maps_to_2_15_2_and_2_4_3():
+    evidence = {"test_id": "TEST-MODBUS-PROBE", "observations": {"modbus_port_open": True}}
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-15-2") in matched
+    assert control_id("2-4-3") in matched
+
+
+def test_upnp_reachable_maps_to_2_4_3():
+    evidence = {"test_id": "TEST-UPNP-PROBE", "observations": {"upnp_reachable": True}}
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-4-3") in matched
+
+
+def test_rtsp_unauthenticated_stream_maps_to_2_6_2_and_2_6_3():
+    evidence = {
+        "test_id": "TEST-RTSP-PROBE",
+        "observations": {"unauthenticated_stream_access": True},
+    }
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-6-2") in matched
+    assert control_id("2-6-3") in matched
+
+
+def test_rtsp_authenticated_stream_does_not_map_to_data_protection_controls():
+    evidence = {
+        "test_id": "TEST-RTSP-PROBE",
+        "observations": {"unauthenticated_stream_access": False},
+    }
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-6-2") not in matched
+    assert control_id("2-6-3") not in matched
+
+
+def test_mdns_voice_log_unencrypted_maps_to_2_6_2_and_2_6_3():
+    evidence = {
+        "test_id": "TEST-MDNS-PROBE",
+        "observations": {
+            "txt_record": {
+                "name": "device-speaker.local",
+                "txt": {"vendor": "VoxHome", "voice_log_encrypted": "false"},
+            },
+        },
+    }
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-6-2") in matched
+    assert control_id("2-6-3") in matched
+
+
+def test_mdns_voice_log_encrypted_does_not_map_to_data_protection_controls():
+    evidence = {
+        "test_id": "TEST-MDNS-PROBE",
+        "observations": {
+            "txt_record": {
+                "name": "device-speaker.local",
+                "txt": {"vendor": "VoxHome", "voice_log_encrypted": "true"},
+            },
+        },
+    }
+    matched = map_evidence_to_controls(evidence, MAPPINGS)
+    assert control_id("2-6-2") not in matched
+    assert control_id("2-6-3") not in matched

@@ -176,6 +176,77 @@ MAPPINGS = [
         "match_rule": {"field": "observations.missing_security_headers", "op": "not_equals", "value": []},
         "manufacturer_principle": None,
     },
+    # The 5 device-variety fixtures added below (smart lock, industrial
+    # sensor gateway, router/gateway, NVR, smart speaker) are the first
+    # device-scope evidence ever mapped into 2-13 (Physical Security) and 2-6
+    # (Data and Information Protection) - every mapping above only ever
+    # touches 2-2/2-4/2-7/2-9/2-14/2-15, so those two subdomains previously
+    # had zero device-scope finding mappings despite being real, already
+    # -seeded CGIoT-1:2024 controls.
+    {
+        "finding_key": "physical-tamper-detection-not-wired",
+        "description": "The device reports no hardware tamper-detection mechanism wired up.",
+        "control_id": control_id("2-13-2"),
+        "match_rule": {"field": "observations.tamper_detection_wired", "op": "equals", "value": False},
+        "manufacturer_principle": None,
+    },
+    {
+        "finding_key": "modbus-unauthenticated-protocol",
+        "description": "Modbus TCP answered an unauthenticated discovery probe - the protocol has no native authentication.",
+        "control_id": control_id("2-15-2"),
+        "match_rule": {"field": "observations.modbus_port_open", "op": "equals", "value": True},
+        "manufacturer_principle": "Manufacturer Principle 3",
+    },
+    {
+        "finding_key": "modbus-unencrypted-protocol",
+        "description": "Modbus TCP traffic is unencrypted, so register/coil reads and writes are visible and forgeable on the wire.",
+        "control_id": control_id("2-4-3"),
+        "match_rule": {"field": "observations.modbus_port_open", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+    },
+    {
+        "finding_key": "upnp-unauthenticated-discovery",
+        "description": "The device answered an unauthenticated SSDP/UPnP discovery query and accepts port-forward requests the same way.",
+        "control_id": control_id("2-4-3"),
+        "match_rule": {"field": "observations.upnp_reachable", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+    },
+    {
+        "finding_key": "rtsp-unauthenticated-stream-protection",
+        "description": "The RTSP video stream can be accessed with no authentication, exposing recorded/live footage to any network-adjacent client.",
+        "control_id": control_id("2-6-2"),
+        "match_rule": {"field": "observations.unauthenticated_stream_access", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+    },
+    {
+        "finding_key": "rtsp-unauthenticated-stream-minimization",
+        "description": "The RTSP video stream can be accessed with no authentication, exposing recorded/live footage to any network-adjacent client.",
+        "control_id": control_id("2-6-3"),
+        "match_rule": {"field": "observations.unauthenticated_stream_access", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+    },
+    {
+        "finding_key": "mdns-voice-log-unencrypted-protection",
+        "description": "The device broadcasts over mDNS that its voice-command log is not encrypted at rest.",
+        "control_id": control_id("2-6-2"),
+        "match_rule": {
+            "field": "observations.txt_record.txt.voice_log_encrypted",
+            "op": "equals",
+            "value": "false",
+        },
+        "manufacturer_principle": None,
+    },
+    {
+        "finding_key": "mdns-voice-log-unencrypted-minimization",
+        "description": "The device broadcasts over mDNS that its voice-command log is not encrypted at rest.",
+        "control_id": control_id("2-6-3"),
+        "match_rule": {
+            "field": "observations.txt_record.txt.voice_log_encrypted",
+            "op": "equals",
+            "value": "false",
+        },
+        "manufacturer_principle": None,
+    },
 ]
 
 

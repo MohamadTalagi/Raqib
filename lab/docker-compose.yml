@@ -89,6 +89,61 @@ services:
       timeout: 3s
       retries: 3
 
+  device-smartlock:
+    build: ./devices/smart-lock
+    env_file: ./devices/smart-lock/profiles/insecure.env
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  device-plc-gateway:
+    build: ./devices/plc-gateway
+    env_file: ./devices/plc-gateway/profiles/insecure.env
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  device-router-gw:
+    build: ./devices/router-gateway
+    env_file: ./devices/router-gateway/profiles/insecure.env
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  device-nvr:
+    build: ./devices/nvr
+    env_file: ./devices/nvr/profiles/insecure.env
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  device-speaker:
+    build: ./devices/smart-speaker
+    env_file: ./devices/smart-speaker/profiles/insecure.env
+    networks:
+      - audit-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   mqtt-broker-secure:
     image: eclipse-mosquitto:2
     volumes:
