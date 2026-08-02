@@ -4,8 +4,10 @@ from automated_run_runner import (
     _applicable_test_ids,
     _guess_device_registration,
     _is_already_registered,
+    _pqc_applicable_test_ids,
     _run_discovery_and_register,
     _run_nca_compliance,
+    _run_pqc_readiness,
     _run_scan_test,
     poll_automated_runs_once,
     process_automated_run,
@@ -290,6 +292,7 @@ def test_process_automated_run_stops_when_cancelled_between_stages(
 
 
 @patch("automated_run_runner._run_nca_compliance")
+@patch("automated_run_runner._run_pqc_readiness")
 @patch("automated_run_runner._run_vuln_intelligence")
 @patch("automated_run_runner._run_fingerprinting_and_sa_iot")
 @patch("automated_run_runner._run_discovery_and_register")
@@ -297,7 +300,7 @@ def test_process_automated_run_stops_when_cancelled_between_stages(
 @patch("automated_run_runner._run_status")
 @patch("automated_run_runner.requests")
 def test_process_automated_run_completes_and_scopes_to_explicit_device_ids(
-    mock_requests, mock_run_status, mock_patch_run, mock_discovery, mock_fingerprint, mock_vuln, mock_nca
+    mock_requests, mock_run_status, mock_patch_run, mock_discovery, mock_fingerprint, mock_vuln, mock_pqc, mock_nca
 ):
     mock_requests.get.return_value = _response(200, [
         {"device_id": "device-insecure", "registered": True},
@@ -310,6 +313,7 @@ def test_process_automated_run_completes_and_scopes_to_explicit_device_ids(
     # explicit scope: discovery is never run
     mock_discovery.assert_not_called()
     mock_fingerprint.assert_called_once()
+    mock_pqc.assert_called_once()  # Post-Quantum Readiness runs automatically, per the owner's own choice
     scoped_devices = mock_fingerprint.call_args.args[0]
     assert [d["device_id"] for d in scoped_devices] == ["device-insecure"]
 
@@ -327,6 +331,46 @@ def test_process_automated_run_marks_failed_on_unexpected_exception(mock_request
     failed_call = mock_requests.patch.call_args_list[-1]
     assert failed_call.kwargs["json"]["status"] == "failed"
     assert "auditor-api unreachable" in failed_call.kwargs["json"]["error"]
+
+
+# -- Post-Quantum Readiness (bonus stage, informational only) ---------------
+
+
+def test_pqc_applicable_test_ids_matches_a_device_with_an_https_service():
+    device = {"services": [{"service_type": "https", "enabled": True}]}
+    test_ids = _pqc_applicable_test_ids(device)
+    assert "TEST-PQC-TLS-HANDSHAKE" in test_ids
+    assert "TEST-PQC-FIRMWARE-CRYPTO" not in test_ids  # firmware-scoped test excluded here on purpose
+
+
+def test_pqc_applicable_test_ids_excludes_a_device_with_no_tls_service():
+    device = {"services": [{"service_type": "http", "enabled": True}]}
+    assert _pqc_applicable_test_ids(device) == []
+
+
+@patch("automated_run_runner._run_scan_test")
+def test_run_pqc_readiness_runs_the_tls_test_for_an_https_device(mock_run_scan_test):
+    devices = [{"device_id": "device-hardened", "services": [{"service_type": "https", "enabled": True}]}]
+    summary = {"tests_run": 0, "evidence_recorded": 0, "pqc_devices_scanned": 0, "errors": []}
+
+    _run_pqc_readiness(devices, summary)
+
+    mock_run_scan_test.assert_called_once_with("device-hardened", "TEST-PQC-TLS-HANDSHAKE", summary)
+    assert summary["pqc_devices_scanned"] == 1
+
+
+@patch("automated_run_runner._run_scan_test")
+def test_run_pqc_readiness_runs_the_firmware_test_only_when_firmware_is_uploaded(mock_run_scan_test):
+    devices = [
+        {"device_id": "device-with-firmware", "services": [], "firmware_sha256": "abc123"},
+        {"device_id": "device-without-firmware", "services": []},
+    ]
+    summary = {"tests_run": 0, "evidence_recorded": 0, "pqc_devices_scanned": 0, "errors": []}
+
+    _run_pqc_readiness(devices, summary)
+
+    mock_run_scan_test.assert_called_once_with("device-with-firmware", "TEST-PQC-FIRMWARE-CRYPTO", summary)
+    assert summary["pqc_devices_scanned"] == 2  # every device is counted as scanned, even with nothing applicable
 
 
 # -- poll_automated_runs_once -------------------------------------------------

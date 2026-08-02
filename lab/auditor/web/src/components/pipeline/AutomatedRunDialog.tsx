@@ -51,14 +51,18 @@ export function AutomatedRunDialog({ open, onCancel, onStarted }: AutomatedRunDi
             <li>Recomputes SA-IOT verdicts.</li>
             <li>Runs Vulnerability Intelligence on any device that already has firmware uploaded.</li>
             <li>
+              Checks Post-Quantum Readiness (TLS key exchange, certificate signature, firmware crypto library) -
+              informational only, never affects risk scoring or compliance verdicts.
+            </li>
+            <li>
               Auto-records NCA compliance assessments from matching evidence, marked{" "}
               <span className="font-mono text-[var(--color-medium)]">auto-recorded</span> - not a human sign-off.
             </li>
           </ol>
           <p className="text-xs text-[var(--color-text-muted)]">
             Never automated: the ~60 organizational/mobile/supplier/cloud NCA guidelines (they need a human&apos;s
-            checklist answers) and Vulnerability Intelligence for a device with no firmware uploaded yet - neither
-            is invented or skipped silently.
+            checklist answers), Vulnerability Intelligence for a device with no firmware uploaded yet, and AI
+            Remediation (always a manual, on-demand step) - none of these is invented or skipped silently.
           </p>
           {error ? <p className="text-[var(--color-critical)]">{error}</p> : null}
         </div>

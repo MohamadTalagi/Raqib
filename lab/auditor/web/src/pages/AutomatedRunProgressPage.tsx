@@ -10,6 +10,7 @@ import {
   Bug,
   ClipboardCheck,
   Flame,
+  ShieldCheck,
 } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +27,7 @@ const STAGE_LABEL: Record<string, string> = {
   discovery: "Discovery: scanning the network and registering new devices",
   fingerprinting_and_compliance: "Running Fingerprinting and SA-IOT Compliance tests",
   vulnerability_intelligence: "Running Vulnerability Intelligence on devices with firmware",
+  pqc_readiness: "Checking Post-Quantum Readiness (informational only)",
   nca_compliance: "Auto-recording NCA compliance assessments",
   done: "Done",
 };
@@ -127,12 +129,13 @@ export function AutomatedRunProgressPage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-7">
             <StatTile label="Hosts discovered" value={summary.hosts_discovered ?? 0} icon={Radar} accent="neutral" />
             <StatTile label="Devices registered" value={summary.devices_registered ?? 0} icon={HardDrive} accent="brand" />
             <StatTile label="Tests run" value={summary.tests_run ?? 0} icon={Fingerprint} accent="neutral" />
             <StatTile label="Evidence recorded" value={summary.evidence_recorded ?? 0} icon={Fingerprint} accent="neutral" />
             <StatTile label="Vuln intel scans" value={summary.vuln_intel_devices_scanned ?? 0} icon={Bug} accent="neutral" />
+            <StatTile label="Post-quantum checks" value={summary.pqc_devices_scanned ?? 0} icon={ShieldCheck} accent="neutral" />
             <StatTile
               label="NCA assessments auto-recorded"
               value={summary.nca_assessments_recorded ?? 0}

@@ -778,6 +778,7 @@ export interface AutomatedRunSummary {
   evidence_recorded?: number;
   verdicts_computed?: number;
   vuln_intel_devices_scanned?: number;
+  pqc_devices_scanned?: number;
   nca_assessments_recorded?: number;
   errors?: string[];
 }

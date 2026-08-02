@@ -1,8 +1,9 @@
 """Drives a "Fully Automated Run" (automated_runs row) end to end: Discovery
 -> device registration -> Fingerprinting/SA-IOT scans -> verdict recompute ->
-conditional Vulnerability Intelligence -> NCA recompute + auto-recorded
-assessments. Risk Assessment needs no action here - it is already
-live-computed on every read.
+conditional Vulnerability Intelligence -> Post-Quantum Readiness (bonus
+stage, informational only) -> NCA recompute + auto-recorded assessments.
+Risk Assessment needs no action here - it is already live-computed on every
+read.
 
 This is NOT a new execution path. Every stage calls the exact same
 auditor-api endpoints a human clicking through the dashboard would (POST
@@ -34,6 +35,7 @@ import requests
 from job_runner import process_job, process_network_scan
 from policies.catalog.scan_tests import (
     PIPELINE_PHASE_FINGERPRINTING,
+    PIPELINE_PHASE_PQC_READINESS,
     PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     SCAN_CATALOG,
     is_firmware_test,
@@ -225,6 +227,31 @@ def _run_vuln_intelligence(devices: list[dict], summary: dict) -> None:
         summary["vuln_intel_devices_scanned"] += 1
 
 
+def _pqc_applicable_test_ids(device: dict) -> list[str]:
+    enabled_service_types = {s["service_type"] for s in device.get("services", []) if s["enabled"]}
+    return [
+        test_id
+        for test_id, spec in SCAN_CATALOG.items()
+        if spec.get("pipeline_phase") == PIPELINE_PHASE_PQC_READINESS
+        and not is_firmware_test(test_id)
+        and enabled_service_types & set(spec["applicable_service_types"])
+    ]
+
+
+def _run_pqc_readiness(devices: list[dict], summary: dict) -> None:
+    """Post-Quantum Readiness - a bonus stage beyond IoTGuard's original
+    10-stage vision, informational only (never touches
+    policies/risk/risk_engine.py). Included in the Fully Automated Run per
+    the owner's own explicit choice - unlike AI Remediation (Stage 07),
+    which stays manual-only by design."""
+    for device in devices:
+        for test_id in _pqc_applicable_test_ids(device):
+            _run_scan_test(device["device_id"], test_id, summary)
+        if device.get("firmware_sha256"):
+            _run_scan_test(device["device_id"], "TEST-PQC-FIRMWARE-CRYPTO", summary)
+        summary["pqc_devices_scanned"] += 1
+
+
 def _run_nca_compliance(devices: list[dict], summary: dict) -> None:
     """Auto-recording, not just auto-suggesting: for every finding-mapping
     hit, this inserts a real compliance_assessments row with
@@ -277,7 +304,8 @@ def process_automated_run(run: dict) -> None:
     summary = {
         "hosts_discovered": 0, "devices_registered": 0, "tests_run": 0,
         "evidence_recorded": 0, "verdicts_computed": 0,
-        "vuln_intel_devices_scanned": 0, "nca_assessments_recorded": 0, "errors": [],
+        "vuln_intel_devices_scanned": 0, "pqc_devices_scanned": 0,
+        "nca_assessments_recorded": 0, "errors": [],
     }
 
     try:
@@ -304,6 +332,10 @@ def process_automated_run(run: dict) -> None:
         if not _advance(run_id, summary, stage="vulnerability_intelligence"):
             return
         _run_vuln_intelligence(devices, summary)
+
+        if not _advance(run_id, summary, stage="pqc_readiness"):
+            return
+        _run_pqc_readiness(devices, summary)
 
         if not _advance(run_id, summary, stage="nca_compliance"):
             return
