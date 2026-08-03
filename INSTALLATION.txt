@@ -1,0 +1,249 @@
+==============================================================================
+IoTGuard - Installation Guide
+KAUST IoT Security Lab / AI-Assisted IoT Security Compliance Platform
+==============================================================================
+
+This guide gets the full lab + dashboard running on your machine from a
+fresh clone of this repository. Everything runs inside Docker containers -
+you do not need Python, Node, Postgres, or any scanning tools installed on
+your host machine.
+
+Estimated time: 10-20 minutes (mostly Docker image downloads/builds).
+
+
+------------------------------------------------------------------------------
+1. PREREQUISITES
+------------------------------------------------------------------------------
+
+  - Docker Desktop, with Compose v2 or newer built in.
+      Download: https://www.docker.com/products/docker-desktop/
+      (Windows: the WSL2 backend is required and is the default on a fresh
+      install. macOS/Linux: the default Docker Desktop setup is fine.)
+
+  - At least ~10 GB of free disk space (container images + the local
+    vulnerability database).
+
+  - A terminal. On Windows, PowerShell or Git Bash both work.
+
+  You do NOT need: Python, Node.js, PostgreSQL, nmap, or any other tool
+  installed locally - all of that lives inside the containers.
+
+
+------------------------------------------------------------------------------
+2. START DOCKER DESKTOP
+------------------------------------------------------------------------------
+
+  Open the Docker Desktop application and wait until it shows "Engine
+  running" (the whale icon in your system tray/menu bar stops animating).
+
+  Verify it from a terminal:
+
+      docker --version
+      docker compose version
+
+  Both commands should print a version number with no errors. If you get
+  "Cannot connect to the Docker daemon", Docker Desktop is not fully started
+  yet - wait a bit longer and try again.
+
+
+------------------------------------------------------------------------------
+3. GET THE CODE
+------------------------------------------------------------------------------
+
+  If you don't already have the repository locally:
+
+      git clone <the repository URL> IoT-Auditor
+      cd IoT-Auditor
+
+  All commands below assume your terminal's working directory is the
+  repository root, unless a step says otherwise.
+
+
+------------------------------------------------------------------------------
+4. CONFIGURE ENVIRONMENT VARIABLES
+------------------------------------------------------------------------------
+
+  The lab's compose file reads a few settings from lab/.env, which is NOT
+  checked into git (it's in .gitignore, since real secrets can end up in
+  it). Create your own copy from the example file:
+
+      cd lab
+      copy .env.example .env        (Windows / PowerShell)
+      cp .env.example .env          (Git Bash / macOS / Linux)
+
+  Open lab/.env in a text editor. The defaults work as-is for everything
+  except one optional feature:
+
+      GEMINI_API_KEY=
+
+  This powers the "AI-Assisted Remediation" feature (Stage 07 - generates
+  suggested fix-it guidance for failing findings). It is entirely OPTIONAL:
+  the rest of the platform (discovery, compliance, risk scoring, reports,
+  the new Post-Quantum Readiness checks, etc.) works fully without it.
+
+  To enable it: get a free API key at https://aistudio.google.com
+  ("Get API key" - no billing/credit card required for the free tier), then
+  paste it in:
+
+      GEMINI_API_KEY=your-key-here
+
+  Leave every other value in .env at its default unless you know you want
+  to change it.
+
+
+------------------------------------------------------------------------------
+5. ONE-TIME SETUP (run once per clone, and again if you ever wipe Docker
+   volumes / do a full Docker Desktop "purge")
+------------------------------------------------------------------------------
+
+  Run these from inside the lab/ directory:
+
+      cd lab
+
+  5a. Generate the lab's TLS certificates (used by the "hardened" and
+      "partially hardened" demo devices):
+
+          docker compose --profile init run --rm cert-init
+
+  5b. Create the password file for the secure MQTT broker:
+
+          docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config eclipse-mosquitto:2 mosquitto_passwd -c -b /mosquitto/config/passwd labworker "LabWork3r-Secr3t!"
+          docker run --rm -v kaust-iot-lab_mqtt-secure-passwd:/mosquitto/config alpine chmod 644 /mosquitto/config/passwd
+
+  Both steps only ever need to be run once per Docker volume set - if you
+  bring the stack down and back up again normally, you do NOT need to
+  repeat them. You only need to repeat them after deleting the lab's Docker
+  volumes (e.g. Docker Desktop's Troubleshoot -> "Clean / Purge data").
+
+
+------------------------------------------------------------------------------
+6. BUILD AND START EVERYTHING
+------------------------------------------------------------------------------
+
+  Still from inside lab/, run:
+
+      docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+  What this does:
+    - Builds every custom image (the dashboard, the API, the worker, and
+      all the simulated IoT devices) the first time - this is the slow
+      step (several minutes). Later runs reuse the cached images and are
+      much faster.
+    - Starts all ~16 containers in the background (-d = detached).
+    - The "docker-compose.dev.yml" file is an overlay that publishes the
+      dashboard/API/device ports to your machine (localhost) so you can
+      actually open them in a browser. Without it, everything stays
+      locked inside the lab's private Docker networks (which is the
+      correct behaviour for a real, non-development deployment).
+
+  Watch it come up:
+
+      docker compose ps
+
+  Wait until every service that has a health check shows "(healthy)" -
+  this usually takes 30-60 seconds after the containers start. It's normal
+  for a couple of infrastructure containers (e.g. traffic-capture) to have
+  no health check at all and just show "Up".
+
+  If anything shows "Exited" or keeps restarting, see the TROUBLESHOOTING
+  section below.
+
+
+------------------------------------------------------------------------------
+7. SEED THE DATABASE (first time only)
+------------------------------------------------------------------------------
+
+  On a fresh database volume, the dashboard starts out empty. Run these
+  three commands once (from inside lab/) to load the sample device fleet
+  and the NCA CGIoT-1:2024 compliance catalog:
+
+      docker compose exec -e PYTHONPATH=/work -e DATABASE_URL=postgresql://auditor:auditor-lab-pw@auditor-database:5432/auditor auditor-api python -m policies.engine.seed_devices
+
+      docker compose exec auditor-api python -m policies.nca.seed_catalog
+      docker compose exec auditor-api python -m policies.nca.seed_finding_mappings
+      docker compose exec auditor-api python -m policies.nca.seed_checklists
+
+  Each of these is safe to run again if you're ever unsure whether it ran -
+  they are idempotent (running twice does not create duplicates).
+
+  Optional: to also load the previously-recorded sample evidence/verdicts
+  that ship with the repo (document-store/evidence/*.json), run:
+
+      docker compose exec auditor-worker sh -c "cd /work && python -m policies.engine.migrate_existing_records"
+
+
+------------------------------------------------------------------------------
+8. OPEN THE DASHBOARD
+------------------------------------------------------------------------------
+
+  Dashboard (web UI):     http://localhost:8080
+  API (JSON, optional):   http://localhost:8000/summary
+
+  On the dashboard, "Devices" should list the sample device fleet, and
+  "Overview" should show non-zero evidence/verdict counts once you've run
+  step 7.
+
+  The simulated IoT devices themselves are also reachable directly for
+  manual poking around (all self-signed certs on the HTTPS ones - expect a
+  browser warning, that's expected for a lab test CA):
+
+      device-insecure   -> http://localhost:8081/
+      device-partial    -> https://localhost:8082/
+      device-hardened   -> https://localhost:8083/
+      (several more device fixtures are published too - see
+      lab/docker-compose.dev.yml for the full port list)
+
+
+------------------------------------------------------------------------------
+9. STOPPING / RESTARTING
+------------------------------------------------------------------------------
+
+  Stop everything (keeps your data - devices, evidence, verdicts, etc. are
+  preserved in Docker volumes):
+
+      docker compose down
+
+  Start it again later (fast - no rebuild needed unless the code changed):
+
+      docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+  If you pull new code that changed lab/auditor/api or lab/auditor/web,
+  rebuild those images before starting again:
+
+      docker compose build auditor-api auditor-web
+      docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate auditor-api auditor-web auditor-worker
+
+
+------------------------------------------------------------------------------
+10. TROUBLESHOOTING
+------------------------------------------------------------------------------
+
+  "Cannot connect to the Docker daemon"
+      Docker Desktop isn't running (or hasn't finished starting). Open it
+      and wait for the "Engine running" state.
+
+  Dashboard / API ports don't load in the browser
+      Make sure you included BOTH compose files in step 6
+      (-f docker-compose.yml -f docker-compose.dev.yml). The base compose
+      file alone deliberately keeps everything private to the lab's
+      internal Docker network.
+
+  Devices page / Overview shows nothing
+      Run the seeding commands in step 7 - a fresh database starts empty.
+
+  A container keeps restarting or shows "unhealthy"
+      Run "docker compose logs <service-name>" to see why, e.g.:
+          docker compose logs auditor-api
+      A common cause after a Docker Desktop "Clean/Purge data" is that
+      steps 5 and 7 need to be run again against the fresh volumes.
+
+  Port already in use
+      Something else on your machine is already using one of the published
+      ports (8080, 8000, 8081-8088, etc). Stop that other program, or edit
+      the port numbers in lab/docker-compose.dev.yml.
+
+  Still stuck
+      See lab/README.md and the docs/errors/ folder in this repository -
+      every issue previously hit during development is logged there with
+      its root cause and fix.
+==============================================================================

@@ -9,6 +9,9 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   /** Disables both buttons and swaps the confirm label while a request is in flight. */
   pending?: boolean;
+  /** Disables just the confirm button (e.g. a required field is still empty)
+   * without claiming a request is in flight - the label stays `confirmLabel`. */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -26,15 +29,26 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel = "Cancel",
   pending = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
+  // Deliberately depends on `open` alone: callers overwhelmingly pass an
+  // inline `onCancel`/`onConfirm` (a fresh function identity every render),
+  // and re-running this on every such render would steal focus back to
+  // Cancel on every keystroke typed into any input inside `description` -
+  // confirmed live by a real test that types into a field here and found
+  // focus yanked away after the first character.
   useEffect(() => {
     if (!open) return;
     cancelRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onCancel();
@@ -76,7 +90,7 @@ export function ConfirmDialog({
           </button>
           <button
             type="button"
-            disabled={pending}
+            disabled={pending || confirmDisabled}
             onClick={onConfirm}
             className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[var(--color-critical)] px-4 py-2 text-sm font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
           >

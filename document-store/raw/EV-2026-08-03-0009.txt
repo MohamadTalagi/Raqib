@@ -1,0 +1,18 @@
+HTTP/1.1 200 OK
+date: Mon, 03 Aug 2026 10:36:37 GMT
+server: uvicorn
+content-length: 390
+content-type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html><head><title>Smart Camera Login</title></head>
+<body>
+<h1>AcmeCam AC-300 - Login</h1>
+<form method="post" action="/login">
+  <input type="text" name="username" placeholder="Username" />
+  <input type="password" name="password" placeholder="Password" />
+  <button type="submit">Login</button>
+</form>
+<p><a href="/dashboard">View device dashboard</a></p>
+</body></html>
+HTTP_VERSION:1.1

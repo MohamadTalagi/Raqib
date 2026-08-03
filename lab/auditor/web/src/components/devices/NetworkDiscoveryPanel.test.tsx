@@ -39,7 +39,7 @@ function makeScan(overrides: Partial<NetworkScan> = {}): NetworkScan {
     command: "nmap -sV -p 22,23,80,443,1883,8883 --open -T4 172.30.0.0/24",
     raw_output: "...",
     observations: {
-      subnet: "172.30.0.0/24",
+      subnets: ["172.30.0.0/24"],
       hosts: [IOT_HOST, UNCERTAIN_HOST],
       iot_device_count: 1,
       uncertain_count: 1,
@@ -47,6 +47,7 @@ function makeScan(overrides: Partial<NetworkScan> = {}): NetworkScan {
       notes: ["Classification uses only the open-port/service signature."],
     },
     error: null,
+    kind: "subnet_sweep",
     created_at: "2026-07-23T00:00:00Z",
     updated_at: "2026-07-23T00:00:00Z",
     ...overrides,

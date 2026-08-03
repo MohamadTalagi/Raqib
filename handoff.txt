@@ -1,0 +1,268 @@
+HANDOFF — Dashboard overhaul Phase 13 live-verification complete + 3 bugs
+found/fixed. Written 2026-08-01 at the user's request, terminating this
+session cleanly (no crash, no interruption — just a normal handoff).
+
+================================================================================
+1. WHAT THIS PROJECT IS
+================================================================================
+IoT-Auditor / IoTGuard — KAUST Academy cybersecurity capstone. A Saudi
+NCA-CGIoT-1:2024-aligned IoT security audit platform: FastAPI backend
+(lab/auditor/api), a Postgres-backed worker that runs real whitelisted scan
+tools against a simulated Docker Compose "lab" of vulnerable IoT devices
+(lab/auditor/worker + lab/devices/...), and a React+TS+Vite dashboard
+(lab/auditor/web). Full project history, architecture, and every past
+decision live in CLAUDE.md at the repo root — that file is the canonical
+source of truth and is kept current after every meaningful change. Read
+CLAUDE.md's §0 "Current Status" section first; this handoff is a supplement
+for continuity across the session boundary, not a replacement for it.
+
+Repo: https://github.com/MohamadTalagi/KAUST-IoT.git, branch main.
+Working directory: C:\development\projects\IoT-Auditor
+
+================================================================================
+2. WHAT THIS SESSION DID (all of it — nothing left mid-flight)
+================================================================================
+This session picked up from a previous handoff.txt (now deleted — its content
+is folded into CLAUDE.md's §0, see the 2026-08-01 entry there for the full
+detailed write-up) that described a 13-phase "guided pipeline" dashboard
+overhaul as fully built, committed, and pushed, but blocked on ONE remaining
+task: a real, live, browser-driven proof that the pipeline actually works end
+to end against real data — blocked because a Docker Desktop networking bug
+(embedded DNS broken on internal-network) had forced the user to reboot the
+whole machine, and the reboot's outcome hadn't been observed yet when that
+handoff was written.
+
+This session, in order:
+1. Confirmed Docker Desktop was healthy post-reboot; brought the lab stack up
+   with the dev overlay. Found the DNS bug had SURVIVED the reboot too.
+2. Diagnosed further: raw UDP DNS queries sent directly to 127.0.0.11:53
+   (bypassing getent) showed the embedded resolver was alive but gave
+   INCONSISTENT answers per hostname on internal-network only (one real
+   container name got a clean NXDOMAIN, three others got total silence/
+   timeout) — ruled out host firewall/VPN and stale network adapters, pointed
+   at Docker Desktop engine-internal corruption. Full diagnostic trail:
+   docs/errors/032-docker-desktop-embedded-dns-corruption-survived-reboot.md
+3. User ran Docker Desktop's Troubleshoot -> Clean/Purge data (confirmed
+   first that every object on the machine belonged to this project, current
+   or a stale prior naming iteration, so nothing else was at risk). This
+   fixed the DNS bug immediately.
+4. A purge wipes named volumes too, which surfaced re-setup needs:
+   - Re-ran lab/README.md's documented first-time setup (cert-init, mqtt
+     secure-broker password) against the fresh volumes.
+   - Discovered and fixed a REAL, previously-undocumented gap: the NCA
+     compliance catalog (81 guidelines + ~20 finding mappings) is seeded
+     IMPERATIVELY (python -m policies.nca.seed_catalog /
+     seed_finding_mappings), not via init.sql/migrations at all — a fresh
+     Postgres volume silently shows "0 controls in catalog" with no error
+     until these are run. Ran them (from inside auditor-api, since
+     auditor-worker has no psycopg installed). This gap is noted in
+     docs/errors/032's "how to prevent" section but lab/README.md itself
+     was NOT updated to mention it — see §3 below, this is the clearest
+     concrete next-session task.
+5. Rebuilt all 10 images, brought the full 11-container stack up.
+6. Drove the ENTIRE guided pipeline live through a real browser
+   (Claude-in-Chrome), all real data, nothing mocked:
+   - Discovery: real network scan found all 9 real lab hosts, correctly
+     classified. Used the bulk-select "Register selected (N)" flow for the
+     first time ever against a real backend (previously only unit-tested) —
+     registered device-insecure/-partial/-hardened for real.
+   - Devices: cohort picker + "Advance to Fingerprinting" worked, route state
+     carried the selection through.
+   - Fingerprinting: real `nmap -sV -p-` against device-insecure
+     (172.30.0.5), real evidence recorded (EV-2026-07-31-0001/0002).
+   - SA-IOT Compliance: real 10-credential-pair chained curl attack (found
+     admin:admin genuinely works), real evidence (EV-2026-07-31-0003), real
+     "Recompute verdicts" -> real SA-IOT-002/003 FAIL verdicts from the
+     actual policy engine.
+   - Vulnerability Intelligence: generated real firmware via
+     generate_firmware.py (real OpenSSL 1.0.1e / BusyBox 1.19.4), uploaded
+     it through the page's own upload control (moved off Device Detail in
+     this overhaul's Phase 9), ran TEST-FW-MANIFEST, got back real
+     Grype-scanned CVE data (77 CVEs for openssl, 24 for busybox, Heartbleed
+     correctly KEV-flagged) — evidence EV-2026-07-31-0004.
+   - NCA Compliance: selected device-insecure on the new "Assess a cohort"
+     card, clicked "Assess selected" — confirmed a REAL new browser tab
+     opened via window.open to that device's own assessment workspace
+     (this could only be verified in a real browser, never via curl).
+     Recorded a real assessment on the auto-suggested-FAIL blocking control
+     2-15-2; device's readiness flipped to Failed.
+   - Risk Assessment: device-insecure's live 7-factor breakdown (25 + 20 +
+     20 + 7.5 + 4 + 3 + 2.5) summed exactly to its displayed score (82,
+     Critical).
+   - Remediation: confirmed the stub correctly shows only real, already-
+     recorded static remediation text for currently-failing controls, with
+     a clear "Not built yet" banner — no fake/previewed AI content.
+7. Found and fixed 3 REAL bugs this live pass exposed (none catchable by the
+   existing mocked-fixture unit tests, since each depended on how a *real*
+   backend response looks for a device that exists but has thin history):
+   a. lib/pipeline.ts: `risk_assessment` was trivially "reached" the instant
+      ANY device was registered, because GET /risk/devices/{id}'s `known`
+      flag means "device_id exists," not "assessed" (risk_engine.py always
+      computes a defensible worst-case score even with zero evidence, by
+      design). Fixed to require real signal from an earlier phase too
+      (SA-IOT verdict OR NCA assessment OR vuln data) — DELIBERATELY
+      excluding fingerprinting, since risk_routes.py's 7 real inputs never
+      derive from fingerprinting-class evidence at all (confirmed by
+      reading the actual assembly code, not assumed).
+   b. pages/DevicesPage.tsx: `hasSaIotVerdict` counted a NOT_APPLICABLE
+      placeholder verdict (synthesized fleet-wide by ANY recompute, for
+      every device regardless of whether it was ever tested) as "SA-IOT
+      Compliance reached." Fixed to exclude NOT_APPLICABLE, matching the
+      exact same principle nca_compliance's own check already used one
+      line below it.
+   c. pages/SAIOTCompliancePage.tsx: never refetched verdicts after
+      "Recompute verdicts" succeeded — useFetch(api.verdicts, []) only ever
+      fetched once on mount. The real backend genuinely had new verdicts
+      (confirmed via direct curl) but the page's own counter stayed frozen
+      at 0/0 until a manual reload. Fixed with the same refreshKey-bumped-
+      into-useFetch-deps pattern every other mutating page in this codebase
+      already uses.
+   All three fixed with regression tests. auditor-web rebuilt/redeployed and
+   re-verified live in the browser after EACH fix individually (not
+   batched) before moving to the next.
+8. Verified: tsc -b --force clean, oxlint clean (same 5 pre-existing
+   warnings), full Vitest suite 271/271 passing (was 266 before this
+   session's regression tests). Backend (policies/lab/auditor/api) NOT
+   re-run this session since no backend code changed at all — only frontend
+   was touched.
+9. Updated CLAUDE.md's §0 with the full write-up (both this session's work
+   AND the previously-undocumented 13-phase overhaul itself, since the
+   prior session's own §0 update was interrupted by the reboot and never
+   completed) and added a §8 changelog row. Deleted the old handoff.txt
+   per its own closing instruction.
+10. Committed everything as 9af66fd ("dashboard overhaul: fix 3 live-
+    verification bugs, close out Phase 13") — 14 files, CLAUDE.md +
+    docs/errors/032 (new) + docs/errors/README.md + the 3 code fixes + their
+    tests + 4 real evidence files (EV-2026-07-31-0001..0004, overwritten
+    with new real content since the DB was purged and IDs restarted from
+    0001) + a real uploaded firmware archive
+    (document-store/firmware/device-insecure.archive).
+11. NOT pushed to origin/main — local commit only, 1 ahead of origin. User
+    has not asked for a push.
+
+================================================================================
+3. WHAT'S LEFT / NEXT STEPS, IN ORDER OF LIKELY PRIORITY
+================================================================================
+Nothing is broken or mid-flight. The dashboard overhaul is functionally
+complete and live-verified. What remains is either pre-existing, deliberately
+scoped-out work, or small documentation gaps:
+
+1. **Push 9af66fd to origin/main** — not done, needs explicit user ask per
+   this project's standing git-safety convention (never push without being
+   asked). Check `git log origin/main..HEAD` first to confirm it's still
+   just this one commit before pushing.
+
+2. **lab/README.md doesn't mention the NCA catalog seed step at all** —
+   only the cert-init/mqtt-password step is documented as "first-time
+   setup." A fresh Postgres volume (any purge, any fresh clone's first
+   `docker compose up`) needs `python -m policies.nca.seed_catalog` and
+   `python -m policies.nca.seed_finding_mappings` run inside auditor-api
+   (auditor-worker has no psycopg) or the NCA Compliance page silently
+   shows "0 controls in catalog" with no error at all. This is a real,
+   concrete, small fix — add a 3rd line to the README's setup block. Noted
+   in docs/errors/032 but the README itself was left untouched this
+   session (documentation-only, non-blocking, but worth 5 minutes).
+
+3. **IoTGuard Stages 07/08 (AI-generated remediation blueprint + AI
+   executive summary) are not built.** The Remediation page is an honest
+   "Not built yet" stub by design — the user explicitly deferred the real
+   AI-remediation engine (model choice, prompting, human-review gate) to a
+   separate, later, larger plan before this overhaul even started
+   (confirmed via AskUserQuestion at that time, documented in CLAUDE.md).
+   If asked to build this next, it needs its own scoping conversation, not
+   an assumption of what "AI-assisted" should mean here — this project's
+   whole ethos is "AI-assisted, not AI-decided," so whatever gets built
+   must keep a human-confirmation gate on any generated remediation text.
+
+4. **IoTGuard Stage 10 (Continuous Monitoring / historical trend) is not
+   built at all.** No scheduled re-scanning, no trend charts, no
+   verdict-over-time view. Noted throughout CLAUDE.md history as a natural
+   fit for later, never started.
+
+5. **No authentication/login system anywhere in this application** — a
+   long-standing, deliberately-documented limitation of this training lab
+   (every "reviewer identity" field across NCA assessments/exceptions/
+   overrides is free-text name entry, not real auth). Not something this
+   session touched or was asked to touch; flagging only because "is it
+   ready" naturally raises this question for anything beyond a training
+   lab.
+
+6. **Backend test suites (policies/, lab/auditor/api) were not re-run this
+   session** since no backend code changed — everything this session fixed
+   was frontend-only (lib/pipeline.ts, DevicesPage.tsx,
+   SAIOTCompliancePage.tsx). Before trusting backend behavior on the next
+   session, a quick sanity re-run wouldn't hurt, though there's no reason
+   to expect regressions since nothing backend-side was touched:
+     .venv/Scripts/python.exe -m pytest policies/ -q
+     (from lab/auditor/api, needs the C:\work junction — confirmed it
+      still exists from past sessions)
+     PYTHONPATH="/c/work" ../../../.venv/Scripts/python.exe -m pytest -q \
+       --ignore=test_report_smoke.py
+   Expect the same 2 pre-existing WeasyPrint/libgobject failures on this
+   Windows host (unrelated, documented for many past sessions).
+
+7. **The 2 pre-existing WeasyPrint/libgobject-native-library test failures**
+   on this Windows dev host (PDF report generation tests) are unrelated to
+   anything this or any recent session touched — a known, accepted,
+   Windows-host-only gap, not a real bug. Don't chase this unless asked.
+
+8. **device-partial and device-hardened have generated firmware fixtures
+   sitting in lab/auditor/worker/firmware/output/ that were never uploaded**
+   (only device-insecure's was, during this session's Vulnerability
+   Intelligence verification). Not a gap — just noting it in case a future
+   session wants full-fleet vuln-intel coverage for a demo; the generator
+   script (generate_firmware.py) already produced all 3, only one was used.
+
+Nothing else is outstanding from the 13-phase plan or from this session's
+own verification pass — this really is "the overhaul is done and proven,
+here's what's still out of scope by design."
+
+================================================================================
+4. CURRENT LIVE STATE (as of session end — verify freshness before trusting)
+================================================================================
+- All 11 lab containers up and healthy (docker compose -f docker-compose.yml
+  -f docker-compose.dev.yml up -d, from the lab/ directory).
+- 3 real devices registered: device-insecure (4 evidence, 4 verdicts, real
+  firmware uploaded, real Grype vuln data), device-partial (0 evidence, 1
+  verdict — a NOT_APPLICABLE placeholder only, never actually tested),
+  device-hardened (same as device-partial).
+- Real NCA assessment recorded on device-insecure's control 2-15-2 (FAIL,
+  blocking) — its readiness is Failed with 1/18 controls assessed.
+- GET /summary: 4 evidence, 6 verdicts (2 FAIL, 4 NOT_APPLICABLE, 0 PASS).
+- Working tree clean, HEAD at 9af66fd, 1 commit ahead of origin/main
+  (not pushed).
+
+If a fresh session starts and the containers aren't running (e.g. after
+another reboot/Docker Desktop restart), bring them up with:
+  cd C:\development\projects\IoT-Auditor\lab
+  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+If DNS breaks again (same symptom as docs/errors/032 — psycopg
+"Name or service not known" from auditor-api), don't re-try container/network
+recreation or WSL restart first (already proven ineffective twice across two
+sessions) — go straight to raw-UDP-query diagnosis (see docs/errors/032 for
+the exact script) to confirm it's the same bug, then Docker Desktop
+Troubleshoot -> Clean/Purge data.
+
+================================================================================
+5. QUICK-REFERENCE: VERIFICATION COMMANDS
+================================================================================
+Frontend (from lab/auditor/web):
+  npx tsc -b --force              <- NOT bare `tsc --noEmit` (checks nothing
+                                      in this project's tsconfig setup)
+  npx oxlint                      <- expect exactly 5 pre-existing warnings
+                                      (useToast.tsx, useFetch.ts,
+                                      NetworkDiscoveryPanel.tsx,
+                                      NetworkGraph.tsx x2)
+  npx vitest run --no-file-parallelism   <- expect 271/271 passing
+
+Backend (from repo root / lab/auditor/api, see §3.6 above for exact
+commands) — expect the same 2 pre-existing WeasyPrint failures, nothing
+else.
+
+Always check for stray test writes after a backend run:
+  git status --short document-store/
+    -> should be empty (a real, historically-recurring gotcha in this repo)
+
+================================================================================
+END OF HANDOFF
+================================================================================

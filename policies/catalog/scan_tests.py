@@ -91,11 +91,26 @@ PIPELINE_PHASE_VULN_INTELLIGENCE = "vuln_intelligence"
 # fourth SA-IOT/NCA-style compliance framework requiring sign-off.
 PIPELINE_PHASE_PQC_READINESS = "pqc_readiness"
 
-# Mirrors device_validation.ALLOWED_NETWORK (audit-network) - duplicated as a
-# plain string here rather than imported, since scan_tests.py is shared code
-# loaded by both auditor-api and auditor-worker and must not take on a
-# dependency on device_validation.py's container-specific import path.
-AUDIT_NETWORK_CIDR = "172.30.0.0/24"
+# The configurable set of subnets Network Discovery sweeps - mirrors
+# device_validation.ALLOWED_NETWORKS (the boundary a registered device's
+# host must fall inside), but kept as its own list of plain strings rather
+# than imported, since scan_tests.py is shared code loaded by both
+# auditor-api and auditor-worker and must not take on a dependency on
+# device_validation.py's container-specific import path. Defaults to
+# audit-network alone so an unconfigured process behaves exactly as this
+# sweep always has; real configuration lives in the `network_scopes` table
+# and is pushed in via configure_active_scopes() the same way
+# device_validation.configure_allowed_networks() is - see that module's
+# docstring for the full API-push / worker-poll split.
+ACTIVE_SCOPES: list[str] = ["172.30.0.0/24"]
+
+
+def configure_active_scopes(cidrs: list[str]) -> None:
+    """Replaces the set of subnets Network Discovery sweeps. Called by
+    auditor-api at startup and after every network_scopes write, and by
+    auditor-worker's periodic refresh poll."""
+    global ACTIVE_SCOPES
+    ACTIVE_SCOPES = list(cidrs)
 
 FIRMWARE_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/firmware_check.py"
 
@@ -402,10 +417,12 @@ def _network_discovery_command(target: dict) -> list[str]:
     # why --open was also dropped (it was silently omitting live hosts with
     # none of these ports open, e.g. the subnet gateway, making "unknown" an
     # unreachable classification in practice).
+    # nmap natively accepts multiple target specs in one invocation, so every
+    # configured scope is swept in a single command rather than one per scope.
     ports = ",".join(str(p) for p in NETWORK_DISCOVERY_PORTS)
     return [
         "nmap", "-sV", "--version-intensity", "2", "-p", ports,
-        "-T3", "--max-retries", "1", "--max-rate", "50", AUDIT_NETWORK_CIDR,
+        "-T3", "--max-retries", "1", "--max-rate", "50", *ACTIVE_SCOPES,
     ]
 
 
@@ -485,8 +502,9 @@ def _parse_network_discovery_observations(target: dict, output: str) -> dict:
     uncertain_count = sum(1 for h in hosts if h["classification"] == "uncertain")
     unknown_count = sum(1 for h in hosts if h["classification"] == "unknown")
 
+    subnets_swept = ", ".join(ACTIVE_SCOPES)
     notes = [
-        f"{len(hosts)} live host(s) found on {AUDIT_NETWORK_CIDR}: {iot_count} classified as IoT "
+        f"{len(hosts)} live host(s) found on {subnets_swept}: {iot_count} classified as IoT "
         f"appliance(s), {uncertain_count} uncertain, {unknown_count} unclassifiable from the scanned "
         "signature ports alone.",
         "Classification uses only the open-port/service signature (a management UI or MQTT port = "
@@ -506,7 +524,7 @@ def _parse_network_discovery_observations(target: dict, output: str) -> dict:
         )
 
     return {
-        "subnet": AUDIT_NETWORK_CIDR,
+        "subnets": list(ACTIVE_SCOPES),
         "hosts": hosts,
         "iot_device_count": iot_count,
         "uncertain_count": uncertain_count,

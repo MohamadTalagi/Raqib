@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from policies.catalog.scan_tests import (
     ALL_SERVICE_TYPES,
     PIPELINE_PHASE_FINGERPRINTING,
@@ -7,11 +9,22 @@ from policies.catalog.scan_tests import (
     PIPELINE_PHASE_SA_IOT_COMPLIANCE,
     PIPELINE_PHASE_VULN_INTELLIGENCE,
     SCAN_CATALOG,
+    configure_active_scopes,
     is_applicable,
     is_firmware_test,
     is_network_discovery_test,
     suggest_finding_and_confidence,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_active_scopes():
+    """ACTIVE_SCOPES is process-global mutable state (see scan_tests.py's own
+    docstring) - reset after every test so a test exercising
+    configure_active_scopes() can't leak its configuration into whatever
+    test runs next in this same pytest process."""
+    yield
+    configure_active_scopes(["172.30.0.0/24"])
 
 HTTP_TARGET = {
     "device_id": "device-insecure", "host": "device-insecure",
@@ -887,6 +900,23 @@ def test_network_discovery_has_a_longer_timeout_than_the_default():
     assert SCAN_CATALOG["TEST-NET-DISCOVERY"]["timeout_seconds"] > 30
 
 
+def test_configure_active_scopes_targets_every_configured_subnet():
+    configure_active_scopes(["172.30.0.0/24", "10.4.0.0/24"])
+    command = SCAN_CATALOG["TEST-NET-DISCOVERY"]["build_command"](DISCOVERY_TARGET)
+    assert "172.30.0.0/24" in command
+    assert "10.4.0.0/24" in command
+    # nmap takes every scope as its own argv element, not one joined string.
+    assert command[-2:] == ["172.30.0.0/24", "10.4.0.0/24"]
+
+
+def test_configure_active_scopes_replaces_wholesale_not_additively():
+    configure_active_scopes(["172.30.0.0/24"])
+    configure_active_scopes(["10.4.0.0/24"])
+    command = SCAN_CATALOG["TEST-NET-DISCOVERY"]["build_command"](DISCOVERY_TARGET)
+    assert "172.30.0.0/24" not in command
+    assert "10.4.0.0/24" in command
+
+
 def _discovery_output(*blocks: str) -> str:
     preamble = "Starting Nmap 7.95 ( https://nmap.org ) at 2026-07-23 00:00 UTC\n"
     return preamble + "".join(blocks)
@@ -901,7 +931,7 @@ def test_parse_network_discovery_classifies_an_iot_signature_host_as_iot():
         "23/tcp   open  telnet?\n\n",
     )
     obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
-    assert obs["subnet"] == "172.30.0.0/24"
+    assert obs["subnets"] == ["172.30.0.0/24"]
     assert len(obs["hosts"]) == 1
     host = obs["hosts"][0]
     assert host["ip"] == "172.30.0.5"
@@ -910,6 +940,17 @@ def test_parse_network_discovery_classifies_an_iot_signature_host_as_iot():
     assert host["classification"] == "iot_device"
     assert host["confidence"] == "high"
     assert obs["iot_device_count"] == 1
+
+
+def test_parse_network_discovery_reports_every_configured_subnet():
+    configure_active_scopes(["172.30.0.0/24", "10.4.0.0/24"])
+    output = _discovery_output(
+        "Nmap scan report for device-insecure (172.30.0.5)\nHost is up.\n\n"
+        "PORT     STATE SERVICE VERSION\n80/tcp   open  http\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert obs["subnets"] == ["172.30.0.0/24", "10.4.0.0/24"]
+    assert "10.4.0.0/24" in obs["notes"][0]
 
 
 def test_parse_network_discovery_classifies_mqtt_only_host_as_iot():

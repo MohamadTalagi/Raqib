@@ -144,7 +144,7 @@ export interface DiscoveredHost {
 }
 
 export interface NetworkScanObservations {
-  subnet: string;
+  subnets: string[];
   hosts: DiscoveredHost[];
   iot_device_count: number;
   uncertain_count: number;
@@ -153,6 +153,18 @@ export interface NetworkScanObservations {
 }
 
 export type NetworkScanStatus = "pending" | "running" | "completed" | "failed";
+export type NetworkScanKind = "subnet_sweep" | "interface_detect";
+
+export interface InterfaceDetectCandidate {
+  interface: string;
+  cidr: string;
+}
+
+export interface InterfaceDetectObservations {
+  candidates: InterfaceDetectCandidate[];
+  excluded_backend_subnet: string | null;
+  error?: string;
+}
 
 export interface NetworkScan {
   id: number;
@@ -161,10 +173,36 @@ export interface NetworkScan {
   tool_version: string | null;
   command: string | null;
   raw_output: string | null;
-  observations: NetworkScanObservations | null;
+  // Shape depends on `kind` - a subnet sweep reports NetworkScanObservations,
+  // "Detect automatically" (Network Scope) reports InterfaceDetectObservations.
+  observations: NetworkScanObservations | InterfaceDetectObservations | null;
   error: string | null;
+  kind: NetworkScanKind;
   created_at: string;
   updated_at: string;
+}
+
+// Configurable scan-target boundary ("Network Scope") - see
+// lab/auditor/api/network_scope_routes.py.
+export type NetworkScopeKind = "lab_preset" | "custom";
+export type NetworkScopeSource = "manual" | "detected";
+
+export interface NetworkScope {
+  id: number;
+  label: string;
+  cidr: string;
+  kind: NetworkScopeKind;
+  source: NetworkScopeSource;
+  is_active: boolean;
+  added_by: string;
+  reason: string | null;
+  created_at: string;
+  deactivated_at: string | null;
+  deactivated_by: string | null;
+}
+
+export interface DeactivateNetworkScopeResult extends NetworkScope {
+  affected_device_count: number;
 }
 
 export type ScanJobStatus = "pending" | "running" | "awaiting_finding" | "recorded" | "failed";

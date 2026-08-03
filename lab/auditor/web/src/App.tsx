@@ -24,6 +24,7 @@ import { NCAControlsPage } from "@/pages/NCAControlsPage";
 import { NCAControlDetailPage } from "@/pages/NCAControlDetailPage";
 import { OrganizationalCompliancePage } from "@/pages/OrganizationalCompliancePage";
 import { AutomatedRunProgressPage } from "@/pages/AutomatedRunProgressPage";
+import { NetworkScopePage } from "@/pages/NetworkScopePage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastProvider } from "@/lib/useToast";
@@ -35,6 +36,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<OverviewPage />} />
+            <Route path="/settings/network-scope" element={<NetworkScopePage />} />
 
             {/* Pipeline, in order - see lib/pipeline.ts's PIPELINE_PHASES */}
             <Route path="/discovery" element={<DiscoveryPage />} />

@@ -6,7 +6,7 @@ import { DiscoveryPage } from "./DiscoveryPage";
 import { mockFetchImplementation } from "@/test/fixtures";
 import { ToastProvider } from "@/lib/useToast";
 import { api } from "@/lib/api";
-import type { NetworkScan } from "@/lib/types";
+import type { NetworkScan, NetworkScanObservations } from "@/lib/types";
 
 function renderPage() {
   return render(
@@ -27,7 +27,7 @@ function singleHostScan(): NetworkScan {
     command: "nmap ...",
     raw_output: "...",
     observations: {
-      subnet: "172.30.0.0/24",
+      subnets: ["172.30.0.0/24"],
       hosts: [
         {
           ip: "172.30.0.50",
@@ -45,6 +45,7 @@ function singleHostScan(): NetworkScan {
       notes: [],
     },
     error: null,
+    kind: "subnet_sweep",
     created_at: "2026-07-23T00:00:00Z",
     updated_at: "2026-07-23T00:00:00Z",
   };
@@ -52,12 +53,13 @@ function singleHostScan(): NetworkScan {
 
 function twoHostScan(): NetworkScan {
   const scan = singleHostScan();
+  const observations = scan.observations as NetworkScanObservations;
   return {
     ...scan,
     observations: {
-      ...scan.observations!,
+      ...observations,
       hosts: [
-        ...scan.observations!.hosts,
+        ...observations.hosts,
         {
           ip: "172.30.0.51",
           hostname: null,

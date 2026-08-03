@@ -14,7 +14,10 @@ import type {
   DeviceDetail,
   DeviceMutationResult,
   EvidenceRecord,
+  DeactivateNetworkScopeResult,
   NetworkScan,
+  NetworkScanKind,
+  NetworkScope,
   NCAAssessment,
   NCAChecklist,
   NCAComplianceEvidence,
@@ -246,8 +249,31 @@ export const api = {
 
   // -- Network discovery (discovery-first device onboarding) --------------
 
-  createNetworkScan: (): Promise<NetworkScan> => postJson<NetworkScan>("/network-scans", {}),
+  createNetworkScan: (kind?: NetworkScanKind): Promise<NetworkScan> =>
+    postJson<NetworkScan>("/network-scans", kind ? { kind } : {}),
   getNetworkScan: (id: number): Promise<NetworkScan> => getJson<NetworkScan>(`/network-scans/${id}`),
+
+  // -- Network Scope (configurable scan-target boundary) ------------------
+
+  listNetworkScopes: (): Promise<NetworkScope[]> => getJson<NetworkScope[]>("/network-scope"),
+  activeNetworkScopeCidrs: (): Promise<{ cidrs: string[] }> =>
+    getJson<{ cidrs: string[] }>("/network-scope/active"),
+  createNetworkScope: (payload: {
+    label: string;
+    cidr: string;
+    added_by: string;
+    reason?: string;
+    source?: "manual" | "detected";
+  }): Promise<NetworkScope> => postJson<NetworkScope>("/network-scope", payload),
+  networkScopeDeactivationImpact: (id: number): Promise<{ affected_device_count: number }> =>
+    getJson<{ affected_device_count: number }>(`/network-scope/${id}/deactivation-impact`),
+  deactivateNetworkScope: (
+    id: number,
+    payload: { actor: string; reason?: string },
+  ): Promise<DeactivateNetworkScopeResult> =>
+    postJson<DeactivateNetworkScopeResult>(`/network-scope/${id}/deactivate`, payload),
+  reactivateNetworkScope: (id: number): Promise<NetworkScope> =>
+    postJson<NetworkScope>(`/network-scope/${id}/reactivate`, {}),
 
   // Returns a URL rather than fetching: the browser must perform the download
   // itself so the server's Content-Disposition filename is honoured. Fetching

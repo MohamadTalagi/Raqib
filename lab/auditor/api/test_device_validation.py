@@ -2,7 +2,11 @@ import pytest
 
 from device_validation import (
     INFRASTRUCTURE_HOSTS,
+    MIN_SCOPE_PREFIX_LENGTH,
+    PRIVATE_RANGES,
+    PROTECTED_RANGES,
     ValidationError,
+    configure_allowed_networks,
     validate_device_id,
     validate_host,
     validate_port,
@@ -122,3 +126,45 @@ def test_bare_number_rejected():
 def test_legitimate_names_still_accepted():
     for hostname in ("device-insecure", "cam2", "a1"):
         assert validate_host(hostname) == hostname
+
+
+# -- Network Scope: configurable allowlist -----------------------------------
+
+
+def test_configure_allowed_networks_accepts_a_host_in_the_new_range():
+    configure_allowed_networks(["172.30.0.0/24", "10.5.0.0/24"])
+    assert validate_host("10.5.0.9") == "10.5.0.9"
+    assert validate_host("172.30.0.5") == "172.30.0.5"
+
+
+def test_configure_allowed_networks_rejects_a_host_outside_every_configured_range():
+    configure_allowed_networks(["10.5.0.0/24"])
+    with pytest.raises(ValidationError):
+        validate_host("172.30.0.5")
+
+
+def test_configure_allowed_networks_replaces_wholesale_not_additively():
+    configure_allowed_networks(["172.30.0.0/24"])
+    configure_allowed_networks(["10.5.0.0/24"])
+    with pytest.raises(ValidationError):
+        validate_host("172.30.0.5")
+    assert validate_host("10.5.0.9") == "10.5.0.9"
+
+
+def test_private_ranges_cover_all_of_rfc1918_and_link_local():
+    import ipaddress
+
+    for candidate in ("10.1.2.3", "172.16.5.5", "172.31.5.5", "192.168.1.1", "169.254.1.1"):
+        address = ipaddress.ip_address(candidate)
+        assert any(address in net for net in PRIVATE_RANGES)
+
+
+def test_protected_ranges_include_this_labs_backend_network_and_loopback():
+    import ipaddress
+
+    assert ipaddress.ip_network("172.31.0.0/24") in PROTECTED_RANGES
+    assert any(ipaddress.ip_address("127.0.0.1") in net for net in PROTECTED_RANGES)
+
+
+def test_min_scope_prefix_length_is_16_or_narrower_bound():
+    assert MIN_SCOPE_PREFIX_LENGTH == 16

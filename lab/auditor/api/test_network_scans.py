@@ -61,7 +61,7 @@ def test_patch_network_scan_updates_fields(client):
             "command": "nmap -sV -p 22,23,80,443,1883,8883 --open -T4 172.30.0.0/24",
             "raw_output": "Nmap scan report for device-insecure (172.30.0.6)\n",
             "observations": {
-                "subnet": "172.30.0.0/24",
+                "subnets": ["172.30.0.0/24"],
                 "hosts": [{"ip": "172.30.0.6", "classification": "iot_device"}],
                 "iot_device_count": 1,
                 "uncertain_count": 0,

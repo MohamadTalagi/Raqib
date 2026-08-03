@@ -18,6 +18,7 @@ from db import get_connection
 from device_validation import (
     TIERS,
     ValidationError,
+    configure_allowed_networks,
     validate_device_id,
     validate_host,
     validate_port,
@@ -26,12 +27,14 @@ from device_validation import (
 from automation_routes import router as automation_router
 from executive_summary_routes import router as executive_summary_router
 from nca_routes import router as nca_router
+from network_scope_routes import _active_cidrs, router as network_scope_router
 from pqc_routes import router as pqc_router
 from remediation_routes import router as remediation_router
 from risk_routes import router as risk_router
 from vuln_routes import router as vuln_router
 from policies.catalog.scan_tests import (
     SCAN_CATALOG,
+    configure_active_scopes,
     is_applicable,
     is_firmware_test,
     is_network_discovery_test,
@@ -64,6 +67,7 @@ app.include_router(automation_router)
 app.include_router(remediation_router)
 app.include_router(pqc_router)
 app.include_router(executive_summary_router)
+app.include_router(network_scope_router)
 
 
 @app.exception_handler(ValidationError)
@@ -71,6 +75,22 @@ async def validation_error_handler(request, exc: ValidationError):
     return JSONResponse(
         status_code=400, content={"field": exc.field, "detail": exc.message}
     )
+
+
+@app.on_event("startup")
+def _configure_network_scope_on_startup() -> None:
+    # Pushes the currently-active network_scopes rows into
+    # device_validation/scan_tests's in-process config, exactly like every
+    # write in network_scope_routes.py does - so a restarted API process
+    # picks up whatever was last configured instead of silently reverting
+    # to the 172.30.0.0/24 default.
+    conn = get_connection()
+    try:
+        cidrs = _active_cidrs(conn)
+    finally:
+        conn.close()
+    configure_allowed_networks(cidrs)
+    configure_active_scopes(cidrs)
 
 SCHEMA_PATH = Path("/work/policies/schema/evidence.schema.json")
 
@@ -645,33 +665,45 @@ def patch_scan_job(job_id: int, payload: dict):
 
 
 NETWORK_SCAN_COLUMNS = (
-    "id, status, tool, tool_version, command, raw_output, observations, error, created_at, updated_at"
+    "id, status, tool, tool_version, command, raw_output, observations, error, kind, created_at, updated_at"
 )
 
 
 def _row_to_network_scan(row: tuple) -> dict:
-    (scan_id, status, tool, tool_version, command, raw_output, observations, error, created_at, updated_at) = row
+    (
+        scan_id, status, tool, tool_version, command, raw_output, observations, error, kind,
+        created_at, updated_at,
+    ) = row
     return {
         "id": scan_id, "status": status, "tool": tool, "tool_version": tool_version,
         "command": command, "raw_output": raw_output, "observations": observations, "error": error,
-        "created_at": created_at.isoformat(), "updated_at": updated_at.isoformat(),
+        "kind": kind, "created_at": created_at.isoformat(), "updated_at": updated_at.isoformat(),
     }
 
 
+NETWORK_SCAN_KINDS = ("subnet_sweep", "interface_detect")
+
+
 @app.post("/network-scans", status_code=201)
-def create_network_scan():
-    """Kicks off a subnet-wide discovery scan, independent of any registered
-    device - the discovery-first onboarding path (scan the audit-network
-    subnet, then decide which hosts are worth registering) rather than
-    typing every device's host/services in by hand. auditor-api still never
-    executes anything itself: this only inserts a pending row, and
-    auditor-worker's poll_network_scans() (job_runner.py) is the sole
-    executor, reusing TEST-NET-DISCOVERY's own command/parser from
-    policies/catalog/scan_tests.py."""
+def create_network_scan(payload: dict | None = Body(default=None)):
+    """Kicks off an async worker-side job that isn't tied to any registered
+    device. Two kinds share this exact table/poll machinery:
+    'subnet_sweep' (default) is the discovery-first onboarding path (scan
+    the configured network scope(s), then decide which hosts are worth
+    registering); 'interface_detect' is Network Scope's "Detect
+    automatically" action (inspect the worker's own network interfaces and
+    suggest candidate subnets). auditor-api still never executes anything
+    itself: this only inserts a pending row, and auditor-worker's
+    poll_network_scans() (job_runner.py) is the sole executor."""
+    kind = (payload or {}).get("kind", "subnet_sweep")
+    if kind not in NETWORK_SCAN_KINDS:
+        raise ValidationError("kind", f"kind must be one of {', '.join(NETWORK_SCAN_KINDS)}")
+
     conn = get_connection()
     try:
         row = conn.execute(
-            f"INSERT INTO network_scans DEFAULT VALUES RETURNING {NETWORK_SCAN_COLUMNS}"
+            f"INSERT INTO network_scans (kind) VALUES (%s) RETURNING {NETWORK_SCAN_COLUMNS}",
+            (kind,),
         ).fetchone()
         conn.commit()
     finally:

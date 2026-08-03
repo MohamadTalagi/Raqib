@@ -9,9 +9,52 @@ or older API version is still refused before any command is built.
 import ipaddress
 import re
 
-# audit-network, per lab/docker-compose.yml. Nothing outside this is a legal
-# target - including other private ranges.
-ALLOWED_NETWORK = ipaddress.ip_network("172.30.0.0/24")
+# The configurable scan-target allowlist ("Network Scope"). Defaults to
+# audit-network alone (per lab/docker-compose.yml) so an unconfigured
+# process - a unit test importing this module directly, or either
+# container before its first config fetch - behaves exactly as this
+# boundary always has. Real configuration lives in the `network_scopes`
+# table; auditor-api pushes the active list in here directly at startup and
+# after every write, auditor-worker pushes it in via a periodic
+# GET /network-scope/active poll (job_runner.py), since the worker has no
+# direct DB access. This module stays free of DB/HTTP imports on purpose -
+# see the module docstring - so callers own fetching, this module only ever
+# owns validating against whatever was last pushed in.
+ALLOWED_NETWORKS: list[ipaddress.IPv4Network] = [ipaddress.ip_network("172.30.0.0/24")]
+
+# Guardrails applied only at network_scopes *creation* time (see
+# lab/auditor/api/network_scope_routes.py) - validate_host() itself just
+# trusts whatever is currently configured, exactly as it always trusted the
+# single hardcoded constant before.
+PRIVATE_RANGES = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local
+)
+
+# This lab's own backend network (internal-network, per docker-compose.yml)
+# plus loopback - a configured scope must never be broad enough to swallow
+# the network auditor-api/auditor-database actually live on, or the box
+# itself.
+PROTECTED_RANGES = (
+    ipaddress.ip_network("172.31.0.0/24"),
+    ipaddress.ip_network("127.0.0.0/8"),
+)
+
+# Bounds a single scope's blast radius - a fat-fingered /8 would sweep
+# 16 million addresses. The lab preset (/24) and any real per-VLAN range are
+# both comfortably narrower than this floor.
+MIN_SCOPE_PREFIX_LENGTH = 16
+
+
+def configure_allowed_networks(cidrs: list[str]) -> None:
+    """Replaces the active allowlist wholesale. Called by auditor-api at
+    startup and after every network_scopes write, and by auditor-worker's
+    periodic refresh poll - never partially updated, so a caller can't leave
+    the list in a half-applied state."""
+    global ALLOWED_NETWORKS
+    ALLOWED_NETWORKS = [ipaddress.ip_network(cidr) for cidr in cidrs]
 
 # The auditor is not an audit target.
 INFRASTRUCTURE_HOSTS = frozenset(
@@ -56,9 +99,10 @@ def validate_host(value: str) -> str:
         address = None
 
     if address is not None:
-        if address not in ALLOWED_NETWORK:
+        if not any(address in network for network in ALLOWED_NETWORKS):
+            allowed = ", ".join(str(network) for network in ALLOWED_NETWORKS)
             raise ValidationError(
-                "host", f"IP must be inside {ALLOWED_NETWORK} (audit-network)"
+                "host", f"IP must be inside a configured network scope ({allowed})"
             )
         return value
 
@@ -102,10 +146,11 @@ def validate_host(value: str) -> str:
         raise ValidationError("host", f"{value} is infrastructure and cannot be a target")
 
     if not NAME_PATTERN.match(value):
+        allowed = ", ".join(str(network) for network in ALLOWED_NETWORKS)
         raise ValidationError(
             "host",
             "host must be a container name (lowercase alphanumeric with dashes) "
-            f"or an IP inside {ALLOWED_NETWORK}",
+            f"or an IP inside a configured network scope ({allowed})",
         )
     return value
 

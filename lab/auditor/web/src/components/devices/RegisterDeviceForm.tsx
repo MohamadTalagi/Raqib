@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { api, ApiError, type CreateDevicePayload } from "@/lib/api";
 import type { DeviceMutationResult, ServiceType } from "@/lib/types";
+import { useFetch } from "@/lib/useFetch";
 import { useToast } from "@/lib/useToast";
 
 const SERVICE_TYPES: ServiceType[] = [
@@ -111,6 +112,7 @@ export function RegisterDeviceForm({
   initialServices,
 }: RegisterDeviceFormProps) {
   const { showToast } = useToast();
+  const activeScopes = useFetch(() => api.activeNetworkScopeCidrs(), []);
   const [fields, setFields] = useState<FormFields>({
     ...EMPTY_FIELDS,
     device_id: initialDeviceId ?? EMPTY_FIELDS.device_id,
@@ -259,7 +261,7 @@ export function RegisterDeviceForm({
         </div>
         <div>
           <label className={LABEL_CLASS} htmlFor="register-host">
-            Host (container name or 172.30.0.x)
+            Host (container name or IP)
           </label>
           <input
             id="register-host"
@@ -270,6 +272,14 @@ export function RegisterDeviceForm({
             required
           />
           {fieldError("host")}
+          {activeScopes.data && (
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+              Must be inside a configured network scope:{" "}
+              <span className="font-mono">
+                {activeScopes.data.cidrs.length > 0 ? activeScopes.data.cidrs.join(", ") : "none active"}
+              </span>
+            </p>
+          )}
         </div>
       </div>
 

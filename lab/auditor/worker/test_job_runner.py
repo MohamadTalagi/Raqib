@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import job_runner
 from job_runner import (
     maybe_refresh_grype_db,
+    maybe_refresh_network_scope,
     poll_once,
     poll_network_scans_once,
     process_job,
@@ -223,7 +224,7 @@ def test_process_job_runs_a_network_discovery_test_without_a_live_target(mock_ru
 
     final_call = mock_patch.call_args_list[-1]
     assert final_call.kwargs["json"]["status"] == "awaiting_finding"
-    assert final_call.kwargs["json"]["observations"]["subnet"] == "172.30.0.0/24"
+    assert final_call.kwargs["json"]["observations"]["subnets"] == ["172.30.0.0/24"]
 
 
 @patch("job_runner.requests.patch")
@@ -250,7 +251,39 @@ def test_process_network_scan_runs_the_sweep_and_marks_completed(mock_run, mock_
     assert calls[0].kwargs["json"]["status"] == "running"
     final_call = calls[-1]
     assert final_call.kwargs["json"]["status"] == "completed"
-    assert final_call.kwargs["json"]["observations"]["subnet"] == "172.30.0.0/24"
+    assert final_call.kwargs["json"]["observations"]["subnets"] == ["172.30.0.0/24"]
+
+
+@patch("job_runner.requests.patch")
+@patch("job_runner.detect_candidate_subnets")
+def test_process_network_scan_dispatches_interface_detect_kind_without_running_nmap(mock_detect, mock_patch):
+    mock_detect.return_value = {
+        "candidates": [{"interface": "eth0", "cidr": "172.30.0.0/24"}],
+        "excluded_backend_subnet": "172.31.0.0/24",
+    }
+
+    process_network_scan({"id": 5, "status": "pending", "kind": "interface_detect"})
+
+    mock_detect.assert_called_once()
+    final_call = mock_patch.call_args_list[-1]
+    assert final_call.kwargs["json"]["status"] == "completed"
+    assert final_call.kwargs["json"]["tool"] == "psutil-interface-scan"
+    assert final_call.kwargs["json"]["observations"]["excluded_backend_subnet"] == "172.31.0.0/24"
+
+
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_network_scan_defaults_to_subnet_sweep_kind(mock_run, mock_patch):
+    # A row with no `kind` at all (the shape before this migration) must
+    # still run the real sweep, not silently do nothing.
+    mock_run.side_effect = [
+        _mock_completed(stdout="Nmap scan report for device-insecure (172.30.0.6)\nHost is up.\n"),
+        _mock_completed(stdout="nmap version 7.95\n"),
+    ]
+
+    process_network_scan({"id": 6, "status": "pending"})
+
+    assert mock_run.call_args_list[0].args[0][0] == "nmap"
 
 
 @patch("job_runner.requests.patch")
@@ -437,3 +470,56 @@ def test_maybe_refresh_cisa_kev_does_not_touch_sentinel_on_failed_fetch(mock_fet
     job_runner.maybe_refresh_cisa_kev(now=0.0)
 
     assert not (tmp_path / "sentinel").exists()
+
+
+# -- Network Scope refresh (auditor-worker has no direct DB access) ---------
+
+
+@patch("job_runner.requests.get")
+def test_maybe_refresh_network_scope_skips_check_within_the_interval(mock_get, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_network_scope_check_monotonic", 100.0)
+    maybe_refresh_network_scope(now=100.0 + job_runner.NETWORK_SCOPE_REFRESH_INTERVAL_SECONDS - 1)
+    mock_get.assert_not_called()
+
+
+@patch("job_runner.configure_active_scopes")
+@patch("job_runner.configure_allowed_networks")
+@patch("job_runner.requests.get")
+def test_maybe_refresh_network_scope_reconfigures_on_change(mock_get, mock_configure_allowed, mock_configure_active, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_network_scope_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "_last_configured_cidrs", ["172.30.0.0/24"])
+    mock_get.return_value = MagicMock(
+        json=lambda: {"cidrs": ["172.30.0.0/24", "10.4.0.0/24"]},
+        raise_for_status=lambda: None,
+    )
+
+    maybe_refresh_network_scope(now=0.0)
+
+    mock_configure_allowed.assert_called_once_with(["172.30.0.0/24", "10.4.0.0/24"])
+    mock_configure_active.assert_called_once_with(["172.30.0.0/24", "10.4.0.0/24"])
+    assert job_runner._last_configured_cidrs == ["172.30.0.0/24", "10.4.0.0/24"]
+
+
+@patch("job_runner.configure_active_scopes")
+@patch("job_runner.configure_allowed_networks")
+@patch("job_runner.requests.get")
+def test_maybe_refresh_network_scope_skips_reconfigure_when_unchanged(mock_get, mock_configure_allowed, mock_configure_active, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_network_scope_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "_last_configured_cidrs", ["172.30.0.0/24"])
+    mock_get.return_value = MagicMock(
+        json=lambda: {"cidrs": ["172.30.0.0/24"]},
+        raise_for_status=lambda: None,
+    )
+
+    maybe_refresh_network_scope(now=0.0)
+
+    mock_configure_allowed.assert_not_called()
+    mock_configure_active.assert_not_called()
+
+
+@patch("job_runner.requests.get")
+def test_maybe_refresh_network_scope_never_raises_on_a_failed_fetch(mock_get, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_network_scope_check_monotonic", None)
+    mock_get.side_effect = job_runner.requests.RequestException("connection refused")
+
+    maybe_refresh_network_scope(now=0.0)  # must not raise

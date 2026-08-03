@@ -16,21 +16,25 @@ import sys
 import time
 from datetime import datetime, timezone
 
+import psutil
 import requests
 
 from device_validation import (
     ValidationError,
+    configure_allowed_networks,
     validate_host,
     validate_port,
     validate_service_type,
 )
 from policies.catalog.scan_tests import (
     SCAN_CATALOG,
+    configure_active_scopes,
     is_applicable,
     is_firmware_test,
     is_network_discovery_test,
 )
 from lab.auditor.worker.scan_scripts import cisa_kev
+from lab.auditor.worker.scan_scripts.interface_detect import detect_candidate_subnets
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
 POLL_INTERVAL_SECONDS = float(os.environ.get("JOB_POLL_INTERVAL_SECONDS", "2"))
@@ -68,6 +72,17 @@ CISA_KEV_REFRESH_SENTINEL = os.environ.get(
 
 _last_grype_check_monotonic: float | None = None
 _last_kev_check_monotonic: float | None = None
+
+# Network Scope: unlike auditor-api, which reconfigures device_validation/
+# scan_tests in-process on every write (see network_scope_routes.py), this
+# worker process has no direct DB access and can only poll
+# GET /network-scope/active - bounded to this interval, not every 2s poll
+# iteration, since the value changes rarely.
+NETWORK_SCOPE_REFRESH_INTERVAL_SECONDS = float(
+    os.environ.get("NETWORK_SCOPE_REFRESH_INTERVAL_SECONDS", "15")
+)
+_last_network_scope_check_monotonic: float | None = None
+_last_configured_cidrs: list[str] | None = None
 
 
 def resolve_target(job: dict) -> dict:
@@ -184,13 +199,36 @@ def _patch_network_scan(scan_id: int, fields: dict) -> None:
     response.raise_for_status()
 
 
+def _process_interface_detect(scan_id: int) -> None:
+    """The worker-side half of Network Scope's "Detect automatically"
+    action - see scan_scripts/interface_detect.py for the actual detection
+    logic; this just wires it into the same network_scans row/poll shape
+    the subnet-sweep kind below already uses, rather than a new mechanism."""
+    _patch_network_scan(scan_id, {"status": "running"})
+    result = detect_candidate_subnets()
+    _patch_network_scan(scan_id, {
+        "status": "completed",
+        "tool": "psutil-interface-scan",
+        "tool_version": psutil.__version__,
+        "observations": result,
+    })
+
+
 def process_network_scan(scan: dict) -> None:
     """Runs the same subnet sweep TEST-NET-DISCOVERY uses (build_command/
     parse_observations are pure functions of `target`, which this test never
     reads - see scan_tests.py), but keyed on a network_scans row instead of
     a scan_jobs row tied to a device. This is the discovery-first onboarding
-    path: scan first, then decide which hosts are worth registering."""
+    path: scan first, then decide which hosts are worth registering.
+
+    A network_scans row can also carry kind='interface_detect' (Network
+    Scope's "Detect automatically" action) instead - same table, same poll
+    loop, a different one-shot worker-side routine."""
     scan_id = scan["id"]
+    if scan.get("kind", "subnet_sweep") == "interface_detect":
+        _process_interface_detect(scan_id)
+        return
+
     spec = SCAN_CATALOG["TEST-NET-DISCOVERY"]
     _patch_network_scan(scan_id, {"status": "running"})
 
@@ -300,6 +338,43 @@ def maybe_refresh_cisa_kev(now: float | None = None) -> None:
         print("job_runner: CISA KEV feed refresh failed", file=sys.stderr, flush=True)
 
 
+def maybe_refresh_network_scope(now: float | None = None) -> None:
+    """Keeps this worker process's in-memory allowlist
+    (device_validation.ALLOWED_NETWORKS, scan_tests.ACTIVE_SCOPES) in sync
+    with whatever is currently configured on the Network Scope settings
+    page. auditor-api reconfigures in-process on every write
+    (network_scope_routes.py); this worker has no direct DB access, so it
+    polls GET /network-scope/active at a bounded interval instead - a
+    change takes effect here within NETWORK_SCOPE_REFRESH_INTERVAL_SECONDS,
+    not instantly, which is acceptable for a rarely-changed value. Never
+    raises - a failed fetch just means this worker keeps using whatever it
+    already has configured until the next successful check, the same
+    "last-good state survives a failed refresh" rule
+    maybe_refresh_grype_db/maybe_refresh_cisa_kev already follow."""
+    global _last_network_scope_check_monotonic, _last_configured_cidrs
+    now = time.monotonic() if now is None else now
+    if (
+        _last_network_scope_check_monotonic is not None
+        and (now - _last_network_scope_check_monotonic) < NETWORK_SCOPE_REFRESH_INTERVAL_SECONDS
+    ):
+        return
+    _last_network_scope_check_monotonic = now
+
+    try:
+        response = requests.get(f"{API_URL}/network-scope/active", timeout=10)
+        response.raise_for_status()
+        cidrs = response.json()["cidrs"]
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        print(f"job_runner: network scope refresh failed: {exc}", file=sys.stderr, flush=True)
+        return
+
+    if cidrs != _last_configured_cidrs:
+        configure_allowed_networks(cidrs)
+        configure_active_scopes(cidrs)
+        _last_configured_cidrs = cidrs
+        print(f"job_runner: network scope reconfigured to {cidrs}", flush=True)
+
+
 def poll_network_scans_once() -> int:
     response = requests.get(f"{API_URL}/network-scans", params={"status": "pending"}, timeout=10)
     response.raise_for_status()
@@ -320,6 +395,7 @@ def main() -> None:
     print(f"job_runner: polling {API_URL} every {POLL_INTERVAL_SECONDS}s", flush=True)
     while True:
         try:
+            maybe_refresh_network_scope()
             poll_once()
             poll_network_scans_once()
             poll_automated_runs_once()

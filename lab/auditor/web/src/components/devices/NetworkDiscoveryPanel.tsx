@@ -1,9 +1,18 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { CheckCircle2, HelpCircle, Loader2, RadioTower, ShieldQuestion } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, ApiError } from "@/lib/api";
+import { useFetch } from "@/lib/useFetch";
 import { cn } from "@/lib/utils";
-import type { Device, DiscoveredHost, HostClassification, NetworkScan, ServiceType } from "@/lib/types";
+import type {
+  Device,
+  DiscoveredHost,
+  HostClassification,
+  NetworkScan,
+  NetworkScanObservations,
+  ServiceType,
+} from "@/lib/types";
 
 const POLL_INTERVAL_MS = 1500;
 
@@ -97,7 +106,7 @@ function ClassificationBadge({ classification }: { classification: HostClassific
   );
 }
 
-function useNetworkScan(scanId: number | null): [NetworkScan | null, (scan: NetworkScan) => void] {
+export function useNetworkScan(scanId: number | null): [NetworkScan | null, (scan: NetworkScan) => void] {
   const [scan, setScan] = useState<NetworkScan | null>(null);
 
   useEffect(() => {
@@ -164,7 +173,12 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost, onRegisterSelec
     }
   }
 
-  const registerableHosts = (scan?.observations?.hosts ?? []).filter(
+  // This panel only ever creates/polls subnet_sweep scans (never
+  // interface_detect - that's Network Scope's own "Detect automatically"
+  // action) - narrow the shared NetworkScan.observations union accordingly.
+  const observations = scan?.observations as NetworkScanObservations | null | undefined;
+
+  const registerableHosts = (observations?.hosts ?? []).filter(
     (host) => !isAlreadyRegistered(host, devices),
   );
   const allSelected = registerableHosts.length > 0 && registerableHosts.every((h) => selected.has(h.ip));
@@ -185,18 +199,32 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost, onRegisterSelec
     });
   }
 
+  const activeScopes = useFetch(() => api.activeNetworkScopeCidrs(), []);
+
   return (
     <Card className="mb-6">
       <CardHeader className="flex-col items-start gap-2">
         <CardTitle>Discover devices on the network</CardTitle>
         <p className="text-xs text-[var(--color-text-secondary)]">
-          Sweeps the audit-network subnet and classifies each live host from its open-port signature,
-          so you can register real discovered devices instead of typing every field in by hand. A
-          shared VLAN can carry other, non-IoT network gear too — hosts that don't look like a
+          Sweeps your configured network scope(s) and classifies each live host from its open-port
+          signature, so you can register real discovered devices instead of typing every field in by
+          hand. A shared VLAN can carry other, non-IoT network gear too — hosts that don't look like a
           purpose-built IoT appliance are flagged "uncertain" or "unknown" rather than assumed.
         </p>
       </CardHeader>
       <CardContent className="space-y-4 pt-2">
+        {activeScopes.data && (
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Scanning:{" "}
+            <span className="font-mono">
+              {activeScopes.data.cidrs.length > 0 ? activeScopes.data.cidrs.join(", ") : "no active scopes configured"}
+            </span>{" "}
+            —{" "}
+            <Link to="/settings/network-scope" className="text-[var(--color-brand)] hover:underline">
+              change
+            </Link>
+          </p>
+        )}
         <button
           type="button"
           onClick={handleScan}
@@ -215,12 +243,12 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost, onRegisterSelec
           </p>
         )}
 
-        {scan?.status === "completed" && scan.observations && (
+        {scan?.status === "completed" && observations && (
           <div className="space-y-3">
             <p className="text-xs text-[var(--color-text-muted)]">
-              {scan.observations.hosts.length} live host(s) found on {scan.observations.subnet}:{" "}
-              {scan.observations.iot_device_count} IoT device(s), {scan.observations.uncertain_count} uncertain,{" "}
-              {scan.observations.unknown_count} unknown.
+              {observations.hosts.length} live host(s) found on {observations.subnets.join(", ")}:{" "}
+              {observations.iot_device_count} IoT device(s), {observations.uncertain_count} uncertain,{" "}
+              {observations.unknown_count} unknown.
             </p>
             {registerableHosts.length > 0 && (
               <div className="flex flex-wrap items-center gap-3">
@@ -248,7 +276,7 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost, onRegisterSelec
             )}
             <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
               <div className="divide-y divide-[var(--color-border)]">
-                {scan.observations.hosts.map((host) => {
+                {observations.hosts.map((host) => {
                   const alreadyRegistered = isAlreadyRegistered(host, devices);
                   return (
                     <div key={host.ip} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
@@ -290,7 +318,7 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost, onRegisterSelec
                 })}
               </div>
             </div>
-            {scan.observations.notes.map((note, i) => (
+            {observations.notes.map((note, i) => (
               <p key={i} className="text-[11px] leading-relaxed text-[var(--color-text-muted)]">
                 {note}
               </p>

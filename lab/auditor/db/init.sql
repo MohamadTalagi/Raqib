@@ -84,9 +84,40 @@ CREATE TABLE network_scans (
     raw_output       TEXT,
     observations     JSONB,
     error            TEXT,
+    -- 'subnet_sweep' (the original discovery sweep) or 'interface_detect'
+    -- (Network Scope's "Detect automatically" - see 015-network-scope-configuration.sql).
+    -- Same table/poll machinery for both, just a different worker-side routine.
+    kind             TEXT NOT NULL DEFAULT 'subnet_sweep'
+                     CHECK (kind IN ('subnet_sweep', 'interface_detect')),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ===================================================================
+-- Configurable scan-target boundary ("Network Scope") - see
+-- 015-network-scope-configuration.sql for the full rationale. Replaces the
+-- previously hardcoded 172.30.0.0/24 constant with a real, editable
+-- allowlist; the lab's own subnet stays seeded as an explicit, named,
+-- always-visible preset rather than disappearing.
+-- ===================================================================
+CREATE TABLE network_scopes (
+    id              SERIAL PRIMARY KEY,
+    label           TEXT NOT NULL,
+    cidr            TEXT NOT NULL,
+    kind            TEXT NOT NULL DEFAULT 'custom' CHECK (kind IN ('lab_preset', 'custom')),
+    source          TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'detected')),
+    is_active       BOOLEAN NOT NULL DEFAULT true,
+    added_by        TEXT NOT NULL,
+    reason          TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deactivated_at  TIMESTAMPTZ,
+    deactivated_by  TEXT
+);
+
+CREATE UNIQUE INDEX network_scopes_active_cidr_idx ON network_scopes (cidr) WHERE is_active;
+
+INSERT INTO network_scopes (label, cidr, kind, source, is_active, added_by)
+VALUES ('Lab environment (Docker audit-network)', '172.30.0.0/24', 'lab_preset', 'manual', true, 'system:migration');
 
 -- "Fully Automated Run" - see 013-automated-runs.sql for the full rationale.
 CREATE TABLE automated_runs (

@@ -20,6 +20,7 @@ import {
   Wrench,
   FileBarChart,
   KeyRound,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Home",
     items: [{ to: "/", label: "Overview", icon: LayoutGrid, end: true }],
+  },
+  {
+    label: "Settings",
+    items: [{ to: "/settings/network-scope", label: "Network Scope", icon: Settings, end: false }],
   },
   {
     label: "Pipeline",

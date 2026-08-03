@@ -49,10 +49,34 @@ def clean_tables(postgres_url):
     conn = psycopg.connect(postgres_url)
     conn.execute(
         "TRUNCATE evidence, verdicts, scan_jobs, assessments, device_services, devices, "
-        "network_scans, report_records, automated_runs, remediation_blueprints, "
+        "network_scans, network_scopes, report_records, automated_runs, remediation_blueprints, "
         "compliance_audit_events, compliance_exceptions, compliance_evidence, "
         "compliance_assessments, compliance_finding_mappings, compliance_controls "
         "RESTART IDENTITY CASCADE"
     )
+    # network_scopes is never left empty on a real fresh install - the lab
+    # preset row is always seeded (see migrations/015-network-scope-configuration.sql).
+    # Re-seeding it here means every test starts from that same real-world
+    # baseline instead of an empty allowlist no actual deployment ever has.
+    conn.execute(
+        "INSERT INTO network_scopes (label, cidr, kind, source, is_active, added_by) "
+        "VALUES ('Lab environment (Docker audit-network)', '172.30.0.0/24', "
+        "'lab_preset', 'manual', true, 'system:migration')"
+    )
     conn.commit()
     conn.close()
+
+
+@pytest.fixture(autouse=True)
+def reset_network_scope_config():
+    """device_validation.ALLOWED_NETWORKS and scan_tests.ACTIVE_SCOPES are
+    process-global mutable state (see device_validation.py's own docstring
+    for why) - a test that calls configure_allowed_networks()/
+    configure_active_scopes() would otherwise leak its configuration into
+    every test that runs afterward in this same pytest process."""
+    from device_validation import configure_allowed_networks
+    from policies.catalog.scan_tests import configure_active_scopes
+
+    yield
+    configure_allowed_networks(["172.30.0.0/24"])
+    configure_active_scopes(["172.30.0.0/24"])

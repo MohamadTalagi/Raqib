@@ -3,3 +3,4 @@ jsonschema==4.23.0
 yara-python==4.5.1
 pytest==8.3.3
 requests==2.32.3
+psutil==6.1.1
