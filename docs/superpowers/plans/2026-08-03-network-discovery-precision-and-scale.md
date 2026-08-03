@@ -77,14 +77,14 @@ Two design decisions in this plan were confirmed with the project owner up front
 
 **Why this order first:** smallest, lowest-risk, fully additive, no architecture change — ships and is live-verifiable independently of everything else.
 
-- [ ] In `_classify_host()` (`scan_tests.py:429`), replace the single `ambiguous_hits` branch with two cases:
+- [x] In `_classify_host()` (`scan_tests.py:429`), replace the single `ambiguous_hits` branch with two cases:
   - Telnet present (23 in open_ports, regardless of whether 22 is also open) → `classification="uncertain"`, `confidence="medium"` (upgraded from `"low"`), rationale explicitly names Telnet as the driving signal and explains why it's a stronger legacy-IoT/appliance indicator than SSH.
   - SSH present without Telnet (22 in open_ports, 23 not) → `classification="uncertain"`, `confidence="low"` (unchanged), rationale explicitly says SSH alone is ubiquitous on non-IoT Linux/network gear and is *not* being weighted as an IoT signal.
-- [ ] Widen the frontend `confidence` union in `types.ts:142` to `"high" | "medium" | "low"`.
-- [ ] `NetworkDiscoveryPanel.tsx`: confirm (or add, if the reviewer wants it visible) a small confidence indicator per host — currently confidence isn't rendered at all, only `classification` + `rationale`; at minimum verify no TypeScript narrowing anywhere silently assumes only 2 values.
-- [ ] Tests (`test_scan_tests.py`): replace `test_parse_network_discovery_classifies_telnet_only_host_as_uncertain_not_iot` (line 967) with parametrized cases for telnet-only (medium), ssh-only (low), and telnet+ssh (medium) — keep the existing "uncertain, not iot_device" assertion, add the new confidence-tier assertions.
-- [ ] Update `docs/known-limitations.md`'s "Telnet/SSH alone = uncertain" sentence to describe the two-tier distinction.
-- [ ] Live-verify: `telnet-sim` (real Telnet-only host in this lab) should now show `confidence: "medium"`. **Note honestly in the docs**: this lab has no real SSH-only host today, so the SSH-only/`"low"` branch is unit-test-verified only, not live-verified — say this plainly rather than silently skip it.
+- [x] Widen the frontend `confidence` union in `types.ts:142` to `"high" | "medium" | "low"`.
+- [x] `NetworkDiscoveryPanel.tsx`: confidence wasn't rendered at all before this fix — added a small `ConfidenceLabel` next to the classification badge so the new medium/low distinction is actually visible; confirmed no TypeScript narrowing anywhere assumed only 2 values.
+- [x] Tests (`test_scan_tests.py`): replaced `test_parse_network_discovery_classifies_telnet_only_host_as_uncertain_not_iot` with 3 cases — telnet-only (medium), ssh-only (low), telnet+ssh (medium) — keeping the existing "uncertain, not iot_device" assertion and adding the new confidence-tier + rationale-text assertions.
+- [x] Updated `docs/known-limitations.md`'s "Telnet/SSH alone = uncertain" sentence to describe the two-tier distinction, including the honest SSH-only-not-live-verified caveat below.
+- [x] Live-verified: real sweep (network scan #13) against the real lab confirmed `telnet-sim` (172.30.0.6, Telnet-only) now shows `confidence: "medium"` with the expected rationale text, and no other host's classification/confidence changed. **Noted honestly in the docs**: this lab has no real SSH-only host today, so the SSH-only/`"low"` branch is unit-test-verified only, not live-verified. Browser-based visual verification of the new `ConfidenceLabel` UI was not performed this session (Claude-in-Chrome extension not connected) — noted here rather than claimed.
 
 ## Task 2: Capture MAC address + a maintained OUI vendor lookup
 

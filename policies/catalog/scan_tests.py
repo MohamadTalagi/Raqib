@@ -440,13 +440,32 @@ def _classify_host(open_ports: set[int]) -> tuple[str, str, str]:
         )
     ambiguous_hits = sorted(open_ports & AMBIGUOUS_PORTS)
     if ambiguous_hits:
+        # Telnet (23) and SSH (22) are not equally strong signals even though
+        # both land in this same "uncertain" classification bucket: Telnet is
+        # a much stronger legacy-IoT/appliance indicator (real IoT/appliance
+        # gear still ships it; ordinary modern Linux/network hosts almost
+        # never enable it), while SSH alone is ubiquitous on non-IoT gear too
+        # (any Linux box, a switch, a jump host) and carries little IoT
+        # signal on its own. Conflating the two into one confidence value was
+        # a real precision loss - a Telnet-open host (with or without SSH
+        # also open) is upgraded to "medium"; an SSH-only host (no Telnet)
+        # stays "low".
+        if 23 in ambiguous_hits:
+            return (
+                "uncertain",
+                "medium",
+                "Telnet (23) was open" + (" alongside SSH (22)" if 22 in ambiguous_hits else "")
+                + " - Telnet is a much stronger legacy-IoT/appliance signal than SSH, since ordinary "
+                "modern Linux/network hosts rarely enable it, but no IoT-specific management UI or "
+                "messaging-protocol port was seen, so this is not confidently classified as iot_device.",
+            )
         return (
             "uncertain",
             "low",
-            "Only generic remote-administration port(s) " + ", ".join(str(p) for p in ambiguous_hits)
-            + " were open - Telnet/SSH alone are common to many non-IoT network appliances (a switch, "
-            "a legacy server) too, so this host cannot be confidently classified as an IoT device from "
-            "this signature alone.",
+            "Only SSH (22) was open, with no Telnet - SSH alone is ubiquitous on many non-IoT network "
+            "appliances (a switch, a legacy server, any ordinary Linux host) too, so it is not being "
+            "weighted as an IoT signal and this host cannot be confidently classified as an IoT device "
+            "from this signature alone.",
         )
     return (
         "unknown",

@@ -139,7 +139,7 @@ export interface DiscoveredHost {
   open_ports: number[];
   services: DiscoveredHostService[];
   classification: HostClassification;
-  confidence: "high" | "low";
+  confidence: "high" | "medium" | "low";
   rationale: string;
 }
 

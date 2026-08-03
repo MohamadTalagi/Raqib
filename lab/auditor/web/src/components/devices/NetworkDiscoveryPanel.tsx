@@ -106,6 +106,18 @@ function ClassificationBadge({ classification }: { classification: HostClassific
   );
 }
 
+const CONFIDENCE_LABEL: Record<DiscoveredHost["confidence"], string> = {
+  high: "high confidence",
+  medium: "medium confidence",
+  low: "low confidence",
+};
+
+function ConfidenceLabel({ confidence }: { confidence: DiscoveredHost["confidence"] }) {
+  return (
+    <span className="text-[11px] text-[var(--color-text-muted)]">({CONFIDENCE_LABEL[confidence]})</span>
+  );
+}
+
 export function useNetworkScan(scanId: number | null): [NetworkScan | null, (scan: NetworkScan) => void] {
   const [scan, setScan] = useState<NetworkScan | null>(null);
 
@@ -299,7 +311,10 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost, onRegisterSelec
                       <span className="font-mono-tabular text-xs text-[var(--color-text-muted)]">
                         ports: {host.open_ports.join(", ") || "—"}
                       </span>
-                      <ClassificationBadge classification={host.classification} />
+                      <span className="inline-flex items-center gap-1.5">
+                        <ClassificationBadge classification={host.classification} />
+                        <ConfidenceLabel confidence={host.confidence} />
+                      </span>
                       {alreadyRegistered ? (
                         <span className="text-xs font-medium text-[var(--color-text-muted)]">
                           Already registered

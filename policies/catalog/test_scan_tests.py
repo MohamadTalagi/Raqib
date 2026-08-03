@@ -964,10 +964,13 @@ def test_parse_network_discovery_classifies_mqtt_only_host_as_iot():
     assert obs["hosts"][0]["classification"] == "iot_device"
 
 
-def test_parse_network_discovery_classifies_telnet_only_host_as_uncertain_not_iot():
+def test_parse_network_discovery_classifies_telnet_only_host_as_uncertain_medium_confidence():
     # Telnet alone is a generic remote-administration signature shared by
     # plenty of non-IoT network appliances - this must not be asserted as a
-    # confident IoT classification.
+    # confident IoT classification. But Telnet is still a stronger
+    # legacy-IoT/appliance signal than SSH (ordinary modern hosts rarely
+    # enable it), so it earns "medium" confidence within the "uncertain"
+    # bucket, not the same "low" confidence an SSH-only host gets.
     output = _discovery_output(
         "Nmap scan report for telnet-sim (172.30.0.9)\n"
         "Host is up (0.00010s latency).\n\n"
@@ -977,10 +980,49 @@ def test_parse_network_discovery_classifies_telnet_only_host_as_uncertain_not_io
     obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
     host = obs["hosts"][0]
     assert host["classification"] == "uncertain"
-    assert host["confidence"] == "low"
+    assert host["confidence"] == "medium"
+    assert "Telnet" in host["rationale"]
     assert obs["uncertain_count"] == 1
     assert obs["iot_device_count"] == 0
     assert any("uncertain" in note.lower() for note in obs["notes"])
+
+
+def test_parse_network_discovery_classifies_ssh_only_host_as_uncertain_low_confidence():
+    # SSH alone (no Telnet) is ubiquitous on non-IoT network gear too - this
+    # must stay at "low" confidence, not be upgraded like a Telnet hit.
+    output = _discovery_output(
+        "Nmap scan report for jump-host (172.30.0.10)\n"
+        "Host is up (0.00010s latency).\n\n"
+        "PORT     STATE SERVICE VERSION\n"
+        "22/tcp   open  ssh\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    host = obs["hosts"][0]
+    assert host["classification"] == "uncertain"
+    assert host["confidence"] == "low"
+    assert "SSH" in host["rationale"]
+    assert "stronger" not in host["rationale"]
+    assert obs["uncertain_count"] == 1
+    assert obs["iot_device_count"] == 0
+
+
+def test_parse_network_discovery_classifies_telnet_and_ssh_host_as_uncertain_medium_confidence():
+    # Telnet's presence should drive the confidence tier even when SSH is
+    # also open on the same host - Telnet is the stronger signal, so it must
+    # not be diluted back down to "low" just because SSH is also present.
+    output = _discovery_output(
+        "Nmap scan report for legacy-gear (172.30.0.11)\n"
+        "Host is up (0.00010s latency).\n\n"
+        "PORT     STATE SERVICE VERSION\n"
+        "22/tcp   open  ssh\n"
+        "23/tcp   open  telnet\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    host = obs["hosts"][0]
+    assert host["classification"] == "uncertain"
+    assert host["confidence"] == "medium"
+    assert "Telnet" in host["rationale"]
+    assert "alongside SSH" in host["rationale"]
 
 
 def test_parse_network_discovery_classifies_host_with_no_signature_ports_as_unknown():

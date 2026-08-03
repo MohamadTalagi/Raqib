@@ -29,7 +29,16 @@ fully preserved; only which stream a given line came from is lost.
 Classifies each live host on the audit-network subnet as `iot_device`,
 `uncertain`, or `unknown` using only its open-port/service signature
 (management UI or MQTT port = IoT; Telnet/SSH alone = uncertain, since those
-protocols are common to non-IoT network appliances too). Deliberately does
+protocols are common to non-IoT network appliances too). Telnet and SSH are
+**not** treated as equally strong signals within that "uncertain" bucket:
+a Telnet-open host (with or without SSH also open) gets `confidence:
+"medium"`, since real IoT/appliance gear still ships Telnet while ordinary
+modern Linux/network hosts rarely enable it; an SSH-only host (no Telnet)
+stays `confidence: "low"`, since SSH alone is ubiquitous on non-IoT gear too
+(any Linux box, a switch, a jump host) and carries little IoT signal on its
+own. This lab has a real Telnet-only fixture (`telnet-sim`) to live-verify
+the "medium" tier against, but no real SSH-only host — the "low" tier for
+that specific case is unit-test-verified only, not live-verified. Deliberately does
 **not** use MAC-vendor (OUI) lookup or OS/TTL fingerprinting as corroborating
 signals: this scan runs from inside a Docker bridge network, where every
 container shares the host kernel and uses a virtual, locally-administered
