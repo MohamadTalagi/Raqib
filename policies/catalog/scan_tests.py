@@ -44,6 +44,7 @@ automates that gap - keep their established test_id and observation field
 names exactly, or verdict recomputation silently stops matching them.
 """
 
+import ipaddress
 import json
 import re
 
@@ -441,6 +442,136 @@ def _network_discovery_command(target: dict) -> list[str]:
         "-T3", "--max-retries", "1", "--max-rate", "50",
         "--script", "broadcast-upnp-info,broadcast-dns-service-discovery",
         *ACTIVE_SCOPES,
+    ]
+
+
+# --- Two-phase discovery (subnet-size scalability) -------------------------
+#
+# A single `-sV` command sweeping an entire configured scope (the function
+# above) does not scale past the /24 this project has always run at - the
+# platform's own "adjustable subnets" feature (network_scope_routes.py,
+# device_validation.MIN_SCOPE_PREFIX_LENGTH = 16) allows configuring a /16
+# (65,534 usable addresses) today, and a flat full-service-detection sweep
+# across that many addresses in one command cannot finish in any reasonable
+# timeout. job_runner.py's `_run_network_discovery()` instead runs two
+# separate nmap invocations: a fast whole-scope ping/ARP sweep (Stage A,
+# this section) to find which addresses are even alive, then a full `-sV`
+# scan (Stage B, below) targeted only at the addresses Stage A found -
+# dramatically cheaper than probing dead addresses with a full service
+# fingerprint. The single-command function above is kept as-is (unit-tested,
+# still reachable directly via SCAN_CATALOG for anything that calls it that
+# way) - job_runner.py's TEST-NET-DISCOVERY dispatch special-cases around it
+# to the two-stage flow instead, the same way it already special-cases
+# firmware tests around the generic build_command/parse_observations path.
+# Revised upward from an initial 0.05s/address estimate after a real
+# large-scope live-verification attempt (see estimate_stage_a_timeout's own
+# docstring) showed a genuinely unrouted proxy scope taking dramatically
+# longer than that packet-rate-only model predicted - a real finding, not a
+# guess this project then chose to ignore.
+STAGE_A_BASE_SECONDS = 15
+STAGE_A_PER_ADDRESS_SECONDS = 0.3
+STAGE_A_MAX_SECONDS = 7200
+STAGE_B_BASE_SECONDS = 20
+STAGE_B_PER_HOST_SECONDS = 3
+STAGE_B_MAX_SECONDS = 1800
+
+
+def total_usable_addresses(scopes: list[str]) -> int:
+    """Sum of usable host addresses (network/broadcast excluded, floored at
+    1 per scope so a /31 or /32 scope - unusual but not rejected by
+    MIN_SCOPE_PREFIX_LENGTH alone - never contributes 0 or a negative
+    count) across every configured scope."""
+    total = 0
+    for scope in scopes:
+        network = ipaddress.ip_network(scope, strict=False)
+        total += max(network.num_addresses - 2, 1)
+    return total
+
+
+def estimate_stage_a_timeout(scopes: list[str]) -> int:
+    """Estimate only, deliberately generous - and revised upward once
+    already from a real live-verification finding, not just a paper
+    calculation. A real /24 on this project's own audit-network took 10.96s
+    for 256 addresses at --max-rate 50 (fast, ARP-resolved, every address
+    genuinely reachable on the L2 segment). A real attempt at a larger-scope
+    proxy told a different story: adding a second, genuinely unrouted RFC1918
+    scope (nothing in this lab's Docker topology actually routes to it) and
+    sweeping both together did not finish within 554+ seconds for ~4,348
+    total addresses before being killed - far past what a naive
+    packets-per-second model predicts, and well past this function's own
+    first-draft estimate for that same scope (227s, which the real job
+    genuinely timed out against live). A smaller isolated check of the same
+    kind of unrouted range (a /27, 32 addresses) came back in 6.12s but with
+    every single address falsely reported "up" (no MAC address on any of
+    them - not a real ARP-confirmed host), pointing at some kind of
+    NAT/routing-reflection artifact in this specific Docker Desktop test
+    environment for genuinely unroutable destinations, not a real host
+    responding. Neither finding was fully root-caused within this task's
+    scope (see docs/known-limitations.md) - the honest, safe response is a
+    substantially larger per-address constant and a much higher cap, not a
+    confident recalculation from an unresolved anomaly. Capped at
+    STAGE_A_MAX_SECONDS so a misconfigured scope (or several summed
+    together) still can't produce a truly unbounded timeout."""
+    estimate = STAGE_A_BASE_SECONDS + STAGE_A_PER_ADDRESS_SECONDS * total_usable_addresses(scopes)
+    return min(int(estimate), STAGE_A_MAX_SECONDS)
+
+
+def estimate_stage_b_timeout(live_host_count: int) -> int:
+    """Estimate only - derived from this project's one real full-sweep
+    measurement (~57-62s for 14 live hosts with the Task 3 broadcast
+    scripts included, most of that being fixed nmap/NSE startup cost, not
+    per-host cost), padded generously beyond that single data point since
+    live host *count* at true subnet-scale (hundreds of hosts on a real
+    large VLAN) has never been measured by this project. Capped at
+    STAGE_B_MAX_SECONDS."""
+    estimate = STAGE_B_BASE_SECONDS + STAGE_B_PER_HOST_SECONDS * live_host_count
+    return min(int(estimate), STAGE_B_MAX_SECONDS)
+
+
+def _network_discovery_stage_a_command() -> list[str]:
+    # -sn: ping/ARP host-discovery only, no port scan - dramatically cheaper
+    # per-address than the full -sV scan Stage B does. For the
+    # audit-network's directly-attached L2 segment this is nmap's own
+    # ARP-based discovery (already proven live elsewhere in this catalog);
+    # for a routed/non-local configured scope nmap automatically falls back
+    # to ICMP/TCP ping probes. -n (no reverse DNS) is a deliberate departure
+    # from a naive "just add -sn" approach: DNS resolution is a real,
+    # separate, sometimes-slow phase of nmap's own workflow that Stage A has
+    # no use for at all (Stage B's own parser already resolves/reports
+    # hostnames for whichever addresses turn out to be live) - cutting it
+    # keeps Stage A's only job, finding live addresses fast, as fast as
+    # possible. --max-rate 50 kept even here, matching this project's
+    # non-negotiable gentle-scanning posture - Stage A's speed comes from
+    # skipping per-host service probing, not from raising the packet rate.
+    return ["nmap", "-sn", "-n", "--max-retries", "1", "--max-rate", "50", *ACTIVE_SCOPES]
+
+
+def _parse_stage_a_live_hosts(output: str) -> list[str]:
+    """Extracts every live host's IP from a `-sn -n` ping-sweep's output.
+    With -n (no reverse DNS), nmap's per-host header is always a bare IP,
+    never "hostname (ip)" - live-confirmed against a real /24 sweep - so
+    this is a simpler shape than Stage B's own block header, which still
+    has to handle a resolved hostname. A dead address never gets a report
+    line at all in nmap's default (non-verbose) output, so no "is it up"
+    check is needed here - every IP this regex finds is live by definition."""
+    return re.findall(r"^Nmap scan report for ([\d.]+)\s*$", output, re.MULTILINE)
+
+
+def _network_discovery_stage_b_command(live_hosts: list[str]) -> list[str]:
+    # Identical shape to _network_discovery_command above (same ports, same
+    # gentle tuning, same broadcast scripts) but targeting Stage A's
+    # explicit live-host IP list instead of a whole CIDR scope - the one
+    # thing that actually makes two-phase discovery cheaper: a full -sV
+    # probe only ever runs against addresses already confirmed alive,
+    # never against the (usually large majority of a big scope) dead ones.
+    if not live_hosts:
+        return []
+    ports = ",".join(str(p) for p in NETWORK_DISCOVERY_PORTS)
+    return [
+        "nmap", "-sV", "--version-intensity", "2", "-p", ports,
+        "-T3", "--max-retries", "1", "--max-rate", "50",
+        "--script", "broadcast-upnp-info,broadcast-dns-service-discovery",
+        *live_hosts,
     ]
 
 

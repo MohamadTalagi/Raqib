@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from policies.catalog import scan_tests
 from policies.catalog.scan_tests import (
     ALL_SERVICE_TYPES,
     PIPELINE_PHASE_FINGERPRINTING,
@@ -10,10 +11,13 @@ from policies.catalog.scan_tests import (
     PIPELINE_PHASE_VULN_INTELLIGENCE,
     SCAN_CATALOG,
     configure_active_scopes,
+    estimate_stage_a_timeout,
+    estimate_stage_b_timeout,
     is_applicable,
     is_firmware_test,
     is_network_discovery_test,
     suggest_finding_and_confidence,
+    total_usable_addresses,
 )
 
 
@@ -1193,6 +1197,107 @@ def test_network_discovery_command_includes_the_broadcast_discovery_scripts():
     assert "--script" in command
     script_arg = command[command.index("--script") + 1]
     assert set(script_arg.split(",")) == {"broadcast-upnp-info", "broadcast-dns-service-discovery"}
+
+
+# --- Two-phase discovery (subnet-size scalability) --------------------------
+
+
+def test_total_usable_addresses_excludes_network_and_broadcast():
+    assert total_usable_addresses(["172.30.0.0/24"]) == 254
+
+
+def test_total_usable_addresses_matches_a_16_worth_65534():
+    # The exact number this platform's own /16 scope ceiling advertises
+    # (device_validation.MIN_SCOPE_PREFIX_LENGTH = 16).
+    assert total_usable_addresses(["10.0.0.0/16"]) == 65534
+
+
+def test_total_usable_addresses_sums_multiple_configured_scopes():
+    assert total_usable_addresses(["172.30.0.0/24", "10.4.0.0/24"]) == 254 + 254
+
+
+def test_total_usable_addresses_floors_at_one_for_a_tiny_scope():
+    assert total_usable_addresses(["10.0.0.0/31"]) >= 1
+
+
+def test_estimate_stage_a_timeout_scales_with_scope_size():
+    small = estimate_stage_a_timeout(["172.30.0.0/24"])
+    large = estimate_stage_a_timeout(["10.0.0.0/16"])
+    assert small < large
+    assert small == int(scan_tests.STAGE_A_BASE_SECONDS + scan_tests.STAGE_A_PER_ADDRESS_SECONDS * 254)
+
+
+def test_estimate_stage_a_timeout_is_capped():
+    huge = estimate_stage_a_timeout(["10.0.0.0/8", "172.16.0.0/12"])
+    assert huge == scan_tests.STAGE_A_MAX_SECONDS
+
+
+def test_estimate_stage_b_timeout_scales_with_live_host_count():
+    small = estimate_stage_b_timeout(1)
+    large = estimate_stage_b_timeout(50)
+    assert small < large
+    assert small == scan_tests.STAGE_B_BASE_SECONDS + scan_tests.STAGE_B_PER_HOST_SECONDS
+
+
+def test_estimate_stage_b_timeout_is_capped():
+    huge = estimate_stage_b_timeout(100_000)
+    assert huge == scan_tests.STAGE_B_MAX_SECONDS
+
+
+def test_stage_a_command_is_a_fast_ping_sweep_no_ports():
+    configure_active_scopes(["172.30.0.0/24"])
+    command = scan_tests._network_discovery_stage_a_command()
+    assert command[0] == "nmap"
+    assert "-sn" in command
+    assert "-p" not in command
+    assert "-sV" not in command
+    # Gentle-scanning posture still applies to Stage A - speed comes from
+    # skipping service probing, not from a higher packet rate.
+    assert "--max-rate" in command
+    assert command[command.index("--max-rate") + 1] == "50"
+    assert "172.30.0.0/24" in command
+
+
+def test_parse_stage_a_live_hosts_extracts_bare_ips():
+    output = (
+        "Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-03 00:00 UTC\n"
+        "Nmap scan report for 172.30.0.5\n"
+        "Host is up (0.000073s latency).\n"
+        "MAC Address: 66:4A:D6:02:44:E6 (Unknown)\n"
+        "Nmap scan report for 172.30.0.13\n"
+        "Host is up (0.000097s latency).\n"
+        "Nmap done: 256 IP addresses (2 hosts up) scanned in 10.96 seconds\n"
+    )
+    assert scan_tests._parse_stage_a_live_hosts(output) == ["172.30.0.5", "172.30.0.13"]
+
+
+def test_parse_stage_a_live_hosts_returns_empty_list_when_nothing_is_up():
+    output = (
+        "Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-03 00:00 UTC\n"
+        "Nmap done: 256 IP addresses (0 hosts up) scanned in 10.96 seconds\n"
+    )
+    assert scan_tests._parse_stage_a_live_hosts(output) == []
+
+
+def test_stage_b_command_targets_explicit_live_hosts_not_a_cidr():
+    command = scan_tests._network_discovery_stage_b_command(["172.30.0.5", "172.30.0.13"])
+    assert command[0] == "nmap"
+    assert "-sV" in command
+    assert "172.30.0.5" in command
+    assert "172.30.0.13" in command
+    assert not any("/" in arg for arg in command)  # no CIDR anywhere
+    # Carries the same port list, gentle tuning, and Task 3 broadcast
+    # scripts as the single-stage command.
+    assert "--script" in command
+    script_arg = command[command.index("--script") + 1]
+    assert set(script_arg.split(",")) == {"broadcast-upnp-info", "broadcast-dns-service-discovery"}
+
+
+def test_stage_b_command_is_empty_for_no_live_hosts():
+    # job_runner.py's own short-circuit means this should never actually be
+    # called with an empty list, but the pure function itself must not
+    # build a nonsensical bare "nmap" command with no targets at all.
+    assert scan_tests._network_discovery_stage_b_command([]) == []
 
 
 def test_parse_network_discovery_classifies_host_with_no_signature_ports_as_unknown():

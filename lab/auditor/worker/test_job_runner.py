@@ -207,10 +207,18 @@ def test_network_discovery_job_bypasses_live_target_validators_entirely():
 
 @patch("job_runner.requests.patch")
 @patch("job_runner.subprocess.run")
-def test_process_job_runs_a_network_discovery_test_without_a_live_target(mock_run, mock_patch):
+def test_process_job_runs_a_network_discovery_test_two_stage(mock_run, mock_patch):
+    # Stage A (a fast -sn ping sweep) finds a live host, then Stage B (the
+    # full -sV scan) targets that host specifically - both real subprocess
+    # calls, in order, not one flat sweep.
     mock_run.side_effect = [
-        _mock_completed(stdout="Nmap scan report for device-insecure (172.30.0.5)\nHost is up.\n"),
-        _mock_completed(stdout="nmap version 7.95\n"),
+        _mock_completed(stdout="Nmap scan report for 172.30.0.5\nHost is up.\n"),  # Stage A
+        _mock_completed(stdout="nmap version 7.95\n"),  # tool --version probe
+        _mock_completed(
+            stdout="Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-03 00:00 UTC\n"
+            "Nmap scan report for device-insecure (172.30.0.5)\nHost is up.\n\n"
+            "PORT     STATE SERVICE VERSION\n80/tcp   open  http\n\n",
+        ),  # Stage B
     ]
 
     process_job({
@@ -218,13 +226,97 @@ def test_process_job_runs_a_network_discovery_test_without_a_live_target(mock_ru
         "host": None, "service_type": None, "port": None,
     })
 
-    scan_call_args = mock_run.call_args_list[0].args[0]
-    assert scan_call_args[0] == "nmap"
-    assert "172.30.0.0/24" in scan_call_args
+    stage_a_call = mock_run.call_args_list[0].args[0]
+    assert stage_a_call[0] == "nmap"
+    assert "-sn" in stage_a_call
+    assert "172.30.0.0/24" in stage_a_call
+
+    stage_b_call = mock_run.call_args_list[2].args[0]
+    assert stage_b_call[0] == "nmap"
+    assert "-sV" in stage_b_call
+    assert "172.30.0.5" in stage_b_call
+    # Targets the live host explicitly, not the whole scope - the point of
+    # two-stage discovery.
+    assert "172.30.0.0/24" not in stage_b_call
 
     final_call = mock_patch.call_args_list[-1]
     assert final_call.kwargs["json"]["status"] == "awaiting_finding"
-    assert final_call.kwargs["json"]["observations"]["subnets"] == ["172.30.0.0/24"]
+    hosts = final_call.kwargs["json"]["observations"]["hosts"]
+    assert len(hosts) == 1
+    assert hosts[0]["ip"] == "172.30.0.5"
+    assert hosts[0]["classification"] == "iot_device"
+    # Stage A's own raw output is preserved, never silently discarded.
+    assert "Stage A" in final_call.kwargs["json"]["raw_output"]
+    assert "Stage B" in final_call.kwargs["json"]["raw_output"]
+
+
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_job_network_discovery_short_circuits_on_zero_live_hosts(mock_run, mock_patch):
+    # A real, honest, valid outcome - Stage B must never run when Stage A
+    # found nothing to target.
+    mock_run.side_effect = [
+        _mock_completed(stdout="Nmap done: 256 IP addresses (0 hosts up) scanned in 11.00 seconds\n"),
+        _mock_completed(stdout="nmap version 7.95\n"),
+    ]
+
+    process_job({
+        "id": 10, "device_id": "device-insecure", "test_id": "TEST-NET-DISCOVERY",
+        "host": None, "service_type": None, "port": None,
+    })
+
+    # Only Stage A + the tool-version probe ran - no third (Stage B) call.
+    assert mock_run.call_count == 2
+
+    final_call = mock_patch.call_args_list[-1]
+    assert final_call.kwargs["json"]["status"] == "awaiting_finding"
+    observations = final_call.kwargs["json"]["observations"]
+    assert observations["hosts"] == []
+    assert any("No live hosts" in note for note in observations["notes"])
+
+
+@patch("job_runner.requests.post")
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_job_network_discovery_stage_a_failure_never_attempts_stage_b(mock_run, mock_patch, mock_post):
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd=["nmap"], timeout=22)
+
+    process_job({
+        "id": 11, "device_id": "device-insecure", "test_id": "TEST-NET-DISCOVERY",
+        "host": None, "service_type": None, "port": None,
+    })
+
+    # Only the one (failed) Stage A call - never a second attempt.
+    assert mock_run.call_count == 1
+    # A genuine collector failure calls record-failure (real INCONCLUSIVE
+    # evidence server-side), same as every other test's collector-failure
+    # path - never a silent plain PATCH.
+    final_call = mock_post.call_args_list[-1]
+    assert "record-failure" in final_call.args[0]
+    assert "discovery phase (Stage A)" in final_call.kwargs["json"]["error_detail"]
+
+
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_job_network_discovery_stage_timeouts_reach_subprocess_run(mock_run, mock_patch):
+    # Each stage gets its own estimated timeout, not job_runner's flat
+    # default - confirm the real computed values actually reach
+    # subprocess.run, not just that some number does.
+    from policies.catalog.scan_tests import estimate_stage_a_timeout, estimate_stage_b_timeout
+
+    mock_run.side_effect = [
+        _mock_completed(stdout="Nmap scan report for 172.30.0.5\nHost is up.\n"),
+        _mock_completed(stdout="nmap version 7.95\n"),
+        _mock_completed(stdout="Nmap scan report for device-insecure (172.30.0.5)\nHost is up.\n"),
+    ]
+
+    process_job({
+        "id": 12, "device_id": "device-insecure", "test_id": "TEST-NET-DISCOVERY",
+        "host": None, "service_type": None, "port": None,
+    })
+
+    assert mock_run.call_args_list[0].kwargs["timeout"] == estimate_stage_a_timeout(["172.30.0.0/24"])
+    assert mock_run.call_args_list[2].kwargs["timeout"] == estimate_stage_b_timeout(1)
 
 
 @patch("job_runner.requests.patch")
@@ -233,25 +325,30 @@ def test_process_network_scan_runs_the_sweep_and_marks_completed(mock_run, mock_
     # A network_scans row is not tied to any device at all - this is the
     # discovery-first onboarding path, distinct from a scan_jobs row.
     mock_run.side_effect = [
-        _mock_completed(stdout="Nmap scan report for device-insecure (172.30.0.6)\nHost is up.\n"),
-        _mock_completed(stdout="nmap version 7.95\n"),
+        _mock_completed(stdout="Nmap scan report for 172.30.0.6\nHost is up.\n"),  # Stage A
+        _mock_completed(stdout="nmap version 7.95\n"),  # tool --version probe
+        _mock_completed(
+            stdout="Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-03 00:00 UTC\n"
+            "Nmap scan report for device-insecure (172.30.0.6)\nHost is up.\n\n"
+            "PORT     STATE SERVICE VERSION\n80/tcp   open  http\n\n",
+        ),  # Stage B
     ]
 
     process_network_scan({"id": 1, "status": "pending"})
 
-    scan_call_args = mock_run.call_args_list[0].args[0]
-    assert scan_call_args[0] == "nmap"
-    assert "172.30.0.0/24" in scan_call_args
-    # Uses TEST-NET-DISCOVERY's own longer timeout, not job_runner's default
-    # 30s - the deliberately gentle scan settings need real headroom.
-    assert mock_run.call_args_list[0].kwargs["timeout"] == 90
+    stage_a_call = mock_run.call_args_list[0].args[0]
+    assert stage_a_call[0] == "nmap"
+    assert "172.30.0.0/24" in stage_a_call
+    # Stage A's own estimated timeout, not job_runner's flat default.
+    from policies.catalog.scan_tests import estimate_stage_a_timeout
+    assert mock_run.call_args_list[0].kwargs["timeout"] == estimate_stage_a_timeout(["172.30.0.0/24"])
 
     calls = mock_patch.call_args_list
     assert calls[0].args[0] == "http://auditor-api:8000/network-scans/1"
     assert calls[0].kwargs["json"]["status"] == "running"
     final_call = calls[-1]
     assert final_call.kwargs["json"]["status"] == "completed"
-    assert final_call.kwargs["json"]["observations"]["subnets"] == ["172.30.0.0/24"]
+    assert final_call.kwargs["json"]["observations"]["hosts"][0]["ip"] == "172.30.0.6"
 
 
 @patch("job_runner.requests.patch")
@@ -275,9 +372,9 @@ def test_process_network_scan_dispatches_interface_detect_kind_without_running_n
 @patch("job_runner.subprocess.run")
 def test_process_network_scan_defaults_to_subnet_sweep_kind(mock_run, mock_patch):
     # A row with no `kind` at all (the shape before this migration) must
-    # still run the real sweep, not silently do nothing.
+    # still run the real (two-stage) sweep, not silently do nothing.
     mock_run.side_effect = [
-        _mock_completed(stdout="Nmap scan report for device-insecure (172.30.0.6)\nHost is up.\n"),
+        _mock_completed(stdout="Nmap done: 256 IP addresses (0 hosts up) scanned in 11.00 seconds\n"),
         _mock_completed(stdout="nmap version 7.95\n"),
     ]
 

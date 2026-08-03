@@ -110,6 +110,76 @@ only, matching the same honest caveat this project already carries for a
 few other rare branches (e.g. the SSH-only Telnet/SSH confidence tier
 above).
 
+**Two-stage execution, so a large configured scope is actually practical.**
+The platform's own "adjustable subnets" feature allows configuring a scope
+as broad as a /16 (65,534 usable addresses,
+`device_validation.MIN_SCOPE_PREFIX_LENGTH = 16`) - a single flat `-sV`
+sweep across that many addresses cannot finish in any reasonable timeout,
+so `job_runner.py`'s `_run_network_discovery()` instead runs two separate
+nmap invocations: **Stage A** is a fast whole-scope `-sn -n` ping/ARP sweep
+(no ports, no service detection, no reverse DNS) that only asks "which
+addresses are alive"; **Stage B** is the full `-sV` scan (with Task 3's
+broadcast scripts) targeted only at the explicit addresses Stage A found
+alive, never the whole scope. If Stage A finds zero live hosts, Stage B is
+skipped entirely - a real, honest, valid outcome (an empty or misconfigured
+scope), not an error. Both stages' raw output is preserved and returned
+(clearly separated), never just Stage B's. A Stage A failure (timeout or
+exception) fails the whole scan without ever attempting Stage B; a Stage B
+failure is reported distinctly from a Stage A failure so it's clear which
+phase actually failed.
+
+**Every timeout is an estimate, not a precise measurement, and says so - and
+one of them was already revised upward by a real, live-caught surprise, not
+a paper calculation.** `estimate_stage_a_timeout()`/`estimate_stage_b_timeout()`
+are simple linear formulas (`policies/catalog/scan_tests.py`) with a
+generous cap. Stage A's constant is grounded in a real `/24` sweep (10.96s
+for 256 addresses at `--max-rate 50` - fast, since every address is
+ARP-resolved on a directly-attached L2 segment) but padded well beyond a
+naive extrapolation of that number, because **an attempted large-scope
+live-verification pass surfaced a real, only partially understood anomaly**:
+adding a genuinely unrouted RFC1918 `/20` (4,094 addresses - nothing in this
+Docker lab's topology actually routes to it) as a second active scope and
+sweeping it alongside the real audit-network `/24` did not finish within 554
+seconds before being killed - the real job this reproduces (network scan
+#17) had already failed with a genuine `"discovery phase (Stage A) timed out
+after 227s"` error against this project's *first-draft* estimate for that
+same combined scope. A follow-up isolated check of a *much* smaller unrouted
+range (a `/27`, 32 addresses) came back quickly (6.12s) but with **every
+single address falsely reported "up"** - none of them carrying a real "MAC
+Address:" line the way this lab's genuine ARP-resolved hosts always do,
+meaning these were not real ARP-confirmed hosts. The most likely explanation
+is some form of NAT/routing-reflection behavior specific to this Docker
+Desktop test host's own networking layer for a destination with no real
+route at all - not something this task's own scope covers root-causing, and
+not confirmed as representative of how a real, physically routed (even if
+mostly idle) enterprise VLAN would behave. **The honest, safe response to an
+unresolved anomaly was a substantially larger, more conservative constant
+and a much higher cap** (`STAGE_A_MAX_SECONDS` raised from 3600 to 7200),
+not a confident recalculation built on a data point that isn't fully
+understood. **What *was* cleanly live-verified**: the real, always-supported
+case - a sweep scoped to only the real audit-network `/24` (no synthetic
+scope added) - produced byte-for-byte-equivalent classification/
+discovery-signal results, via the real two-stage command chain, to the
+single-stage sweep this replaced (network scan #18, after the constants
+revision), confirming the two-stage *architecture* itself is correct even
+though the *timeout tuning* needed a real correction first. **What remains
+genuinely unverified, stated plainly rather than implied**: Stage B's
+behavior at true large-live-host-count scale (this lab cannot spin up
+hundreds of real live hosts); a real full `/16` sweep end to end (per the
+finding above, a scope-summed-address timeout at that size now falls back to
+the 7200s cap rather than a number this project has confidently derived);
+and, most importantly, **whether Stage A can be trusted not to over-report
+live hosts on a scope with unusual routing/NAT behavior** - the `/27`
+false-positive-storm finding above is a real, live-observed risk to this
+design's own core assumption (that Stage B only ever targets addresses
+genuinely confirmed alive) that was not resolved within this task and should
+be treated as a real, open follow-up, not a settled matter. One structural
+mitigation already in place, worth noting: because `estimate_stage_b_timeout()`
+scales with however many "live" hosts Stage A reports, a false-positive
+storm would make Stage B slower and more expensive, not silently wrong or
+unbounded - the system degrades rather than breaks, even in this
+unconfirmed failure mode.
+
 **Deliberately tuned gentle, not fast**, because this is an IoT environment
 and real devices can have weak network stacks: `-T3` (Normal) rather than
 `-T4` (Aggressive, which nmap's own docs say assumes "a reasonably fast and

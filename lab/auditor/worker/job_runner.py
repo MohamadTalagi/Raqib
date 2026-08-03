@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from typing import Callable
 
 import psutil
 import requests
@@ -26,9 +27,12 @@ from device_validation import (
     validate_port,
     validate_service_type,
 )
+from policies.catalog import scan_tests
 from policies.catalog.scan_tests import (
     SCAN_CATALOG,
     configure_active_scopes,
+    estimate_stage_a_timeout,
+    estimate_stage_b_timeout,
     is_applicable,
     is_firmware_test,
     is_network_discovery_test,
@@ -149,6 +153,115 @@ def _record_failure(job_id: int, error_detail: str) -> None:
     response.raise_for_status()
 
 
+def _run_network_discovery(
+    patch_fn: Callable[[dict], None],
+    fail_fn: Callable[[str], None],
+    success_status: str,
+) -> None:
+    """Shared two-stage TEST-NET-DISCOVERY execution for both process_job()
+    (a per-device scan_jobs row) and process_network_scan() (a
+    device-less network_scans row) - the same reasoning process_network_scan
+    itself already documents for reusing scan_tests.py's pure functions,
+    just extended to two commands instead of one.
+
+    Stage A (a fast whole-scope -sn ping/ARP sweep) finds which addresses
+    are even alive; Stage B (a full -sV scan, Task 3's broadcast scripts
+    included) only ever targets Stage A's live addresses - this is what
+    actually makes a large configured scope (this platform allows up to a
+    /16, 65,534 addresses) practical, where a single flat -sV sweep across
+    the whole scope cannot finish in any reasonable timeout.
+
+    `patch_fn` reports both the initial "running" transition and the final
+    successful result (with `success_status` filling in the caller-specific
+    terminal status string, "awaiting_finding" for a scan_jobs row vs.
+    "completed" for a network_scans row - the one thing that genuinely
+    differs between the two callers). `fail_fn` reports a genuine execution
+    failure (timeout or exception - the collector really did attempt to
+    run) using whichever failure mechanism is correct for that row type:
+    process_job wires this to _record_failure (produces real INCONCLUSIVE
+    evidence server-side); process_network_scan wires it to a plain
+    status=failed patch (network_scans rows carry no evidence/verdict
+    concept at all)."""
+    patch_fn({"status": "running"})
+
+    stage_a_command = scan_tests._network_discovery_stage_a_command()
+    stage_a_timeout = estimate_stage_a_timeout(list(scan_tests.ACTIVE_SCOPES))
+    try:
+        result = subprocess.run(stage_a_command, capture_output=True, text=True, timeout=stage_a_timeout)
+        stage_a_raw_output = (result.stdout or "") + (result.stderr or "")
+    except subprocess.TimeoutExpired:
+        fail_fn(f"discovery phase (Stage A) timed out after {stage_a_timeout}s")
+        return
+    except Exception as exc:  # noqa: BLE001 - report any execution failure back to the caller
+        fail_fn(f"discovery phase (Stage A) failed: {exc}")
+        return
+
+    tool_version = _tool_version(["nmap", "--version"])
+    live_hosts = scan_tests._parse_stage_a_live_hosts(stage_a_raw_output)
+
+    if not live_hosts:
+        # A real, honest, valid outcome - not an error. Stage B is skipped
+        # entirely since there is nothing for it to target.
+        observations = {
+            "subnets": list(scan_tests.ACTIVE_SCOPES),
+            "hosts": [],
+            "iot_device_count": 0,
+            "uncertain_count": 0,
+            "unknown_count": 0,
+            "notes": [
+                "No live hosts responded across the configured scope(s) during the fast discovery "
+                "pass (Stage A) - the service-scan pass (Stage B) was skipped since there was nothing "
+                "to target.",
+            ],
+        }
+        patch_fn({
+            "status": success_status,
+            "tool": "nmap",
+            "tool_version": tool_version,
+            "command": " ".join(stage_a_command),
+            "raw_output": stage_a_raw_output,
+            "observations": observations,
+        })
+        return
+
+    stage_b_command = scan_tests._network_discovery_stage_b_command(live_hosts)
+    stage_b_timeout = estimate_stage_b_timeout(len(live_hosts))
+    try:
+        result = subprocess.run(stage_b_command, capture_output=True, text=True, timeout=stage_b_timeout)
+        stage_b_raw_output = (result.stdout or "") + (result.stderr or "")
+    except subprocess.TimeoutExpired:
+        fail_fn(
+            f"service-scan phase (Stage B) timed out after {stage_b_timeout}s "
+            f"({len(live_hosts)} live host(s) found by the discovery phase)"
+        )
+        return
+    except Exception as exc:  # noqa: BLE001 - report any execution failure back to the caller
+        fail_fn(f"service-scan phase (Stage B) failed: {exc}")
+        return
+
+    observations = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"]({}, stage_b_raw_output)
+    observations = _enrich_mac_vendors(observations)
+
+    # Stage A's raw output is never discarded, even though the final
+    # observations are derived from Stage B alone - matching this project's
+    # "raw output is always preserved" rule for every other collector.
+    combined_raw_output = (
+        f"=== Stage A: discovery sweep ({len(live_hosts)} live host(s) found) ===\n"
+        f"{stage_a_raw_output}\n"
+        f"=== Stage B: targeted service scan ===\n"
+        f"{stage_b_raw_output}"
+    )
+
+    patch_fn({
+        "status": success_status,
+        "tool": "nmap",
+        "tool_version": tool_version,
+        "command": " ".join(stage_a_command) + " && " + " ".join(stage_b_command),
+        "raw_output": combined_raw_output,
+        "observations": observations,
+    })
+
+
 def process_job(job: dict) -> None:
     job_id = job["id"]
     test_id = job["test_id"]
@@ -170,6 +283,17 @@ def process_job(job: dict) -> None:
         _patch(job_id, {"status": "failed", "error": "test does not apply to this service"})
         return
 
+    if is_network_discovery_test(test_id):
+        # Two-stage execution (see _run_network_discovery) - not the generic
+        # single build_command/parse_observations dispatch every other test
+        # uses, the same way firmware tests already special-case around it.
+        _run_network_discovery(
+            patch_fn=lambda fields: _patch(job_id, fields),
+            fail_fn=lambda detail: _record_failure(job_id, detail),
+            success_status="awaiting_finding",
+        )
+        return
+
     spec = SCAN_CATALOG[test_id]
     _patch(job_id, {"status": "running"})
 
@@ -186,8 +310,6 @@ def process_job(job: dict) -> None:
         return
 
     observations = spec["parse_observations"](target, raw_output)
-    if is_network_discovery_test(test_id):
-        observations = _enrich_mac_vendors(observations)
     tool_version = _tool_version(spec["tool_version_command"])
 
     _patch(job_id, {
@@ -230,10 +352,9 @@ def _process_interface_detect(scan_id: int) -> None:
 
 
 def process_network_scan(scan: dict) -> None:
-    """Runs the same subnet sweep TEST-NET-DISCOVERY uses (build_command/
-    parse_observations are pure functions of `target`, which this test never
-    reads - see scan_tests.py), but keyed on a network_scans row instead of
-    a scan_jobs row tied to a device. This is the discovery-first onboarding
+    """Runs the same two-stage TEST-NET-DISCOVERY flow (_run_network_discovery)
+    used by process_job(), but keyed on a network_scans row instead of a
+    scan_jobs row tied to a device. This is the discovery-first onboarding
     path: scan first, then decide which hosts are worth registering.
 
     A network_scans row can also carry kind='interface_detect' (Network
@@ -244,34 +365,14 @@ def process_network_scan(scan: dict) -> None:
         _process_interface_detect(scan_id)
         return
 
-    spec = SCAN_CATALOG["TEST-NET-DISCOVERY"]
-    _patch_network_scan(scan_id, {"status": "running"})
-
-    target: dict = {}
-    command = spec["build_command"](target)
-    timeout_seconds = spec.get("timeout_seconds", COMMAND_TIMEOUT_SECONDS)
-    try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout_seconds)
-        raw_output = (result.stdout or "") + (result.stderr or "")
-    except subprocess.TimeoutExpired:
-        _patch_network_scan(scan_id, {"status": "failed", "error": f"command timed out after {timeout_seconds}s"})
-        return
-    except Exception as exc:  # noqa: BLE001 - report any execution failure back to the scan
-        _patch_network_scan(scan_id, {"status": "failed", "error": str(exc)})
-        return
-
-    observations = spec["parse_observations"](target, raw_output)
-    observations = _enrich_mac_vendors(observations)  # this branch is always TEST-NET-DISCOVERY
-    tool_version = _tool_version(spec["tool_version_command"])
-
-    _patch_network_scan(scan_id, {
-        "status": "completed",
-        "tool": spec["tool"],
-        "tool_version": tool_version,
-        "command": " ".join(command),
-        "raw_output": raw_output,
-        "observations": observations,
-    })
+    _run_network_discovery(
+        patch_fn=lambda fields: _patch_network_scan(scan_id, fields),
+        # network_scans rows carry no evidence/verdict concept at all (unlike
+        # scan_jobs' record-failure path), so a genuine execution failure is
+        # always just a plain status=failed patch.
+        fail_fn=lambda detail: _patch_network_scan(scan_id, {"status": "failed", "error": detail}),
+        success_status="completed",
+    )
 
 
 def _sentinel_age_seconds(path: str) -> float | None:
