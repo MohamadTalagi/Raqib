@@ -42,3 +42,18 @@ def test_health_endpoint():
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "healthy"
+
+
+def test_description_xml_completes_the_real_upnp_discovery_flow():
+    # A real UPnP client follows ssdp_server.py's LOCATION header here after
+    # the initial M-SEARCH response - this endpoint didn't exist at all
+    # before this fix, which made that follow-up fetch a real, live-caught
+    # dead end for nmap's own broadcast-upnp-info script.
+    resp = client.get("/description.xml")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/xml")
+    body = resp.text
+    assert "<deviceType>" in body and "</UDN>" in body
+    assert "<friendlyName>NetCore NC-WR1200</friendlyName>" in body
+    assert "<manufacturer>NetCore</manufacturer>" in body
+    assert "<modelName>NC-WR1200</modelName>" in body

@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from app.config import settings
 from app.ssdp_server import start_ssdp_server
@@ -41,6 +41,33 @@ LOGIN_PAGE_TEMPLATE = """<!DOCTYPE html>
 @app.get("/", response_class=HTMLResponse)
 def login_page():
     return LOGIN_PAGE_TEMPLATE.format(vendor=settings.device_vendor, model=settings.device_model)
+
+
+# The real device-description document a UPnP client (or nmap's own
+# broadcast-upnp-info) fetches after following the SSDP response's LOCATION
+# header - completing the real discovery flow ssdp_server.py's response
+# advertises but, until this endpoint existed, never actually served.
+DESCRIPTION_XML_TEMPLATE = """<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <specVersion><major>1</major><minor>0</minor></specVersion>
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:InternetGatewayDevice:1</deviceType>
+    <friendlyName>{vendor} {model}</friendlyName>
+    <manufacturer>{vendor}</manufacturer>
+    <modelDescription>{vendor} {model} residential gateway</modelDescription>
+    <modelName>{model}</modelName>
+    <modelNumber>1</modelNumber>
+    <UDN>uuid:{uuid}</UDN>
+  </device>
+</root>"""
+
+
+@app.get("/description.xml")
+def description_xml():
+    body = DESCRIPTION_XML_TEMPLATE.format(
+        vendor=settings.device_vendor, model=settings.device_model, uuid=settings.ssdp_uuid,
+    )
+    return Response(content=body, media_type="text/xml")
 
 
 @app.post("/login")

@@ -323,6 +323,21 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost, onRegisterSelec
                             )}
                           </p>
                         )}
+                        {(host.discovery_signals.includes("upnp_broadcast") ||
+                          host.discovery_signals.includes("mdns_broadcast")) && (
+                          <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-[var(--color-brand)]">
+                            <RadioTower className="h-3 w-3" strokeWidth={2} />
+                            found via{" "}
+                            {[
+                              host.discovery_signals.includes("upnp_broadcast") && "UPnP/SSDP",
+                              host.discovery_signals.includes("mdns_broadcast") && "mDNS",
+                            ]
+                              .filter(Boolean)
+                              .join(" + ")}{" "}
+                            broadcast
+                            {host.open_ports.length === 0 && " (no TCP port open)"}
+                          </p>
+                        )}
                       </div>
                       <span className="font-mono-tabular text-xs text-[var(--color-text-muted)]">
                         ports: {host.open_ports.join(", ") || "—"}

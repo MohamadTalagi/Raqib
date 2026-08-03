@@ -1,7 +1,10 @@
 import socket
+import struct
 import threading
 
 from app.config import Settings, settings as default_settings
+
+MDNS_MULTICAST_GROUP = "224.0.0.251"
 
 # A minimal, hand-rolled DNS response (RFC 1035 wire format) answering ANY
 # incoming UDP datagram on 5353 with a TXT record advertising this device's
@@ -42,6 +45,20 @@ def _serve(settings: Settings) -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("0.0.0.0", settings.mdns_port))
+    # A real mDNS responder must join the mDNS multicast group to ever be
+    # discoverable via a genuine multicast query (the actual mechanism mDNS
+    # uses in the real world) - binding to 0.0.0.0 alone only ever receives
+    # unicast/broadcast traffic, never real multicast-addressed datagrams,
+    # regardless of any Docker network-level forwarding. Live-confirmed on
+    # this project's own worker container: a real multicast PTR query to
+    # 224.0.0.251:5353 got zero response before this join, and a real
+    # response after it - not a Docker networking limitation, a gap in this
+    # fixture's own protocol fidelity. Mirrors ssdp_server.py's identical fix.
+    try:
+        membership = struct.pack("4s4s", socket.inet_aton(MDNS_MULTICAST_GROUP), socket.inet_aton("0.0.0.0"))
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+    except OSError:
+        pass  # some sandboxed test environments have no multicast support - unicast still works
     response = _build_response(settings)
     while True:
         _data, addr = sock.recvfrom(2048)

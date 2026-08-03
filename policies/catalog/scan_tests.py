@@ -383,12 +383,19 @@ def _parse_mdns_probe_observations(target: dict, output: str) -> dict:
 #
 # 502 (Modbus) and 554 (RTSP) are added here since both are TCP and this
 # sweep's nmap invocation is TCP-only (-sV with no -sU). 1900 (SSDP/UPnP) and
-# 5353 (mDNS) are deliberately NOT added - both are UDP-only services, so a
-# TCP-only sweep can never see them "open" no matter what's in this port
-# list. This is a real, documented scope limit, not an oversight: both of
-# this project's UDP-only fixtures (device-router-gw, device-speaker) also
-# expose an HTTP admin UI on port 80, so they still classify as iot_device
-# via that signature alone.
+# 5353 (mDNS) are deliberately NOT added here - both are UDP-only services,
+# so a TCP-only port-list sweep can never see them "open" no matter what's
+# in this list. That gap is closed a different way, not by adding them here:
+# _network_discovery_command also runs nmap's broadcast-upnp-info and
+# broadcast-dns-service-discovery NSE scripts once per sweep, and
+# _fold_broadcast_discovery_into_hosts() gives any device that answers one
+# of those queries a real iot_device entry even with zero TCP ports open -
+# this catalog's own device-router-gw fixture is live-verified reachable
+# this way. (Both of this project's UDP-only fixtures, device-router-gw and
+# device-speaker, also happen to expose an HTTP admin UI on port 80, so
+# they'd still classify as iot_device via that TCP signature alone even
+# without this fold-in - but a genuinely UDP-only device, with no TCP port
+# open at all, is exactly the case this closes.)
 IOT_SIGNATURE_PORTS = frozenset({80, 443, 1883, 8883, 502, 554})
 AMBIGUOUS_PORTS = frozenset({22, 23})
 NETWORK_DISCOVERY_PORTS = sorted(IOT_SIGNATURE_PORTS | AMBIGUOUS_PORTS)
@@ -419,10 +426,21 @@ def _network_discovery_command(target: dict) -> list[str]:
     # unreachable classification in practice).
     # nmap natively accepts multiple target specs in one invocation, so every
     # configured scope is swept in a single command rather than one per scope.
+    #
+    # --script broadcast-upnp-info,broadcast-dns-service-discovery folds SSDP
+    # (UPnP) and mDNS discovery into this same sweep, closing the previous
+    # TCP-only blind spot for a device that speaks only a UDP discovery
+    # protocol with no TCP signature port open at all. Both scripts are
+    # nmap's own `broadcast safe` category (live-confirmed on this project's
+    # exact nmap 7.95) - a single query per script, once per scan, not
+    # per-host, so this adds a small roughly-constant ~5-10s overhead
+    # regardless of subnet size, not a per-host cost.
     ports = ",".join(str(p) for p in NETWORK_DISCOVERY_PORTS)
     return [
         "nmap", "-sV", "--version-intensity", "2", "-p", ports,
-        "-T3", "--max-retries", "1", "--max-rate", "50", *ACTIVE_SCOPES,
+        "-T3", "--max-retries", "1", "--max-rate", "50",
+        "--script", "broadcast-upnp-info,broadcast-dns-service-discovery",
+        *ACTIVE_SCOPES,
     ]
 
 
@@ -473,6 +491,119 @@ def _classify_host(open_ports: set[int]) -> tuple[str, str, str]:
         "None of the scanned signature ports were open on this host - it is live, but its role could "
         "not be inferred from this scan.",
     )
+
+
+def _prescan_broadcast_script_section(output: str, script_name: str, next_script_name: str | None = None) -> str:
+    """Isolates one NSE broadcast script's own output from nmap's "Pre-scan
+    script results:" block, which always precedes the first per-host
+    "Nmap scan report for" block. Bounded by `next_script_name` (this
+    catalog always invokes broadcast-upnp-info then
+    broadcast-dns-service-discovery in that fixed order, so a simple
+    substring bound is reliable here - no need for a general NSE-output
+    parser) so one script's output is never misread as part of the other's.
+    Returns "" (never raises) when the script produced no output at all -
+    a real, honest outcome (no device on this scope answered that broadcast
+    query), not a parse failure."""
+    marker = f"{script_name}:"
+    if marker not in output:
+        return ""
+    section = output.split(marker, 1)[1]
+    if next_script_name:
+        stop_marker = f"{next_script_name}:"
+        if stop_marker in section:
+            section = section.split(stop_marker, 1)[0]
+    return section.split("\nNmap scan report for", 1)[0]
+
+
+def _parse_broadcast_upnp_hosts(output: str) -> list[str]:
+    """Parses nmap's broadcast-upnp-info NSE script output for every
+    responding device's real IP - live-captured shape against this
+    project's own device-router-gw fixture, confirmed with a real
+    end-to-end UPnP discovery (M-SEARCH -> LOCATION -> description.xml
+    fetch), for example:
+
+        | broadcast-upnp-info:
+        |   239.255.255.250
+        |       Server: Linux/1.0 UPnP/1.0 NetCore/NC-WR1200
+        |       Location: http://172.30.0.13:80/description.xml
+        ...
+
+    The device's real IP comes from its own "Location: http://<ip>:<port>/
+    ..." line, not the block's own outer group label - live-confirmed that
+    this script mislabels every entry with the multicast group address
+    (239.255.255.250) instead of the real per-device address, so parsing
+    the outer indentation would silently attribute every response to a
+    fake IP."""
+    section = _prescan_broadcast_script_section(output, "broadcast-upnp-info", "broadcast-dns-service-discovery")
+    return re.findall(r"Location:\s*http://([\d.]+):\d+", section)
+
+
+def _parse_broadcast_mdns_hosts(output: str) -> list[str]:
+    """Parses nmap's broadcast-dns-service-discovery NSE script output for
+    every responding device's IP: each host is grouped under its own
+    top-level IP line (one indentation level less than the
+    service-type/instance lines nested beneath it), per nmap's own
+    documented output shape:
+
+        | broadcast-dns-service-discovery:
+        |   1.2.3.1
+        |     _ssh._tcp.local
+        |     _http._tcp.local
+        ...
+
+    Built from nmap's own documentation, not a positive live capture in
+    this lab (see docs/known-limitations.md): this project's own
+    device-speaker fixture is a minimal, hand-rolled mDNS responder that
+    never implements the DNS-SD "_services._dns-sd._udp.local" PTR-
+    enumeration convention this script specifically queries for, so it
+    (correctly, honestly) produces no output against it here - a real
+    DNS-SD-compliant device would. Live-confirmed this script runs cleanly
+    and safely returns nothing rather than erroring when no device answers,
+    exactly like every other broadcast/probe collector in this catalog
+    degrades honestly when a signal is absent."""
+    section = _prescan_broadcast_script_section(output, "broadcast-dns-service-discovery")
+    return re.findall(r"^\|   ([\d.]+)\s*$", section, re.MULTILINE)
+
+
+def _fold_broadcast_discovery_into_hosts(hosts: list[dict], upnp_ips: list[str], mdns_ips: list[str]) -> None:
+    """Folds SSDP/mDNS broadcast-discovery signals into `hosts` in place:
+    an IP that already has a host entry (from the TCP port-scan block) gets
+    the signal appended to its discovery_signals list; a genuinely new IP
+    (a UDP-only device with no TCP signature port open at all - the real
+    scenario this closes a gap for) gets a brand-new high-confidence
+    iot_device entry. Every existing host also gets "port_scan" recorded so
+    discovery_signals is a complete picture, not just the newly-added
+    broadcast ones."""
+    for host in hosts:
+        host["discovery_signals"] = ["port_scan"]
+    by_ip = {host["ip"]: host for host in hosts}
+
+    for ip, signal, protocol_label in (
+        *((ip, "upnp_broadcast", "UPnP/SSDP") for ip in upnp_ips),
+        *((ip, "mdns_broadcast", "mDNS") for ip in mdns_ips),
+    ):
+        existing = by_ip.get(ip)
+        if existing:
+            if signal not in existing["discovery_signals"]:
+                existing["discovery_signals"].append(signal)
+            continue
+        new_host = {
+            "ip": ip,
+            "hostname": None,
+            "open_ports": [],
+            "services": [],
+            "classification": "iot_device",
+            "confidence": "high",
+            "rationale": f"Responded to a {protocol_label} broadcast discovery query - a signal "
+            "restricted to devices that speak an IoT/consumer discovery protocol - despite having no "
+            "TCP signature port open in this sweep's port list.",
+            "mac_address": None,
+            "mac_vendor": None,
+            "mac_vendor_source": None,
+            "discovery_signals": [signal],
+        }
+        hosts.append(new_host)
+        by_ip[ip] = new_host
 
 
 def _parse_network_discovery_observations(target: dict, output: str) -> dict:
@@ -541,6 +672,10 @@ def _parse_network_discovery_observations(target: dict, output: str) -> dict:
             "mac_vendor_source": "nmap_bundled" if nmap_vendor_guess else None,
         })
 
+    upnp_ips = _parse_broadcast_upnp_hosts(output)
+    mdns_ips = _parse_broadcast_mdns_hosts(output)
+    _fold_broadcast_discovery_into_hosts(hosts, upnp_ips, mdns_ips)
+
     iot_count = sum(1 for h in hosts if h["classification"] == "iot_device")
     uncertain_count = sum(1 for h in hosts if h["classification"] == "uncertain")
     unknown_count = sum(1 for h in hosts if h["classification"] == "unknown")
@@ -567,6 +702,13 @@ def _parse_network_discovery_observations(target: dict, output: str) -> dict:
             "Do not treat an 'uncertain' host as confirmed non-IoT - it means the signature set was "
             "inconclusive, not that the host was ruled out. Confirm manually (banner-grab the open "
             "port, check the vendor's documentation) before excluding it from the device inventory.",
+        )
+    new_from_broadcast = sum(1 for h in hosts if h["discovery_signals"] == ["upnp_broadcast"] or h["discovery_signals"] == ["mdns_broadcast"])
+    if new_from_broadcast:
+        notes.append(
+            f"{new_from_broadcast} host(s) were found only via a UPnP/SSDP or mDNS broadcast query, with "
+            "no TCP signature port open at all in this sweep's port list - the exact UDP-only-device gap "
+            "this broadcast fold-in closes.",
         )
 
     return {

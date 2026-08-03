@@ -63,11 +63,52 @@ treat it as additional evidence there, not as the sole basis for a
 classification. An `uncertain` result means the signature set was
 inconclusive, not that the host was ruled out as non-IoT — it always needs
 manual confirmation.
-Restricted to a small, fixed set of signature ports (22, 23, 80, 443, 1883,
-8883) rather than a full port sweep across the whole /24, so the scan
-finishes reliably and every open port found is one the classifier actually
-knows how to interpret; a host running an IoT service on a port outside
-this set will show as `unknown` rather than `iot_device`.
+Restricted to a small, fixed set of signature ports (22, 23, 80, 443, 502,
+554, 1883, 8883) rather than a full port sweep across the whole /24, so the
+scan finishes reliably and every open port found is one the classifier
+actually knows how to interpret; a host running an IoT service on a TCP port
+outside this set will show as `unknown` rather than `iot_device`.
+
+**A device that speaks only a UDP discovery protocol, with no TCP signature
+port open at all, is no longer invisible to this sweep.** Every
+`TEST-NET-DISCOVERY` run also fires nmap's `broadcast-upnp-info` and
+`broadcast-dns-service-discovery` NSE scripts (both `broadcast safe`,
+live-confirmed on this project's exact nmap 7.95) once per scan — a real IP
+that answers either query gets folded into its existing host entry
+(`discovery_signals` gains `"upnp_broadcast"`/`"mdns_broadcast"` alongside
+`"port_scan"`) or, if it never appeared in the TCP port-scan output at all,
+a brand-new `iot_device`/`high`-confidence entry. **Live-verified end to end
+for the UPnP path**: this project's own `device-router-gw` fixture answers a
+real multicast M-SEARCH and a real client can follow its `LOCATION` header
+to fetch a real `description.xml` — the whole real-world UPnP discovery
+flow, not just the initial ping. Getting there surfaced two real,
+now-fixed bugs, neither hypothetical: (1) neither `device-router-gw`'s SSDP
+responder nor `device-speaker`'s mDNS responder ever joined its multicast
+group (`IP_ADD_MEMBERSHIP`) — binding to `0.0.0.0` alone only ever receives
+unicast/broadcast traffic, never genuine multicast-addressed datagrams, so a
+real broadcast query got zero response from either fixture even though this
+lab's own existing per-device unicast probes (`TEST-UPNP-PROBE`/
+`TEST-MDNS-PROBE`) already worked; (2) `device-router-gw`'s SSDP response
+advertised the **requester's** address in its `LOCATION` header instead of
+its own, so any real UPnP client (including nmap's own script) that
+followed the link to fetch the device description got redirected back to
+itself and failed — fixed alongside adding the `/description.xml` endpoint
+that never existed at all. **The mDNS/DNS-SD path could not be positively
+live-verified**: `broadcast-dns-service-discovery` specifically queries the
+DNS-SD service-enumeration convention (`_services._dns-sd._udp.local` PTR),
+which `device-speaker`'s intentionally minimal, hand-rolled mDNS responder
+(a small raw-socket TXT-record responder, not a full DNS-SD stack, by this
+fixture's original design) does not implement — the script correctly and
+safely returns nothing against it, a real, honest "no DNS-SD-compliant
+device on this scope" outcome, not a bug. The parser for this script's
+output is therefore built from nmap's own documented shape, not a positive
+live capture, and is unit-test-verified only. Both of this project's own
+UDP-only fixtures also happen to expose an HTTP admin UI on port 80, so a
+genuinely new (never-seen-via-TCP) host entry has never been produced by a
+real scan in this lab either — that specific code path is unit-test-verified
+only, matching the same honest caveat this project already carries for a
+few other rare branches (e.g. the SSH-only Telnet/SSH confidence tier
+above).
 
 **Deliberately tuned gentle, not fast**, because this is an IoT environment
 and real devices can have weak network stacks: `-T3` (Normal) rather than

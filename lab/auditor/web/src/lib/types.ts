@@ -146,6 +146,7 @@ export interface DiscoveredHost {
   mac_address: string | null;
   mac_vendor: string | null;
   mac_vendor_source: MacVendorSource | null;
+  discovery_signals: string[];
 }
 
 export interface NetworkScanObservations {

@@ -37,6 +37,7 @@ const IOT_HOST: DiscoveredHost = {
   mac_address: null,
   mac_vendor: null,
   mac_vendor_source: null,
+  discovery_signals: ["port_scan"],
 };
 
 const UNCERTAIN_HOST: DiscoveredHost = {
@@ -50,6 +51,7 @@ const UNCERTAIN_HOST: DiscoveredHost = {
   mac_address: null,
   mac_vendor: null,
   mac_vendor_source: null,
+  discovery_signals: ["port_scan"],
 };
 
 function makeScan(overrides: Partial<NetworkScan> = {}): NetworkScan {
@@ -158,6 +160,36 @@ describe("NetworkDiscoveryPanel", () => {
     expect(screen.getByText(/IEEE OUI registry/i)).toBeInTheDocument();
     expect(screen.getByText(/E6:4D:1A:E6:45:D7/i)).toBeInTheDocument();
     expect(screen.getByText(/vendor unknown/i)).toBeInTheDocument();
+  });
+
+  it("shows a broadcast-discovery indicator for a UDP-only host with no TCP port open", async () => {
+    const udpOnlyHost: DiscoveredHost = {
+      ip: "172.30.0.13",
+      hostname: null,
+      open_ports: [],
+      services: [],
+      classification: "iot_device",
+      confidence: "high",
+      rationale: "Responded to a broadcast discovery query with no TCP signature port open.",
+      mac_address: null,
+      mac_vendor: null,
+      mac_vendor_source: null,
+      discovery_signals: ["upnp_broadcast"],
+    };
+    vi.spyOn(api, "createNetworkScan").mockResolvedValue(
+      makeScan({ status: "pending", observations: null }),
+    );
+    vi.spyOn(api, "getNetworkScan").mockResolvedValue(
+      makeScan({ observations: { subnets: ["172.30.0.0/24"], hosts: [udpOnlyHost], iot_device_count: 1, uncertain_count: 0, unknown_count: 0, notes: [] } }),
+    );
+
+    const user = userEvent.setup();
+    renderPanel({ devices: [], onRegisterHost: () => {}, onRegisterSelected: () => {} });
+    await user.click(screen.getByRole("button", { name: /scan network/i }));
+
+    expect(await screen.findByText(/found via/i)).toBeInTheDocument();
+    expect(screen.getByText(/UPnP\/SSDP/i)).toBeInTheDocument();
+    expect(screen.getByText(/no TCP port open/i)).toBeInTheDocument();
   });
 
   it("supports selecting multiple registerable hosts and registering them as a batch", async () => {

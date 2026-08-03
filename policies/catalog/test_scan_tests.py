@@ -1076,6 +1076,125 @@ def test_parse_network_discovery_leaves_mac_fields_none_when_nmap_has_no_mac_lin
     assert host["mac_vendor_source"] is None
 
 
+# Real captured shape from a live run of this exact command against this
+# project's own device-router-gw fixture (2026-08-03), confirmed end to end:
+# a real M-SEARCH multicast response, followed by a real fetch of
+# device-router-gw's own /description.xml. Not invented from nmap's docs
+# alone - this project's own standing discipline.
+UPNP_PRESCAN_SECTION = (
+    "Pre-scan script results:\n"
+    "| broadcast-upnp-info: \n"
+    "|   239.255.255.250\n"
+    "|       Server: Linux/1.0 UPnP/1.0 NetCore/NC-WR1200\n"
+    "|       Location: http://172.30.0.13:80/description.xml\n"
+    "|         Webserver: uvicorn\n"
+    "|         Name: NetCore NC-WR1200\n"
+    "|         Manufacturer: NetCore\n"
+    "|         Model Descr: NetCore NC-WR1200 residential gateway\n"
+    "|         Model Name: NC-WR1200\n"
+    "|_        Model Version: 1\n"
+)
+
+
+def test_parse_network_discovery_folds_upnp_broadcast_into_an_existing_host():
+    # device-router-gw already has a real TCP-signature host block (port 80)
+    # in this same scan - the broadcast signal must fold into that existing
+    # entry, not create a duplicate.
+    output = _discovery_output(
+        UPNP_PRESCAN_SECTION,
+        "Nmap scan report for kaust-iot-lab-device-router-gw-1.kaust-iot-lab_audit-network (172.30.0.13)\n"
+        "Host is up (0.000097s latency).\n\n"
+        "PORT     STATE  SERVICE     VERSION\n"
+        "80/tcp   open   http        Uvicorn\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert len(obs["hosts"]) == 1
+    host = obs["hosts"][0]
+    assert host["ip"] == "172.30.0.13"
+    assert host["classification"] == "iot_device"
+    assert host["discovery_signals"] == ["port_scan", "upnp_broadcast"]
+
+
+def test_parse_network_discovery_creates_a_new_host_for_a_upnp_only_udp_device():
+    # The real gap this closes: a device with NO TCP signature port open at
+    # all (never appears in any "Nmap scan report for" block) must still
+    # surface as a real iot_device entry once it answers the broadcast query.
+    output = _discovery_output(UPNP_PRESCAN_SECTION)
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert len(obs["hosts"]) == 1
+    host = obs["hosts"][0]
+    assert host["ip"] == "172.30.0.13"
+    assert host["hostname"] is None
+    assert host["open_ports"] == []
+    assert host["classification"] == "iot_device"
+    assert host["confidence"] == "high"
+    assert "UPnP/SSDP" in host["rationale"]
+    assert host["discovery_signals"] == ["upnp_broadcast"]
+    assert obs["iot_device_count"] == 1
+    assert any("UDP-only" in note for note in obs["notes"])
+
+
+# nmap's own documented output shape for broadcast-dns-service-discovery
+# (docs/known-limitations.md notes this project has no fixture that
+# implements the DNS-SD PTR-enumeration convention this script queries for,
+# so this shape is not a positive live capture from this lab - unlike the
+# UPnP fixture above).
+MDNS_PRESCAN_SECTION = (
+    "Pre-scan script results:\n"
+    "| broadcast-dns-service-discovery:\n"
+    "|   172.30.0.7\n"
+    "|     _services._dns-sd._udp.local\n"
+    "|_      Address=172.30.0.7\n"
+)
+
+
+def test_parse_network_discovery_folds_mdns_broadcast_into_an_existing_host():
+    output = _discovery_output(
+        MDNS_PRESCAN_SECTION,
+        "Nmap scan report for kaust-iot-lab-device-speaker-1.kaust-iot-lab_audit-network (172.30.0.7)\n"
+        "Host is up (0.000081s latency).\n\n"
+        "PORT     STATE  SERVICE     VERSION\n"
+        "80/tcp   open   http        Uvicorn\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert len(obs["hosts"]) == 1
+    host = obs["hosts"][0]
+    assert host["discovery_signals"] == ["port_scan", "mdns_broadcast"]
+
+
+def test_parse_network_discovery_creates_a_new_host_for_a_mdns_only_udp_device():
+    output = _discovery_output(MDNS_PRESCAN_SECTION)
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert len(obs["hosts"]) == 1
+    host = obs["hosts"][0]
+    assert host["ip"] == "172.30.0.7"
+    assert host["classification"] == "iot_device"
+    assert host["confidence"] == "high"
+    assert "mDNS" in host["rationale"]
+    assert host["discovery_signals"] == ["mdns_broadcast"]
+
+
+def test_parse_network_discovery_when_no_broadcast_script_produced_output():
+    # A real, honest, common outcome: no device on this scope answered
+    # either broadcast query at all - must not crash or fabricate a host.
+    output = _discovery_output(
+        "Nmap scan report for device-insecure (172.30.0.5)\n"
+        "Host is up (0.00012s latency).\n\n"
+        "PORT     STATE SERVICE VERSION\n"
+        "80/tcp   open  http    Werkzeug httpd 2.0.1 (Python 3.9.7)\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    assert len(obs["hosts"]) == 1
+    assert obs["hosts"][0]["discovery_signals"] == ["port_scan"]
+
+
+def test_network_discovery_command_includes_the_broadcast_discovery_scripts():
+    command = SCAN_CATALOG["TEST-NET-DISCOVERY"]["build_command"](DISCOVERY_TARGET)
+    assert "--script" in command
+    script_arg = command[command.index("--script") + 1]
+    assert set(script_arg.split(",")) == {"broadcast-upnp-info", "broadcast-dns-service-discovery"}
+
+
 def test_parse_network_discovery_classifies_host_with_no_signature_ports_as_unknown():
     output = _discovery_output(
         "Nmap scan report for 172.30.0.42\nHost is up (0.00010s latency).\n\n",
