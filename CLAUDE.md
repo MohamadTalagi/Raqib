@@ -12,7 +12,97 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Post-Quantum Readiness — a bonus pipeline stage beyond IoTGuard's
+**Phase:** **Network Discovery precision & scale hardening — PLANNED, implementation
+not yet started.** A full, ready-to-execute implementation plan is written and
+committed at
+`docs/superpowers/plans/2026-08-03-network-discovery-precision-and-scale.md`
+— **the very next session should open that file and start on Task 1
+immediately**, no further scoping needed. Everything below is a summary; the
+plan file itself is the source of truth for implementation detail.
+
+**Purpose / why this exists:** a code-review pass on `TEST-NET-DISCOVERY`
+(the VLAN-sweep collector behind the Devices page's "Discover devices" panel
+and `POST /network-scans`) flagged a precision loss, a scalability gap, and
+three named "missing" capabilities. Every claim was independently
+re-verified against the real code and a real nmap 7.95 container (matching
+the exact `auditor-worker` base image) before the plan was written — one
+claim needed correcting in the process (see below).
+
+**Current limitations this plan closes** (all confirmed live/by direct code
+read, not assumed from the review alone):
+1. **Telnet/SSH conflation** — `_classify_host()`
+   (`policies/catalog/scan_tests.py:429`) gives a Telnet-only host, an
+   SSH-only host, and a Telnet+SSH host the *identical*
+   `("uncertain", "low", ...)` result today, even though Telnet is a much
+   stronger insecure-legacy-IoT signal than SSH (ubiquitous on ordinary
+   Linux/network gear). A real precision loss in the classifier's own
+   confidence field.
+2. **Timeout can't scale, and this is a live risk today, not hypothetical**
+   — `TEST-NET-DISCOVERY`'s timeout is a hardcoded `90` (`scan_tests.py:1409`),
+   but the most recent commit before this session ("Add adjustable subnets",
+   `984864f`) made subnets genuinely configurable up to a **/16 (65,534
+   addresses)** via `network_scope_routes.py` /
+   `device_validation.MIN_SCOPE_PREFIX_LENGTH = 16`. A flat single-command
+   `nmap -sV` sweep cannot finish a /16 in any reasonable timeout — this
+   needs an actual strategy change, not a bigger constant.
+3. **MAC-vendor/OUI lookup is "missing"** — but more precisely: nmap
+   *already* performs real ARP-based host discovery on the audit-network's
+   directly-attached L2 segment and already prints a MAC address + its own
+   bundled vendor guess (proven by this project's own committed evidence,
+   `document-store/raw/EV-2026-07-23-0001.txt`, which shows real
+   `MAC Address: E6:4D:1A:E6:45:D7 (Unknown)` lines — "Unknown" because
+   Docker assigns virtual, locally-administered MACs, not because ARP
+   discovery didn't run). `_parse_network_discovery_observations()` parses
+   only the port lines and silently discards the MAC Address line
+   entirely — **the real gap is a discarded signal, not an absent
+   technique.** This corrects the original review's "no Scapy/ARP-based
+   discovery" framing, which implied ARP discovery doesn't happen at all.
+4. **SSDP (UPnP) and mDNS are not folded into the primary sweep** — the
+   sweep is TCP-only, so a device that *only* speaks a UDP discovery
+   protocol (no TCP signature port open at all) would misclassify as
+   `unknown`. This lab's own real `device-router-gw` (UPnP/SSDP) and
+   `device-speaker` (mDNS) fixtures happen to also expose HTTP on port 80
+   today, masking the gap in this lab specifically — but it's a real gap
+   for any genuinely UDP-only device. Live-confirmed nmap 7.95 ships the
+   two NSE scripts needed to close it (`broadcast-upnp-info`,
+   `broadcast-dns-service-discovery`, both categorized `broadcast safe`).
+
+**Impact once implemented:** more accurate device classification (Telnet
+vs. SSH no longer conflated), the platform's own already-shipped "adjustable
+subnets" feature becomes actually usable at the sizes it advertises (a /16
+sweep won't just silently time out), MAC/vendor evidence becomes real
+corroborating signal for a future physical-VLAN deployment (this Docker lab
+will still honestly show "Unknown" — that's correct, not a bug), and
+UDP-only IoT devices (a real, common class in the field: some smart
+speakers/hubs, some legacy UPnP routers) stop being invisible to the primary
+discovery sweep.
+
+**Implementation plan, in the confirmed order** (4 tasks, each independently
+committed and live-verified before the next, per this project's standing
+discipline):
+1. Split the Telnet/SSH confidence tier (lowest risk, ships alone).
+2. Capture MAC address + build a maintained IEEE OUI-registry lookup
+   (`oui_lookup.py`, mirrors `cisa_kev.py`'s existing fetch/cache pattern) —
+   **the owner's explicit choice** over just surfacing nmap's own smaller/
+   staler bundled vendor guess as-is.
+3. Fold `broadcast-upnp-info`/`broadcast-dns-service-discovery` into the
+   sweep, verified live against this lab's real `device-router-gw`/
+   `device-speaker` fixtures before the parser is finalized (do not guess
+   the output shape from nmap's docs alone).
+4. **Two-phase discovery for scale** — **the owner's explicit choice** over
+   a simpler "just raise the timeout ceiling" fix, since only a real
+   strategy change (fast whole-scope ping/ARP sweep first, then a full
+   `-sV` scan targeted only at hosts found alive) actually makes a /16
+   practical. This is the one task with real architectural cost (changes
+   `job_runner.py`'s execution model for this one test), which is exactly
+   why it's sequenced last — so a problem here doesn't block the other 3
+   lower-risk wins from shipping independently.
+
+Full task-by-task checklist, exact function signatures, timeout-formula
+constants, test plan, and the live-verification steps for each task are all
+in the plan file — nothing here should need re-deriving from scratch.
+
+Before that: **Post-Quantum Readiness — a bonus pipeline stage beyond IoTGuard's
 original 10, sitting between AI Remediation and the AI Executive Summary —
 COMPLETE** (2026-08-03). The owner's idea, raised first as an exploratory
 question ("it does not affect risk scoring, it just checks whether the IoT
@@ -2245,6 +2335,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-03 | **Network Discovery precision & scale hardening — planned, not yet implemented.** See §0 for the full breakdown and `docs/superpowers/plans/2026-08-03-network-discovery-precision-and-scale.md` for the complete task-by-task implementation plan — **start there next session.** Origin: a code-review pass on `TEST-NET-DISCOVERY` flagged a Telnet/SSH classification-confidence conflation, a hardcoded 90s timeout that can't survive the /16-sized subnets the platform's own just-shipped "adjustable subnets" feature (`984864f`) now allows, and three named gaps (Scapy/ARP discovery, MAC-vendor/OUI lookup, SSDP/mDNS folded into the primary sweep). Every claim was re-verified against the real code and a real nmap 7.95 container before planning — one claim needed correcting: nmap already performs real ARP-based host discovery on the audit-network's local segment (proven by this project's own committed evidence, `EV-2026-07-23-0001.txt`, showing real `MAC Address:` lines the parser silently discards today) - the actual gap is a discarded signal, not an absent technique. Two design decisions confirmed with the owner up front, both choosing the more thorough option: a maintained IEEE OUI-registry lookup (`oui_lookup.py`, mirroring `cisa_kev.py`'s fetch/cache pattern) over just surfacing nmap's own bundled vendor guess; and a two-phase discovery redesign (fast whole-scope ping/ARP sweep, then a targeted `-sV` scan only against hosts found alive) over a simpler bigger-timeout-ceiling patch, since only a real strategy change makes a /16 sweep actually practical. Also live-confirmed nmap 7.95 ships the two NSE scripts (`broadcast-upnp-info`, `broadcast-dns-service-discovery`) needed to close the SSDP/mDNS gap. Plan is sequenced as 4 independently-committed, independently-live-verified tasks, riskiest (the two-phase execution-model change) last. No code changed this session - planning only. |
 | 2026-08-03 | **Post-Quantum Readiness — a bonus pipeline stage between AI Remediation and the AI Executive Summary** — see §0 and `docs/pqc-readiness.md` for the full breakdown. Owner's idea, raised first as an exploratory question, then a full implementation request with an explicit "ask, don't hallucinate" instruction - honored by verifying every technical claim live against the real `auditor-worker` OpenSSL 3.5.6 image before designing anything. 3 named technical criteria (TLS Key Exchange, Certificate Signature Algorithm, Firmware Crypto Library Currency) grounded in real NIST FIPS 203/204/205 standards, not a fabricated regulation - explicitly informational only, never touches `risk_engine.py` or any compliance verdict. New `pqc_crypto_reference.py` (static tips, per the owner's own choice over AI-generated ones) + `pqc_readiness_check.py` (mirrors `tls_cert_check.py`'s two-handshake shape) + read-only `pqc_routes.py` (computed live from evidence, no new table). Wired into the Fully Automated Run (the owner's own choice, more aggressive than the default recommendation) via a new `pqc_readiness` stage in `automated_run_runner.py`. New `/pqc-readiness` dashboard page in the sidebar's Pipeline group at the requested position, plus a new fleet-wide + per-device section on the AI Executive Summary. **A real bug caught by the first live scan, not by unit tests alone**: the original PQC group list included an invented, non-existent OpenSSL group name (`X448MLKEM1024`), which made `-groups` reject its entire argument and made every TLS-capable device report `connection_error` - fixed by removing it once `openssl list -tls1_3 -tls-groups`'s real output was checked, then re-verified live that `device-hardened` correctly negotiates a real hybrid PQC key exchange (pass) with a classical certificate signature (fail), a real scoped Fully Automated Run reported `pqc_devices_scanned: 1`, and both the Executive Summary page and the new route rendered the real post-fix data live in a browser. 387 `policies` (+17) + 310 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 113 `lab/auditor/worker` (in-container) + 307 frontend tests (+22) passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **AI Executive Summary (IoTGuard Stage 08) — the final analytical pipeline stage** — see §0 for the full breakdown. Owner asked to plan the last pipeline stage after confirming Remediation is deliberately not wired into the Fully Automated Run. Matches Stage 08's own definition in `docs/reference/IoTGuard.md`: overall posture, highest-risk devices, most significant compliance gaps, priority recommendations - depending on Stages 4-7, all already built. Confirmed with the owner up front: stays a fully deterministic rollup, no AI-generated narrative text, matching every other report in this app's own "never generate a summary paragraph" rule - the "AI" in the name is satisfied by aggregating Stage 07's already-AI-generated, human-reviewed remediation content. New `executive_summary.py` reuses `risk_routes._compute_risk_for_device()` (ranking), `report.build_report_model()` (per-device SA-IOT gaps/evidence+tools/vulnerabilities, called once per device), `nca_routes._evaluator_rows_for_scope()` (NCA gaps), and a direct query against `remediation_blueprints` (already has a denormalized `device_id` column) - nothing reimplemented. New `executive_summary_routes.py` (`GET /executive-summary`, PDF/HTML export). New `ExecutiveSummaryPage.tsx` (`/executive-summary`, last Pipeline sidebar entry): fleet stat tiles, priority-recommendations and significant-compliance-gaps cards, devices ranked by risk highest-first with expand-in-place detail (compliance gaps, evidence+tools, remediation). Verified live end to end: 11 real devices correctly ranked, a device's expanded panel showed its real gaps/evidence/remediation exactly as previously recorded (one blueprint "Reviewed by Lead Auditor," one still "AI-generated"), both PDF (genuine 139KB file) and HTML exports downloaded and confirmed. 370 `policies` + 300 `lab/auditor/api` (3 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` + 299 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **AI-Assisted Remediation (IoTGuard Stage 07) via Google Gemini's free tier** — see §0 for the full breakdown. Owner wanted this cheap - Gemini's free tier needs no billing attached at all. Scope confirmed with the owner up front: both SA-IOT verdicts and NCA CGIoT-1:2024 assessments, not just the SA-IOT pilot the old "Not built yet" stub showed, since NCA's `remediation_guidance` is hardcoded empty for every one of its 81 guidelines. New `remediation_engine.py` (pure, builds the Gemini prompt, calls its REST endpoint via plain `httpx.post` - no SDK, no new dependency, `httpx` was already installed - never raises, a failed/malformed call returns `None` so the caller reports an honest failure rather than fabricating a blueprint) + `remediation_routes.py` (generate/list/review, append-only `remediation_blueprints` table, migration 014, same supersede pattern as `compliance_assessments` - never mutates the existing `verdicts.remediation`/`compliance_assessments.remediation` fields). New flat `GET /nca/assessments` (fleet-wide, the NCA equivalent of `GET /verdicts`). Rebuilt `RemediationPage.tsx`: every failing/partial finding gets a "Generate AI remediation" button, the structured blueprint (root cause/steps/priority/effort/caveats) renders behind a new `AiGeneratedBadge` until a human marks it reviewed - a prompt instruction (not a hard guarantee) forbids the model from inventing facts beyond the given finding, which is exactly why the human-review gate exists. A real bug caught by the first live call: the planned default model, `gemini-2.0-flash`, returned 429 "limit: 0" the moment a real key went live (Google had zeroed its free-tier allocation for new keys since - stale model-availability knowledge) - queried Gemini's own ListModels endpoint live and switched the pinned default to `gemini-3.5-flash-lite`, confirmed real quota and correct structured-output support. Verified live end to end: real blueprints generated for both finding types through the browser, review/regenerate-supersede both confirmed correct. 370 `policies` + 289 `lab/auditor/api` (2 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` + 294 frontend tests passing, `tsc -b`/`oxlint` clean. |
