@@ -133,6 +133,8 @@ export interface DiscoveredHostService {
   version: string | null;
 }
 
+export type MacVendorSource = "ieee_registry" | "nmap_bundled";
+
 export interface DiscoveredHost {
   ip: string;
   hostname: string | null;
@@ -141,6 +143,9 @@ export interface DiscoveredHost {
   classification: HostClassification;
   confidence: "high" | "medium" | "low";
   rationale: string;
+  mac_address: string | null;
+  mac_vendor: string | null;
+  mac_vendor_source: MacVendorSource | null;
 }
 
 export interface NetworkScanObservations {

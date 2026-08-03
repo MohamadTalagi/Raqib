@@ -307,6 +307,22 @@ export function NetworkDiscoveryPanel({ devices, onRegisterHost, onRegisterSelec
                           <p className="truncate text-[11px] text-[var(--color-text-muted)]">{host.hostname}</p>
                         )}
                         <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{host.rationale}</p>
+                        {host.mac_address && (
+                          <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                            MAC <span className="font-mono">{host.mac_address}</span>
+                            {host.mac_vendor ? (
+                              <>
+                                {" "}— {host.mac_vendor}
+                                {host.mac_vendor_source === "ieee_registry" && " (IEEE OUI registry)"}
+                                {host.mac_vendor_source === "nmap_bundled" && " (nmap's bundled guess)"}
+                              </>
+                            ) : (
+                              " — vendor unknown (no registry match; Docker assigns virtual, "
+                              + "locally-administered MACs to containers in this lab, which correctly "
+                              + "have no vendor entry)"
+                            )}
+                          </p>
+                        )}
                       </div>
                       <span className="font-mono-tabular text-xs text-[var(--color-text-muted)]">
                         ports: {host.open_ports.join(", ") || "—"}

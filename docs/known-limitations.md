@@ -38,15 +38,31 @@ stays `confidence: "low"`, since SSH alone is ubiquitous on non-IoT gear too
 (any Linux box, a switch, a jump host) and carries little IoT signal on its
 own. This lab has a real Telnet-only fixture (`telnet-sim`) to live-verify
 the "medium" tier against, but no real SSH-only host — the "low" tier for
-that specific case is unit-test-verified only, not live-verified. Deliberately does
-**not** use MAC-vendor (OUI) lookup or OS/TTL fingerprinting as corroborating
-signals: this scan runs from inside a Docker bridge network, where every
-container shares the host kernel and uses a virtual, locally-administered
-MAC address, so neither technique reliably distinguishes device types in
-this lab. On a real physical VLAN, both should be added as additional
-evidence before treating any single classification as certain. An
-`uncertain` result means the signature set was inconclusive, not that the
-host was ruled out as non-IoT — it always needs manual confirmation.
+that specific case is unit-test-verified only, not live-verified.
+
+MAC address + vendor is now captured as corroborating evidence wherever
+nmap's own ARP-based host discovery resolved one (it already ran on every
+sweep this project has ever done on the audit-network's local L2 segment;
+the parser previously discarded the "MAC Address:" line entirely). Vendor
+resolution tries a maintained IEEE OUI (MA-L) registry first
+(`lab/auditor/worker/scan_scripts/oui_lookup.py`, fetched/cached and
+refreshed on the same low-frequency cadence as Grype's vuln DB and the CISA
+KEV feed), falling back to nmap's own smaller/staler bundled guess if the
+registry has no match; `mac_vendor_source` records which one actually
+answered. **Not** used to drive the classification itself, only surfaced as
+additional evidence — this scan runs from inside a Docker bridge network,
+where every container shares the host kernel and uses a virtual,
+locally-administered MAC address, so a `null`/unresolved vendor is the
+correct, expected result for this lab's own fleet, not a lookup failure
+(confirmed live: `E8:0A:B9:...` — a real Cisco OUI — resolves to "Cisco
+Systems, Inc" from the live-fetched registry, while every one of this lab's
+real container MACs correctly resolves to `null`). OS/TTL fingerprinting is
+still not used as a corroborating signal, for the same reason. On a real
+physical VLAN, MAC vendor data will genuinely help distinguish device types;
+treat it as additional evidence there, not as the sole basis for a
+classification. An `uncertain` result means the signature set was
+inconclusive, not that the host was ruled out as non-IoT — it always needs
+manual confirmation.
 Restricted to a small, fixed set of signature ports (22, 23, 80, 443, 1883,
 8883) rather than a full port sweep across the whole /24, so the scan
 finishes reliably and every open port found is one the classifier actually

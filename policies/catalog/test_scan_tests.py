@@ -1025,6 +1025,57 @@ def test_parse_network_discovery_classifies_telnet_and_ssh_host_as_uncertain_med
     assert "alongside SSH" in host["rationale"]
 
 
+def test_parse_network_discovery_extracts_mac_address_from_a_real_shaped_block():
+    # Real captured shape from this project's own committed evidence,
+    # document-store/raw/EV-2026-07-23-0001.txt (a real TEST-NET-DISCOVERY
+    # run against the real lab) - not an invented fixture.
+    output = _discovery_output(
+        "Nmap scan report for kaust-iot-lab-device-partial-1.kaust-iot-lab_audit-network (172.30.0.2)\n"
+        "Host is up (0.000032s latency).\n"
+        "Not shown: 5 closed tcp ports (reset)\n"
+        "PORT    STATE SERVICE   VERSION\n"
+        "443/tcp open  ssl/https\n"
+        "MAC Address: E6:4D:1A:E6:45:D7 (Unknown)\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    host = obs["hosts"][0]
+    assert host["mac_address"] == "E6:4D:1A:E6:45:D7"
+    # nmap's own bundled guess was "Unknown" (a Docker virtual MAC has no
+    # real registry entry) - normalized to None, not surfaced as a fake
+    # vendor name.
+    assert host["mac_vendor"] is None
+    assert host["mac_vendor_source"] is None
+
+
+def test_parse_network_discovery_surfaces_nmaps_own_bundled_vendor_guess_when_present():
+    output = _discovery_output(
+        "Nmap scan report for some-appliance (172.30.0.20)\n"
+        "Host is up (0.00010s latency).\n\n"
+        "PORT     STATE SERVICE VERSION\n"
+        "80/tcp   open  http\n"
+        "MAC Address: AC:DE:48:00:11:22 (Some Real Vendor Inc.)\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    host = obs["hosts"][0]
+    assert host["mac_address"] == "AC:DE:48:00:11:22"
+    assert host["mac_vendor"] == "Some Real Vendor Inc."
+    assert host["mac_vendor_source"] == "nmap_bundled"
+
+
+def test_parse_network_discovery_leaves_mac_fields_none_when_nmap_has_no_mac_line():
+    # Not every host block has a MAC Address line - nmap only prints one
+    # when its own ARP-based discovery resolved the host on a
+    # directly-attached L2 segment (e.g. a routed/non-local scope).
+    output = _discovery_output(
+        "Nmap scan report for 172.30.0.42\nHost is up (0.00010s latency).\n\n",
+    )
+    obs = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"](DISCOVERY_TARGET, output)
+    host = obs["hosts"][0]
+    assert host["mac_address"] is None
+    assert host["mac_vendor"] is None
+    assert host["mac_vendor_source"] is None
+
+
 def test_parse_network_discovery_classifies_host_with_no_signature_ports_as_unknown():
     output = _discovery_output(
         "Nmap scan report for 172.30.0.42\nHost is up (0.00010s latency).\n\n",

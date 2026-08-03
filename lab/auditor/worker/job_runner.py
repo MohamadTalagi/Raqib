@@ -33,7 +33,7 @@ from policies.catalog.scan_tests import (
     is_firmware_test,
     is_network_discovery_test,
 )
-from lab.auditor.worker.scan_scripts import cisa_kev
+from lab.auditor.worker.scan_scripts import cisa_kev, oui_lookup
 from lab.auditor.worker.scan_scripts.interface_detect import detect_candidate_subnets
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
@@ -70,8 +70,21 @@ CISA_KEV_REFRESH_SENTINEL = os.environ.get(
     "CISA_KEV_REFRESH_SENTINEL", os.path.expanduser("~/.cache/grype/db/.cisa-kev-last-refresh"),
 )
 
+# Same hybrid model, cadence, and sentinel-file pattern again - the IEEE OUI
+# (MA-L) registry (oui_lookup.py) is also a plain HTTPS GET, refreshed far
+# less often than a scan runs, never fetched at scan time. It changes even
+# more rarely than Grype's vuln DB or the KEV feed (IEEE assigns new OUI
+# blocks, but existing entries essentially never change), so it reuses the
+# same 7-day max-age default rather than inventing a third cadence.
+OUI_CHECK_INTERVAL_SECONDS = float(os.environ.get("OUI_CHECK_INTERVAL_SECONDS", str(6 * 3600)))
+OUI_MAX_AGE_SECONDS = float(os.environ.get("OUI_MAX_AGE_SECONDS", str(7 * 24 * 3600)))
+OUI_REFRESH_SENTINEL = os.environ.get(
+    "OUI_REFRESH_SENTINEL", os.path.expanduser("~/.cache/grype/db/.oui-last-refresh"),
+)
+
 _last_grype_check_monotonic: float | None = None
 _last_kev_check_monotonic: float | None = None
+_last_oui_check_monotonic: float | None = None
 
 # Network Scope: unlike auditor-api, which reconfigures device_validation/
 # scan_tests in-process on every write (see network_scope_routes.py), this
@@ -173,6 +186,8 @@ def process_job(job: dict) -> None:
         return
 
     observations = spec["parse_observations"](target, raw_output)
+    if is_network_discovery_test(test_id):
+        observations = _enrich_mac_vendors(observations)
     tool_version = _tool_version(spec["tool_version_command"])
 
     _patch(job_id, {
@@ -246,6 +261,7 @@ def process_network_scan(scan: dict) -> None:
         return
 
     observations = spec["parse_observations"](target, raw_output)
+    observations = _enrich_mac_vendors(observations)  # this branch is always TEST-NET-DISCOVERY
     tool_version = _tool_version(spec["tool_version_command"])
 
     _patch_network_scan(scan_id, {
@@ -338,6 +354,56 @@ def maybe_refresh_cisa_kev(now: float | None = None) -> None:
         print("job_runner: CISA KEV feed refresh failed", file=sys.stderr, flush=True)
 
 
+def maybe_refresh_oui_registry(now: float | None = None) -> None:
+    """Same hybrid model and sentinel pattern as maybe_refresh_cisa_kev, for
+    the IEEE OUI registry (oui_lookup.py - a plain HTTPS GET). Never raises -
+    a failed fetch leaves the last-good cache in place
+    (oui_lookup.fetch_and_cache_oui_registry does an atomic swap only on
+    success) and is retried at the next check."""
+    global _last_oui_check_monotonic
+    now = time.monotonic() if now is None else now
+    if (
+        _last_oui_check_monotonic is not None
+        and (now - _last_oui_check_monotonic) < OUI_CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_oui_check_monotonic = now
+
+    sentinel_age = _sentinel_age_seconds(OUI_REFRESH_SENTINEL)
+    if sentinel_age is not None and sentinel_age < OUI_MAX_AGE_SECONDS:
+        return
+
+    if oui_lookup.fetch_and_cache_oui_registry():
+        print("job_runner: IEEE OUI registry refresh completed", flush=True)
+        _touch_sentinel(OUI_REFRESH_SENTINEL)
+    else:
+        print("job_runner: IEEE OUI registry refresh failed", file=sys.stderr, flush=True)
+
+
+def _enrich_mac_vendors(observations: dict) -> dict:
+    """Overrides each host's mac_vendor/mac_vendor_source with a maintained
+    IEEE OUI-registry lookup when one resolves, falling back to whatever
+    scan_tests.py's pure parser already filled in from nmap's own bundled
+    guess (never silently dropping nmap's own answer). This is a live
+    filesystem read (oui_lookup.load_oui_index/lookup_vendor), so it cannot
+    live inside scan_tests.py's pure build_command/parse_observations
+    functions - it runs here, once per TEST-NET-DISCOVERY result, after the
+    pure parser has already returned."""
+    hosts = observations.get("hosts")
+    if not hosts:
+        return observations
+    index = oui_lookup.load_oui_index()
+    for host in hosts:
+        mac_address = host.get("mac_address")
+        if not mac_address:
+            continue
+        registry_vendor = oui_lookup.lookup_vendor(mac_address, index=index)
+        if registry_vendor:
+            host["mac_vendor"] = registry_vendor
+            host["mac_vendor_source"] = "ieee_registry"
+    return observations
+
+
 def maybe_refresh_network_scope(now: float | None = None) -> None:
     """Keeps this worker process's in-memory allowlist
     (device_validation.ALLOWED_NETWORKS, scan_tests.ACTIVE_SCOPES) in sync
@@ -401,6 +467,7 @@ def main() -> None:
             poll_automated_runs_once()
             maybe_refresh_grype_db()
             maybe_refresh_cisa_kev()
+            maybe_refresh_oui_registry()
         except Exception as exc:  # noqa: BLE001 - never let a poll failure kill the loop
             print(f"job_runner: poll error: {exc}", file=sys.stderr, flush=True)
         time.sleep(POLL_INTERVAL_SECONDS)

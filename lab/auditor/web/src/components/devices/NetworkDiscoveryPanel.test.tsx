@@ -1,11 +1,27 @@
+import type { ComponentProps } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NetworkDiscoveryPanel, prefillFromHost } from "./NetworkDiscoveryPanel";
 import { api } from "@/lib/api";
 import type { Device, DiscoveredHost, NetworkScan } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
+
+// The panel renders a <Link> (the "change" scope link) once its own
+// activeScopes fetch resolves - wrapping in MemoryRouter here, not just in
+// DiscoveryPage's own tests, matters: without a live auditor-api on the test
+// host that fetch always used to fail (rendering no Link), but it must not
+// depend on that accident - it should pass whether or not a real API happens
+// to be reachable from wherever tests run.
+function renderPanel(props: ComponentProps<typeof NetworkDiscoveryPanel>) {
+  return render(
+    <MemoryRouter>
+      <NetworkDiscoveryPanel {...props} />
+    </MemoryRouter>,
+  );
+}
 
 const IOT_HOST: DiscoveredHost = {
   ip: "172.30.0.6",
@@ -18,6 +34,9 @@ const IOT_HOST: DiscoveredHost = {
   classification: "iot_device",
   confidence: "high",
   rationale: "Exposed port(s) 80 - a management UI or IoT messaging-protocol port.",
+  mac_address: null,
+  mac_vendor: null,
+  mac_vendor_source: null,
 };
 
 const UNCERTAIN_HOST: DiscoveredHost = {
@@ -28,6 +47,9 @@ const UNCERTAIN_HOST: DiscoveredHost = {
   classification: "uncertain",
   confidence: "low",
   rationale: "Only generic remote-administration port(s) 23 were open.",
+  mac_address: null,
+  mac_vendor: null,
+  mac_vendor_source: null,
 };
 
 function makeScan(overrides: Partial<NetworkScan> = {}): NetworkScan {
@@ -79,7 +101,7 @@ describe("NetworkDiscoveryPanel", () => {
     vi.spyOn(api, "getNetworkScan").mockResolvedValue(makeScan());
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={() => {}} onRegisterSelected={() => {}} />);
+    renderPanel({ devices: [], onRegisterHost: () => {}, onRegisterSelected: () => {} });
 
     await user.click(screen.getByRole("button", { name: /scan network/i }));
 
@@ -95,7 +117,7 @@ describe("NetworkDiscoveryPanel", () => {
     const onRegisterHost = vi.fn();
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={onRegisterHost} onRegisterSelected={() => {}} />);
+    renderPanel({ devices: [], onRegisterHost, onRegisterSelected: () => {} });
     await user.click(screen.getByRole("button", { name: /scan network/i }));
     await screen.findByText("172.30.0.6");
 
@@ -107,13 +129,44 @@ describe("NetworkDiscoveryPanel", () => {
     );
   });
 
+  it("renders a resolved MAC vendor with its source, and an honest unresolved note when there is none", async () => {
+    const resolvedHost: DiscoveredHost = {
+      ...IOT_HOST,
+      mac_address: "28:6F:B9:11:22:33",
+      mac_vendor: "Nokia Shanghai Bell Co., Ltd.",
+      mac_vendor_source: "ieee_registry",
+    };
+    const unresolvedHost: DiscoveredHost = {
+      ...UNCERTAIN_HOST,
+      mac_address: "E6:4D:1A:E6:45:D7",
+      mac_vendor: null,
+      mac_vendor_source: null,
+    };
+    vi.spyOn(api, "createNetworkScan").mockResolvedValue(
+      makeScan({ status: "pending", observations: null }),
+    );
+    vi.spyOn(api, "getNetworkScan").mockResolvedValue(
+      makeScan({ observations: { subnets: ["172.30.0.0/24"], hosts: [resolvedHost, unresolvedHost], iot_device_count: 1, uncertain_count: 1, unknown_count: 0, notes: [] } }),
+    );
+
+    const user = userEvent.setup();
+    renderPanel({ devices: [], onRegisterHost: () => {}, onRegisterSelected: () => {} });
+    await user.click(screen.getByRole("button", { name: /scan network/i }));
+
+    expect(await screen.findByText(/28:6F:B9:11:22:33/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nokia Shanghai Bell Co\.,? Ltd\./i)).toBeInTheDocument();
+    expect(screen.getByText(/IEEE OUI registry/i)).toBeInTheDocument();
+    expect(screen.getByText(/E6:4D:1A:E6:45:D7/i)).toBeInTheDocument();
+    expect(screen.getByText(/vendor unknown/i)).toBeInTheDocument();
+  });
+
   it("supports selecting multiple registerable hosts and registering them as a batch", async () => {
     vi.spyOn(api, "createNetworkScan").mockResolvedValue(makeScan({ status: "pending", observations: null }));
     vi.spyOn(api, "getNetworkScan").mockResolvedValue(makeScan());
     const onRegisterSelected = vi.fn();
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={() => {}} onRegisterSelected={onRegisterSelected} />);
+    renderPanel({ devices: [], onRegisterHost: () => {}, onRegisterSelected });
     await user.click(screen.getByRole("button", { name: /scan network/i }));
     await screen.findByText("172.30.0.6");
 
@@ -157,13 +210,7 @@ describe("NetworkDiscoveryPanel", () => {
     };
 
     const user = userEvent.setup();
-    render(
-      <NetworkDiscoveryPanel
-        devices={[existingDevice]}
-        onRegisterHost={() => {}}
-        onRegisterSelected={onRegisterSelected}
-      />,
-    );
+    renderPanel({ devices: [existingDevice], onRegisterHost: () => {}, onRegisterSelected });
     await user.click(screen.getByRole("button", { name: /scan network/i }));
     await screen.findByText("172.30.0.6");
 
@@ -202,7 +249,7 @@ describe("NetworkDiscoveryPanel", () => {
     };
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[existingDevice]} onRegisterHost={() => {}} onRegisterSelected={() => {}} />);
+    renderPanel({ devices: [existingDevice], onRegisterHost: () => {}, onRegisterSelected: () => {} });
     await user.click(screen.getByRole("button", { name: /scan network/i }));
     await screen.findByText("172.30.0.6");
 
@@ -241,7 +288,7 @@ describe("NetworkDiscoveryPanel", () => {
     };
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[existingDevice]} onRegisterHost={() => {}} onRegisterSelected={() => {}} />);
+    renderPanel({ devices: [existingDevice], onRegisterHost: () => {}, onRegisterSelected: () => {} });
     await user.click(screen.getByRole("button", { name: /scan network/i }));
     await screen.findByText("172.30.0.6");
 
@@ -256,7 +303,7 @@ describe("NetworkDiscoveryPanel", () => {
     );
 
     const user = userEvent.setup();
-    render(<NetworkDiscoveryPanel devices={[]} onRegisterHost={() => {}} onRegisterSelected={() => {}} />);
+    renderPanel({ devices: [], onRegisterHost: () => {}, onRegisterSelected: () => {} });
     await user.click(screen.getByRole("button", { name: /scan network/i }));
 
     expect(await screen.findByText("nmap: command not found")).toBeInTheDocument();

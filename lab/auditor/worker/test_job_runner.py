@@ -472,6 +472,108 @@ def test_maybe_refresh_cisa_kev_does_not_touch_sentinel_on_failed_fetch(mock_fet
     assert not (tmp_path / "sentinel").exists()
 
 
+# -- IEEE OUI registry scheduled refresh (network discovery MAC-vendor) -----
+# Same sentinel-based staleness pattern again, fetching over HTTPS
+# (oui_lookup.py) instead of shelling out to a subprocess.
+
+
+@patch("job_runner.oui_lookup.fetch_and_cache_oui_registry")
+def test_maybe_refresh_oui_registry_skips_check_within_the_interval(mock_fetch, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_oui_check_monotonic", 100.0)
+    job_runner.maybe_refresh_oui_registry(now=100.0 + job_runner.OUI_CHECK_INTERVAL_SECONDS - 1)
+    mock_fetch.assert_not_called()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.oui_lookup.fetch_and_cache_oui_registry")
+def test_maybe_refresh_oui_registry_fetches_when_sentinel_is_stale(mock_fetch, mock_age, monkeypatch, tmp_path):
+    monkeypatch.setattr(job_runner, "_last_oui_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "OUI_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = job_runner.OUI_MAX_AGE_SECONDS + 1
+    mock_fetch.return_value = True
+
+    job_runner.maybe_refresh_oui_registry(now=0.0)
+
+    mock_fetch.assert_called_once()
+    assert (tmp_path / "sentinel").exists()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.oui_lookup.fetch_and_cache_oui_registry")
+def test_maybe_refresh_oui_registry_skips_fetch_when_sentinel_is_fresh(mock_fetch, mock_age, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_oui_check_monotonic", None)
+    mock_age.return_value = 60.0
+
+    job_runner.maybe_refresh_oui_registry(now=0.0)
+
+    mock_fetch.assert_not_called()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.oui_lookup.fetch_and_cache_oui_registry")
+def test_maybe_refresh_oui_registry_does_not_touch_sentinel_on_failed_fetch(mock_fetch, mock_age, monkeypatch, tmp_path):
+    monkeypatch.setattr(job_runner, "_last_oui_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "OUI_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = None
+    mock_fetch.return_value = False
+
+    job_runner.maybe_refresh_oui_registry(now=0.0)
+
+    assert not (tmp_path / "sentinel").exists()
+
+
+# -- MAC-vendor enrichment (network discovery) -------------------------------
+# oui_lookup.py needs a live filesystem read, so it cannot live inside
+# scan_tests.py's pure parse_observations - job_runner enriches after the
+# fact instead.
+
+
+@patch("job_runner.oui_lookup.load_oui_index")
+@patch("job_runner.oui_lookup.lookup_vendor")
+def test_enrich_mac_vendors_overrides_with_a_registry_match(mock_lookup, mock_index):
+    mock_index.return_value = {"286FB9": "Nokia Shanghai Bell Co., Ltd."}
+    mock_lookup.return_value = "Nokia Shanghai Bell Co., Ltd."
+    observations = {"hosts": [{"mac_address": "28:6F:B9:11:22:33", "mac_vendor": None, "mac_vendor_source": None}]}
+
+    result = job_runner._enrich_mac_vendors(observations)
+
+    host = result["hosts"][0]
+    assert host["mac_vendor"] == "Nokia Shanghai Bell Co., Ltd."
+    assert host["mac_vendor_source"] == "ieee_registry"
+
+
+@patch("job_runner.oui_lookup.load_oui_index")
+@patch("job_runner.oui_lookup.lookup_vendor")
+def test_enrich_mac_vendors_falls_back_to_nmaps_own_bundled_guess_when_registry_has_no_match(mock_lookup, mock_index):
+    mock_index.return_value = {}
+    mock_lookup.return_value = None
+    observations = {
+        "hosts": [{"mac_address": "AC:DE:48:00:11:22", "mac_vendor": "Some Real Vendor Inc.", "mac_vendor_source": "nmap_bundled"}],
+    }
+
+    result = job_runner._enrich_mac_vendors(observations)
+
+    host = result["hosts"][0]
+    assert host["mac_vendor"] == "Some Real Vendor Inc."
+    assert host["mac_vendor_source"] == "nmap_bundled"
+
+
+@patch("job_runner.oui_lookup.load_oui_index")
+@patch("job_runner.oui_lookup.lookup_vendor")
+def test_enrich_mac_vendors_leaves_hosts_with_no_mac_address_untouched(mock_lookup, mock_index):
+    mock_index.return_value = {}
+    observations = {"hosts": [{"mac_address": None, "mac_vendor": None, "mac_vendor_source": None}]}
+
+    result = job_runner._enrich_mac_vendors(observations)
+
+    assert result["hosts"][0]["mac_vendor"] is None
+    mock_lookup.assert_not_called()
+
+
+def test_enrich_mac_vendors_handles_observations_with_no_hosts_key():
+    assert job_runner._enrich_mac_vendors({}) == {}
+
+
 # -- Network Scope refresh (auditor-worker has no direct DB access) ---------
 
 
