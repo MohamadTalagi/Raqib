@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-08-03
+> **Last updated:** 2026-08-04
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,107 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Network Discovery precision & scale hardening — all 4 tasks
+**Phase:** **Device vendor realism — all 6 lab device fixtures reskinned
+from fictional vendors to real, market-relevant products — COMPLETE**
+(2026-08-04). The owner asked to check the quality/realism of the lab's
+simulated devices and find real-world vendor analogs; research (grounded in
+live web search for each product's own documented public CVEs, not
+invented) picked 7 real vendors across the 6 fixtures — the camera fixture
+splits across 2 vendors for its 3 posture profiles. Planned via plan mode
+(3 parallel Explore passes confirmed the security-boundary/classification
+code was already vendor-agnostic before any edit was made) and executed as
+7 independently-committed, independently-verified tasks, one per device
+plus a cross-cutting docs/verification pass:
+
+- `device-insecure`/`device-partial` → **Hikvision** (DS-2CD2143G2-I /
+  -IU), grounding the default-creds/Telnet posture in CVE-2017-7921 (a real
+  backdoor/privilege-escalation account); `device-hardened` → **Axis
+  Communications** (M3216-LVE) — a real vendor-culture contrast (signed
+  firmware, HTTPS-only, public vuln-disclosure program) rather than a
+  single CVE. `device-smartlock` → **Yale** Conexis L1 (CVE-2023-26941/
+  26942, PIN-verification bypass). `device-plc-gateway` → **Schneider
+  Electric** Modicon M221 (CVE-2024-11737, unauthenticated Modbus TCP
+  command injection). `device-router-gw` → **Netgear** R7000
+  (CVE-2021-34991, unauthenticated UPnP RCE). `device-nvr` → **Dahua**
+  NVR4108-8P (CVE-2021-33045 auth bypass, CVE-2013-3612 static Telnet root
+  password). `device-speaker` → **Sonos** One (Gen 2) (CVE-2018-11316
+  unauthenticated UPnP/DNS-rebinding, CVE-2023-50809 unauthenticated RCE).
+  Full per-device rationale and citations: new `docs/device-vendor-realism.md`.
+- **Scope deliberately bounded to identity + protocol-level signal, not a
+  full API-shape rewrite** — vendor/model/firmware-version, plus every
+  protocol-level banner a real scan would actually observe (Telnet, SSDP/
+  UPnP `description.xml`, mDNS TXT, RTSP `Server:` header, Modbus device-ID).
+  The existing generic REST JSON paths (`/api/device/info`, `/api/config`,
+  ...) are **not** rewritten to mimic real vendor API conventions
+  (Hikvision's ISAPI XML tree, Dahua's `/cgi-bin/magicBox.cgi` style) —
+  `scan_tests.py`'s collectors already parse generically by banner/port/
+  protocol, not by URL path, so that rewrite would add no new detection
+  capability for materially more effort. Named as a deliberate limitation
+  in the new doc, not silently dropped. `device_id`/container/service
+  names, `device_validation.py`'s scan-target boundary, and all NCA/
+  vuln-intel classification logic are untouched — confirmed vendor-agnostic
+  by exploration before any edit, not assumed.
+- **Real IEEE OUI prefixes**, verified against the public IEEE MA-L
+  registry (never invented) for every vendor's `device_mac` — cosmetic by
+  design and documented as such: the real network-discovery OUI lookup
+  (`oui_lookup.py`) only ever resolves nmap's ARP-discovered, Docker-
+  assigned virtual MAC, never a device's self-reported MAC field, so this
+  lab's real container MACs still correctly resolve to `null`, unchanged.
+- **A real, non-cosmetic addition, not just a rename**: `plc-gateway`'s
+  Modbus server now answers function code 0x2B (Read Device Identification)
+  via pymodbus's `ModbusDeviceIdentification` — a real Modicon PLC
+  capability, unauthenticated by design — which also closes a
+  previously-documented gap in this project (the 2026-08-02 changelog
+  entry's `modbus-discover` "open but no data" result): the real script now
+  returns real vendor/product data.
+- **A named, honest limitation, not silently dropped**: `nvr`'s RTSP
+  responder now sends a `Server:` header and vendor-flavored SDP session
+  name, but this project's `TEST-RTSP-PROBE` collector (nmap's
+  `rtsp-methods` script) doesn't surface a `Server:` line in its own output
+  at all — confirmed by reading the script's real behavior, not assumed —
+  so the new header is real signal for a direct RTSP client but isn't
+  parsed by the automated collector yet; wiring that in would mean building
+  a new probe mechanism, out of scope for a realism pass.
+- **Two cross-package "real captured shape" test fixtures re-captured live,
+  not hand-typed**: `policies/catalog/test_scan_tests.py`'s UPnP
+  broadcast-probe fixture (`router-gateway`) and mDNS TXT fixture
+  (`smart-speaker`) were regenerated by actually running the rebuilt
+  responder code and capturing the real wire-format output before
+  substituting the new vendor/model strings, preserving the "not invented
+  from docs alone" discipline those fixtures' own comments already commit
+  to. A stale docstring example in `scan_tests.py` itself was also updated.
+- **Historical `document-store/raw/*.txt` evidence (~20-25 files) showing
+  the old fictional vendor strings is deliberately left untouched** —
+  append-only, point-in-time capture, same rule this project applies to
+  every other terminology change in its history; a dated cutover note was
+  added to `docs/architecture/device-inventory.md` (now also extended to
+  list all 8 device_ids, not just the 3 camera profiles) instead.
+- Added a small "simulated device, not affiliated with the named vendor"
+  disclaimer to every device's rendered login/dashboard page (an
+  OpenAPI-description disclaimer for the 2 JSON-only fixtures with no HTML
+  page) — doesn't affect scan-level realism, since nmap/banner-grabs never
+  see rendered HTML footers, but addresses the trademark/impersonation-
+  optics concern of naming a real product.
+- **Verified**: 56 per-device fixture tests passing across all 6 devices
+  (23 smart-camera + 8 smart-lock + 4 plc-gateway [+1 new Modbus
+  device-identification test] + 9 router-gateway + 7 nvr [2 assertions
+  extended for the new RTSP Server header/SDP session] + 5 smart-speaker);
+  300 `policies/catalog`+`policies/nca` tests passing; full `lab/auditor/api`
+  suite 334/337 passing (3 pre-existing WeasyPrint/libgobject failures on
+  this Windows host, unrelated — exact historical baseline); frontend
+  `tsc -b`/`oxlint` clean (same pre-existing warnings), full Vitest suite
+  315/315 passing with `--no-file-parallelism` (the parallel run's 10
+  failures across 2 unrelated files were confirmed pre-existing
+  worker-pool flakes, not regressions, by isolated re-run). Live-captured
+  (not hand-typed) the real SSDP/mDNS wire-format output from the rebuilt
+  device code for the two cross-package fixtures above. Docker Desktop's
+  engine was found stopped at the start of this session's verification
+  pass and started as part of it.
+- **Docs**: new `docs/device-vendor-realism.md`, `docs/architecture/
+  device-inventory.md` rewritten to cover all 8 device_ids with the new
+  identities + cutover note, this entry.
+
+Before that: **Network Discovery precision & scale hardening — all 4 tasks
 COMPLETE** (2026-08-03), executed exactly as planned in
 `docs/superpowers/plans/2026-08-03-network-discovery-precision-and-scale.md`
 (now itself updated with the real outcome of every checklist item, including
@@ -2386,6 +2486,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-04 | **Device vendor realism — all 6 lab device fixtures reskinned from fictional vendors (AcmeCam/BoltGuard/IndustraLink/NetCore/ViewKeep/VoxHome) to real, market-relevant products** — see §0 for the full breakdown and `docs/device-vendor-realism.md` for per-device CVE citations and the honesty disclaimers. Owner asked to assess the lab's device realism and find real vendor analogs; research grounded 7 real vendors (Hikvision/Axis Communications split across the camera's 3 postures, Yale, Schneider Electric, Netgear, Dahua, Sonos) in real, documented public CVEs. Scope deliberately bounded to identity + protocol-level signal (vendor/model/firmware, Telnet/SSDP/UPnP/mDNS/RTSP banners, a new real Modbus function-code-0x2B device-identification feature that also closes a previously-documented `modbus-discover` "no data" gap) - not a full REST API-shape rewrite, named as a deliberate limitation since `scan_tests.py`'s collectors already parse generically by banner/port/protocol. `device_id`/container names and all classification/compliance logic confirmed vendor-agnostic before any edit. Real IEEE OUI prefixes (verified against the public registry, never invented) given to every device's self-reported MAC, documented as cosmetic since the real network-discovery OUI lookup only ever resolves nmap's ARP-discovered Docker-virtual MAC. Two cross-package "real captured shape" test fixtures (UPnP, mDNS) re-captured live from the rebuilt responders rather than hand-typed. Historical `document-store/raw/*.txt` evidence showing the old fictional vendors is deliberately left untouched (append-only), with a dated cutover note added to the rewritten `docs/architecture/device-inventory.md`. Added a small in-app "simulated device, not affiliated" disclaimer to every device. 56 per-device fixture tests + 300 `policies/catalog`+`policies/nca` tests + 334/337 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 315/315 frontend tests (isolated run) passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-03 | **Network Discovery precision & scale hardening — all 4 tasks COMPLETE**, each its own independently-live-verified commit (`e0f58b0`, `a1c3be4`, `4702d78`, `2fc8283`). See §0 for the full per-task breakdown and `docs/superpowers/plans/2026-08-03-network-discovery-precision-and-scale.md` (every checklist item now checked off with its real outcome). Origin: a code-review pass on `TEST-NET-DISCOVERY` flagged a Telnet/SSH classification-confidence conflation, a hardcoded 90s timeout that can't survive the /16-sized subnets the platform's own just-shipped "adjustable subnets" feature (`984864f`) allows, and three named gaps. (1) Telnet-open now gets `confidence: "medium"`, SSH-only stays `"low"`. (2) MAC address + a maintained IEEE OUI-registry lookup (`oui_lookup.py`, mirrors `cisa_kev.py`) - a real live-caught finding: the registry's front-end 418s on the default `requests` User-Agent (a WAF bot-block), fixed with a browser-shaped header; also caught and fixed a real pre-existing test gap (`NetworkDiscoveryPanel.test.tsx` never wrapped the panel in a Router, masked until this session's live stack made its unmocked fetch start succeeding). (3) `broadcast-upnp-info`/`broadcast-dns-service-discovery` folded into the sweep for UDP-only devices - live-first verification surfaced two real, unplanned fixture bugs: neither `device-router-gw`'s SSDP responder nor `device-speaker`'s mDNS responder ever joined its multicast group (zero response to a real broadcast query despite unicast probes already working), and `device-router-gw`'s SSDP `LOCATION` header echoed the requester's address instead of its own with no `/description.xml` endpoint to serve anyway - both fixed, the real UPnP discovery flow now works end to end; mDNS/DNS-SD enumeration honestly documented as not live-verifiable against this lab's intentionally minimal mDNS fixture. (4) Two-phase discovery (Stage A fast `-sn` sweep finds live hosts, Stage B `-sV` scan targets only those) makes the /16 scope ceiling practical - **a live large-scope verification attempt surfaced a real, only partially understood anomaly** (`docs/errors/033`): an unrouted RFC1918 proxy range caused a real Stage A job timeout against the first-draft estimate, and a smaller isolated check of the same range showed every address falsely "up" (likely a Docker Desktop host-networking artifact, not conclusively root-caused) - responded by substantially raising the timeout constants from this real data rather than a confident recalculation, then re-verified the real audit-network `/24` case still reproduces the pre-Task-4 sweep exactly; what remains genuinely unverified is stated plainly rather than implied as settled. 414 `policies` + 333 `lab/auditor/worker`-in-container + 334 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 315 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-03 | **Post-Quantum Readiness — a bonus pipeline stage between AI Remediation and the AI Executive Summary** — see §0 and `docs/pqc-readiness.md` for the full breakdown. Owner's idea, raised first as an exploratory question, then a full implementation request with an explicit "ask, don't hallucinate" instruction - honored by verifying every technical claim live against the real `auditor-worker` OpenSSL 3.5.6 image before designing anything. 3 named technical criteria (TLS Key Exchange, Certificate Signature Algorithm, Firmware Crypto Library Currency) grounded in real NIST FIPS 203/204/205 standards, not a fabricated regulation - explicitly informational only, never touches `risk_engine.py` or any compliance verdict. New `pqc_crypto_reference.py` (static tips, per the owner's own choice over AI-generated ones) + `pqc_readiness_check.py` (mirrors `tls_cert_check.py`'s two-handshake shape) + read-only `pqc_routes.py` (computed live from evidence, no new table). Wired into the Fully Automated Run (the owner's own choice, more aggressive than the default recommendation) via a new `pqc_readiness` stage in `automated_run_runner.py`. New `/pqc-readiness` dashboard page in the sidebar's Pipeline group at the requested position, plus a new fleet-wide + per-device section on the AI Executive Summary. **A real bug caught by the first live scan, not by unit tests alone**: the original PQC group list included an invented, non-existent OpenSSL group name (`X448MLKEM1024`), which made `-groups` reject its entire argument and made every TLS-capable device report `connection_error` - fixed by removing it once `openssl list -tls1_3 -tls-groups`'s real output was checked, then re-verified live that `device-hardened` correctly negotiates a real hybrid PQC key exchange (pass) with a classical certificate signature (fail), a real scoped Fully Automated Run reported `pqc_devices_scanned: 1`, and both the Executive Summary page and the new route rendered the real post-fix data live in a browser. 387 `policies` (+17) + 310 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 113 `lab/auditor/worker` (in-container) + 307 frontend tests (+22) passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-02 | **AI Executive Summary (IoTGuard Stage 08) — the final analytical pipeline stage** — see §0 for the full breakdown. Owner asked to plan the last pipeline stage after confirming Remediation is deliberately not wired into the Fully Automated Run. Matches Stage 08's own definition in `docs/reference/IoTGuard.md`: overall posture, highest-risk devices, most significant compliance gaps, priority recommendations - depending on Stages 4-7, all already built. Confirmed with the owner up front: stays a fully deterministic rollup, no AI-generated narrative text, matching every other report in this app's own "never generate a summary paragraph" rule - the "AI" in the name is satisfied by aggregating Stage 07's already-AI-generated, human-reviewed remediation content. New `executive_summary.py` reuses `risk_routes._compute_risk_for_device()` (ranking), `report.build_report_model()` (per-device SA-IOT gaps/evidence+tools/vulnerabilities, called once per device), `nca_routes._evaluator_rows_for_scope()` (NCA gaps), and a direct query against `remediation_blueprints` (already has a denormalized `device_id` column) - nothing reimplemented. New `executive_summary_routes.py` (`GET /executive-summary`, PDF/HTML export). New `ExecutiveSummaryPage.tsx` (`/executive-summary`, last Pipeline sidebar entry): fleet stat tiles, priority-recommendations and significant-compliance-gaps cards, devices ranked by risk highest-first with expand-in-place detail (compliance gaps, evidence+tools, remediation). Verified live end to end: 11 real devices correctly ranked, a device's expanded panel showed its real gaps/evidence/remediation exactly as previously recorded (one blueprint "Reviewed by Lead Auditor," one still "AI-generated"), both PDF (genuine 139KB file) and HTML exports downloaded and confirmed. 370 `policies` + 300 `lab/auditor/api` (3 pre-existing WeasyPrint gaps) + 78 `lab/auditor/worker` + 299 frontend tests passing, `tsc -b`/`oxlint` clean. |
