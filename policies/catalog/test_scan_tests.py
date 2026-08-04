@@ -1085,17 +1085,25 @@ def test_parse_network_discovery_leaves_mac_fields_none_when_nmap_has_no_mac_lin
 # a real M-SEARCH multicast response, followed by a real fetch of
 # device-router-gw's own /description.xml. Not invented from nmap's docs
 # alone - this project's own standing discipline.
+#
+# Vendor/model updated 2026-08-04 for the Netgear reskin (see
+# docs/device-vendor-realism.md) - the live SSDP SERVER line
+# ("Linux/1.0 UPnP/1.0 Netgear/R7000") was independently re-captured
+# against the rebuilt app before this substitution; nmap's own parsing here
+# is purely mechanical off the SSDP/description.xml text with no
+# vendor-specific formatting, so this is a faithful update, re-confirmed
+# end to end against the real rebuilt container in the same session.
 UPNP_PRESCAN_SECTION = (
     "Pre-scan script results:\n"
     "| broadcast-upnp-info: \n"
     "|   239.255.255.250\n"
-    "|       Server: Linux/1.0 UPnP/1.0 NetCore/NC-WR1200\n"
+    "|       Server: Linux/1.0 UPnP/1.0 Netgear/R7000\n"
     "|       Location: http://172.30.0.13:80/description.xml\n"
     "|         Webserver: uvicorn\n"
-    "|         Name: NetCore NC-WR1200\n"
-    "|         Manufacturer: NetCore\n"
-    "|         Model Descr: NetCore NC-WR1200 residential gateway\n"
-    "|         Model Name: NC-WR1200\n"
+    "|         Name: Netgear R7000\n"
+    "|         Manufacturer: Netgear\n"
+    "|         Model Descr: Netgear R7000 residential gateway\n"
+    "|         Model Name: R7000\n"
     "|_        Model Version: 1\n"
 )
 
@@ -1568,7 +1576,7 @@ UPNP_PROBE_OUTPUT = (
     "reachable=True\n"
     "response_start\n"
     "HTTP/1.1 200 OK\r\n"
-    "SERVER: Linux/1.0 UPnP/1.0 NetCore/NC-WR1200\r\n"
+    "SERVER: Linux/1.0 UPnP/1.0 Netgear/R7000\r\n"
     "ST: upnp:rootdevice\r\n"
     "\n"
     "response_end\n"
@@ -1632,7 +1640,7 @@ def test_upnp_probe_parses_unauthenticated_ssdp_response():
 
     observations = _parse_upnp_probe_observations(UPNP_TARGET, UPNP_PROBE_OUTPUT)
     assert observations["upnp_reachable"] is True
-    assert observations["server_banner"] == "Linux/1.0 UPnP/1.0 NetCore/NC-WR1200"
+    assert observations["server_banner"] == "Linux/1.0 UPnP/1.0 Netgear/R7000"
 
 
 def test_upnp_probe_reports_no_response_honestly():

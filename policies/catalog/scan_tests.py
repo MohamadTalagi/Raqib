@@ -655,7 +655,7 @@ def _parse_broadcast_upnp_hosts(output: str) -> list[str]:
 
         | broadcast-upnp-info:
         |   239.255.255.250
-        |       Server: Linux/1.0 UPnP/1.0 NetCore/NC-WR1200
+        |       Server: Linux/1.0 UPnP/1.0 Netgear/R7000
         |       Location: http://172.30.0.13:80/description.xml
         ...
 

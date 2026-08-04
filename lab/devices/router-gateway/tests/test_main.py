@@ -54,6 +54,6 @@ def test_description_xml_completes_the_real_upnp_discovery_flow():
     assert resp.headers["content-type"].startswith("text/xml")
     body = resp.text
     assert "<deviceType>" in body and "</UDN>" in body
-    assert "<friendlyName>NetCore NC-WR1200</friendlyName>" in body
-    assert "<manufacturer>NetCore</manufacturer>" in body
-    assert "<modelName>NC-WR1200</modelName>" in body
+    assert "<friendlyName>Netgear R7000</friendlyName>" in body
+    assert "<manufacturer>Netgear</manufacturer>" in body
+    assert "<modelName>R7000</modelName>" in body

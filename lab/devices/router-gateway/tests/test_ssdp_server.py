@@ -6,7 +6,7 @@ from app.ssdp_server import _own_ip, start_ssdp_server
 
 
 def test_ssdp_server_answers_any_datagram_with_device_details():
-    settings = Settings(ssdp_port=11900, device_vendor="NetCore", device_model="NC-WR1200")
+    settings = Settings(ssdp_port=11900, device_vendor="Netgear", device_model="R7000")
     start_ssdp_server(settings)
     time.sleep(0.2)  # let the recv loop bind before sending
 
@@ -20,8 +20,8 @@ def test_ssdp_server_answers_any_datagram_with_device_details():
 
     text = data.decode()
     assert "200 OK" in text
-    assert "NetCore" in text
-    assert "NC-WR1200" in text
+    assert "Netgear" in text
+    assert "R7000" in text
 
 
 def test_ssdp_location_header_advertises_the_devices_own_address_not_the_requesters():
@@ -30,7 +30,7 @@ def test_ssdp_location_header_advertises_the_devices_own_address_not_the_request
     # a real UPnP client (nmap's broadcast-upnp-info, confirmed live) that
     # follows LOCATION to fetch description.xml would get redirected back to
     # itself and fail to connect.
-    settings = Settings(ssdp_port=11901, device_vendor="NetCore", device_model="NC-WR1200")
+    settings = Settings(ssdp_port=11901, device_vendor="Netgear", device_model="R7000")
     start_ssdp_server(settings)
     time.sleep(0.2)
 

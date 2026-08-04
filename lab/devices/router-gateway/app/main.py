@@ -35,6 +35,7 @@ LOGIN_PAGE_TEMPLATE = """<!DOCTYPE html>
   <input type="password" name="password" placeholder="Password" />
   <button type="submit">Login</button>
 </form>
+<p style="font-size:11px;color:#888;">Simulated device for security research &mdash; not affiliated with or endorsed by {vendor}.</p>
 </body></html>"""
 
 
