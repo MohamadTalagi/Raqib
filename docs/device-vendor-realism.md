@@ -74,17 +74,35 @@ resolves to `null` against the IEEE registry (Docker's virtual MACs are
 locally-administered and have no registry entry) — unchanged by this work,
 same behavior CLAUDE.md already documents.
 
-## A real, non-cosmetic addition: Modbus device identification
+## A real, non-cosmetic addition: Modbus device identification — and what it doesn't close
 
 `plc-gateway`'s reskin added real functionality, not just a rename: Modbus
 function code 0x2B (Read Device Identification), via pymodbus's
 `ModbusDeviceIdentification`, populated from the device's vendor/model/
 firmware settings. Real Modicon PLCs answer this function code with no
 authentication, matching the fixture's existing insecure-by-default Modbus
-posture. This also closes a previously-documented gap in this project: the
-`modbus-discover` NSE script used to return "open but no data" against this
-fixture (no identity object existed for it to read) — it now returns real
-vendor/product data.
+posture. **Confirmed live**, not just unit-tested: a direct pymodbus
+client's `read_device_information()` call against the rebuilt container
+correctly returned `{0: b"Schneider Electric", 1: b"Modicon M221", 2:
+b"SV3.8.1"}`.
+
+**This does not close the previously-documented `modbus-discover` "no
+data" gap** — an initial claim to that effect, made before live-verifying
+it, turned out to be wrong, corrected here rather than left standing.
+Live verification (a hand-crafted raw Modbus/TCP frame against the
+rebuilt container, cross-checked against a known-working `0x03` Read
+Holding Registers call on the identical framing/socket to rule out a
+framing bug) showed nmap's real `modbus-discover.nse` script never
+reaches the 0x2B call at all: it first scans slave ids 1–246 with
+function code `0x11` (Report Slave ID) and only calls `read_device_
+information` as a follow-up once *that* gets a real response. pymodbus's
+server does not answer function `0x11` at all (no response, no exception
+PDU, confirmed with a 4-second wait) even though it correctly has a
+built-in `ReportSlaveIdRequest` handler registered — the root cause inside
+pymodbus's async server dispatch wasn't pursued further, since chasing it
+is a materially different, unbounded task from a vendor-identity reskin.
+The `modbus-discover` NSE script still returns no host script results
+against this fixture, unchanged from before this pass.
 
 ## Known limitation: RTSP `Server:` header isn't wired into the collector
 

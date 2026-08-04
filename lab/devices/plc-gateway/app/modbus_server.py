@@ -36,10 +36,17 @@ def _build_context() -> ModbusServerContext:
 def _build_identity(settings: Settings) -> ModbusDeviceIdentification:
     # Real Modicon PLCs answer Modbus function code 0x2B (Read Device
     # Identification) - pymodbus serves it automatically once an identity
-    # object is attached to the server, no extra wiring needed. This also
-    # closes a previously-documented gap in this project: nmap's
-    # modbus-discover NSE script returned "open but no data" against this
-    # fixture before an identity object existed at all.
+    # object is attached to the server, no extra wiring needed. Confirmed
+    # live via a direct pymodbus client's read_device_information() call.
+    #
+    # This does NOT close the previously-documented "modbus-discover
+    # returns no data" gap, confirmed live: nmap's modbus-discover.nse only
+    # calls read_device_information (0x2B) as a *follow-up* after first
+    # getting a real response to function 0x11 (Report Slave ID) on some
+    # slave id 1-246 - and pymodbus's server never answers 0x11 at all
+    # (confirmed live with a raw crafted frame; the same connection/framing
+    # answers 0x03 correctly). Root cause not pursued further - out of
+    # scope for a vendor-identity pass. See docs/device-vendor-realism.md.
     identity = ModbusDeviceIdentification()
     identity.VendorName = settings.device_vendor
     identity.ProductCode = settings.device_model
