@@ -12,7 +12,7 @@ def _register_device(conn, device_id="report-cam"):
         INSERT INTO devices (device_id, display_name, description, tier, host,
                              vendor, model, location, owner, notes, source)
         VALUES (%s, 'Report Cam', 'A camera under test.', 'insecure',
-                'device-insecure', 'AcmeCam', NULL, 'Bench 2', NULL, NULL, 'manual')
+                'device-insecure', 'Hikvision', NULL, 'Bench 2', NULL, NULL, 'manual')
         """,
         (device_id,),
     )
@@ -72,7 +72,7 @@ def test_device_and_services_are_populated(postgres_url):
         conn.close()
 
     assert model["device"]["display_name"] == "Report Cam"
-    assert model["device"]["vendor"] == "AcmeCam"
+    assert model["device"]["vendor"] == "Hikvision"
     assert model["device"]["model"] is None
     assert len(model["services"]) == 2
     mqtt = next(s for s in model["services"] if s["service_type"] == "mqtt")

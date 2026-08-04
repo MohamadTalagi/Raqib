@@ -28,8 +28,8 @@ const DETAIL: DeviceDetail = {
     description: "Default creds, plain HTTP.",
     tier: "insecure",
     host: "device-insecure",
-    vendor: "AcmeCam",
-    model: "AC-100",
+    vendor: "Hikvision",
+    model: "DS-2CD2143G2-I",
     location: "Lab",
     owner: "Blue Team",
     notes: "Test unit",
@@ -116,7 +116,7 @@ describe("DeviceAssessmentReportPage", () => {
 
     expect(await screen.findByText("Device profile")).toBeInTheDocument();
     // Inventory the user entered.
-    expect(screen.getByText("AcmeCam")).toBeInTheDocument();
+    expect(screen.getByText("Hikvision")).toBeInTheDocument();
     expect(screen.getByText("Blue Team")).toBeInTheDocument();
     // Firmware.
     expect(screen.getByText("fw.zip")).toBeInTheDocument();

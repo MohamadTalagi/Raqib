@@ -97,7 +97,7 @@ const DETAIL: DeviceDetail = {
     description: "Default creds, plain HTTP.",
     tier: "insecure",
     host: "device-insecure",
-    vendor: "AcmeCam",
+    vendor: "Hikvision",
     model: null,
     location: null,
     owner: null,
@@ -188,7 +188,7 @@ describe("DeviceDetailPage", () => {
     renderPage();
 
     expect(await screen.findByText("Smart Camera — Insecure")).toBeInTheDocument();
-    expect(screen.getByText("AcmeCam")).toBeInTheDocument();
+    expect(screen.getByText("Hikvision")).toBeInTheDocument();
     expect(screen.getByText("Telnet exposed")).toBeInTheDocument();
     expect(screen.getByText("SA-IOT-002")).toBeInTheDocument();
     expect(screen.getByText("FAIL")).toBeInTheDocument();

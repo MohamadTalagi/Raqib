@@ -152,7 +152,7 @@ SAMPLE_MODEL = {
     "device": {
         "device_id": "device-insecure", "display_name": "Smart Camera — Insecure",
         "description": "Default creds, plain HTTP.", "tier": "insecure",
-        "host": "device-insecure", "vendor": "AcmeCam", "model": None,
+        "host": "device-insecure", "vendor": "Hikvision", "model": None,
         "location": None, "owner": None, "notes": None, "source": "seeded",
         "created_at": "2026-07-19T00:00:00+00:00",
         "updated_at": "2026-07-19T00:00:00+00:00",

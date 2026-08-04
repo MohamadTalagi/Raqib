@@ -192,7 +192,7 @@ describe("DeviceConsolePage", () => {
       "fetch",
       vi.fn((url: string) => {
         expect(url).toBe("http://localhost:9081/api/device/info");
-        return Promise.resolve(jsonResponse({ device_id: "device-insecure", vendor: "AcmeCam" }));
+        return Promise.resolve(jsonResponse({ device_id: "device-insecure", vendor: "Hikvision" }));
       }),
     );
 
@@ -207,7 +207,7 @@ describe("DeviceConsolePage", () => {
     const [insecureInfoBtn] = screen.getAllByRole("button", { name: "Device info" });
     await user.click(insecureInfoBtn);
 
-    expect(await screen.findByText(/"vendor": "AcmeCam"/)).toBeInTheDocument();
+    expect(await screen.findByText(/"vendor": "Hikvision"/)).toBeInTheDocument();
     expect(screen.getByText("200")).toBeInTheDocument();
     expect(screen.getByText("GET /api/device/info")).toBeInTheDocument();
   });
