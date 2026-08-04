@@ -19,6 +19,7 @@ def test_rtsp_server_answers_options_with_no_authentication():
 
     assert "200 OK" in response
     assert "PLAY" in response
+    assert "Server: Dahua Rtsp Server/2.0" in response
 
 
 def test_rtsp_server_describe_returns_sdp_with_no_authentication():
@@ -35,3 +36,5 @@ def test_rtsp_server_describe_returns_sdp_with_no_authentication():
 
     assert "200 OK" in response
     assert "application/sdp" in response
+    assert "Server: Dahua Rtsp Server/2.0" in response
+    assert "s=Dahua NVR4108-8P Live Feed" in response

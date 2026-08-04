@@ -10,14 +10,15 @@ from app.config import Settings, settings as default_settings
 # request with no authentication challenge at all - the finding this fixture
 # demonstrates is "the video stream requires no credentials," not a
 # simulated encoder.
-SDP_BODY = (
-    "v=0\r\n"
-    "o=- 0 0 IN IP4 0.0.0.0\r\n"
-    "s=NVR Live Feed\r\n"
-    "t=0 0\r\n"
-    "m=video 0 RTP/AVP 96\r\n"
-    "a=rtpmap:96 H264/90000\r\n"
-)
+def _sdp_body(settings: Settings) -> str:
+    return (
+        "v=0\r\n"
+        "o=- 0 0 IN IP4 0.0.0.0\r\n"
+        f"s={settings.device_vendor} {settings.device_model} Live Feed\r\n"
+        "t=0 0\r\n"
+        "m=video 0 RTP/AVP 96\r\n"
+        "a=rtpmap:96 H264/90000\r\n"
+    )
 
 
 def _cseq(request: str) -> str:
@@ -25,7 +26,16 @@ def _cseq(request: str) -> str:
     return match.group(1) if match else "1"
 
 
-def _handle_connection(conn: socket.socket) -> None:
+def _handle_connection(conn: socket.socket, settings: Settings) -> None:
+    # Server: header format is illustrative (real vendor's exact banner
+    # text isn't independently verified byte-for-byte) - the identity
+    # itself (Dahua) is grounded in a real, documented CVE class, see
+    # config.py. This header isn't currently parsed by this project's
+    # rtsp-methods-based collector (that NSE script doesn't surface a
+    # Server: line in its own output), so it's real signal for a direct
+    # RTSP client but a documented, deliberate gap for the automated
+    # collector - not silently dropped.
+    server_header = f"Server: {settings.device_vendor} Rtsp Server/2.0\r\n"
     try:
         while True:
             data = conn.recv(4096)
@@ -36,15 +46,15 @@ def _handle_connection(conn: socket.socket) -> None:
             cseq = _cseq(request)
 
             if method == "DESCRIBE":
-                body = SDP_BODY.encode()
+                body = _sdp_body(settings).encode()
                 response = (
-                    f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\n"
+                    f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\n{server_header}"
                     f"Content-Type: application/sdp\r\nContent-Length: {len(body)}\r\n\r\n"
                 ).encode() + body
             else:
                 # OPTIONS, SETUP, PLAY, TEARDOWN all succeed with no auth check.
                 response = (
-                    f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\n"
+                    f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\n{server_header}"
                     "Public: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN\r\n\r\n"
                 ).encode()
             conn.sendall(response)
@@ -59,7 +69,7 @@ def _serve(settings: Settings) -> None:
     server.listen(5)
     while True:
         conn, _ = server.accept()
-        threading.Thread(target=_handle_connection, args=(conn,), daemon=True).start()
+        threading.Thread(target=_handle_connection, args=(conn, settings), daemon=True).start()
 
 
 def start_rtsp_server(settings: Settings = default_settings) -> None:
