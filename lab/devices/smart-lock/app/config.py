@@ -5,11 +5,19 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=False)
 
     device_id: str = "device-smartlock"
-    device_vendor: str = "BoltGuard"
-    device_model: str = "BG-200"
-    device_mac: str = "AA:BB:CC:00:22:01"
+    # Yale Conexis L1 - grounds the default-PIN/unauthenticated-unlock
+    # posture in a real, documented CVE class (CVE-2023-26941/26942, a
+    # PIN-verification bypass). Illustrative simulation only - not real
+    # Yale firmware, not affiliated with or endorsed by Yale/ASSA ABLOY.
+    # See docs/device-vendor-realism.md.
+    device_vendor: str = "Yale"
+    device_model: str = "Conexis L1"
+    # B0:44:9C is Yale/ASSA ABLOY's real registered IEEE OUI prefix;
+    # self-reported only, never consumed by the real network-discovery OUI
+    # lookup (see docs/device-vendor-realism.md).
+    device_mac: str = "B0:44:9C:00:22:01"
     device_type: str = "smart-lock"
-    firmware_version: str = "1.0.0"
+    firmware_version: str = "1.4.2"
 
     # Training fixture only - never a real PIN. Insecure posture: the device
     # ships with this PIN and nothing forces it to change on first boot,
