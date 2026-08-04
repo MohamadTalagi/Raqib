@@ -174,7 +174,7 @@ def test_mdns_voice_log_unencrypted_maps_to_2_6_2_and_2_6_3():
         "observations": {
             "txt_record": {
                 "name": "device-speaker.local",
-                "txt": {"vendor": "VoxHome", "voice_log_encrypted": "false"},
+                "txt": {"vendor": "Sonos", "voice_log_encrypted": "false"},
             },
         },
     }
@@ -189,7 +189,7 @@ def test_mdns_voice_log_encrypted_does_not_map_to_data_protection_controls():
         "observations": {
             "txt_record": {
                 "name": "device-speaker.local",
-                "txt": {"vendor": "VoxHome", "voice_log_encrypted": "true"},
+                "txt": {"vendor": "Sonos", "voice_log_encrypted": "true"},
             },
         },
     }

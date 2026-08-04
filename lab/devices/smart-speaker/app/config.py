@@ -5,11 +5,20 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=False)
 
     device_id: str = "device-speaker"
-    device_vendor: str = "VoxHome"
-    device_model: str = "VH-Speaker-2"
-    device_mac: str = "AA:BB:CC:00:22:05"
+    # Sonos - grounds the unauthenticated-mDNS/unencrypted-voice-log
+    # posture in real, documented CVE classes (CVE-2018-11316, unauthenticated
+    # UPnP access via DNS rebinding; CVE-2023-50809, unauthenticated RCE
+    # enabling covert audio recording). Illustrative simulation only - not
+    # real Sonos firmware, not affiliated with or endorsed by Sonos. See
+    # docs/device-vendor-realism.md.
+    device_vendor: str = "Sonos"
+    device_model: str = "One (Gen 2)"
+    # 38:42:0B is Sonos's real registered IEEE OUI prefix; self-reported
+    # only, never consumed by the real network-discovery OUI lookup (see
+    # docs/device-vendor-realism.md).
+    device_mac: str = "38:42:0B:00:22:05"
     device_type: str = "smart-speaker"
-    firmware_version: str = "1.2.0"
+    firmware_version: str = "15.9"
 
     mdns_port: int = 5353
 

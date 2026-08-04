@@ -6,7 +6,7 @@ from app.mdns_server import parse_mdns_txt_record, start_mdns_server
 
 
 def test_mdns_server_answers_any_datagram_with_unauthenticated_device_details():
-    settings = Settings(mdns_port=15353, device_vendor="VoxHome", device_model="VH-Speaker-2")
+    settings = Settings(mdns_port=15353, device_vendor="Sonos", device_model="One (Gen 2)")
     start_mdns_server(settings)
     time.sleep(0.2)  # let the recv loop bind before sending
 
@@ -20,6 +20,6 @@ def test_mdns_server_answers_any_datagram_with_unauthenticated_device_details():
 
     parsed = parse_mdns_txt_record(data)
     assert parsed["name"] == "device-speaker.local"
-    assert parsed["txt"]["vendor"] == "VoxHome"
-    assert parsed["txt"]["model"] == "VH-Speaker-2"
+    assert parsed["txt"]["vendor"] == "Sonos"
+    assert parsed["txt"]["model"] == "One (Gen 2)"
     assert parsed["txt"]["voice_log_encrypted"] == "false"

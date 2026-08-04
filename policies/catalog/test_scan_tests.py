@@ -1671,7 +1671,10 @@ def test_mdns_probe_decodes_the_txt_record_from_the_real_responder_wire_format()
         b"\x00\x00"  # ARCOUNT
     )
     name = b"\x0edevice-speaker\x05local\x00"
-    txt_payload = b"vendor=VoxHome;model=VH-Speaker-2;voice_log_encrypted=false"
+    # vendor/model updated 2026-08-04 for the Sonos reskin (see
+    # docs/device-vendor-realism.md) - re-captured live from the rebuilt
+    # responder before this substitution.
+    txt_payload = b"vendor=Sonos;model=One (Gen 2);voice_log_encrypted=false"
     rdata = bytes([len(txt_payload)]) + txt_payload
     packet = (
         header

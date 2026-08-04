@@ -6,7 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.mdns_server import start_mdns_server
 
-app = FastAPI(title="Smart Speaker Device Simulator")
+app = FastAPI(
+    title="Smart Speaker Device Simulator",
+    description="Simulated device for security research - not affiliated with or endorsed by the named vendor.",
+)
 
 app.add_middleware(
     CORSMiddleware,
