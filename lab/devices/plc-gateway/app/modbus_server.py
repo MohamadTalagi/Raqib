@@ -5,6 +5,7 @@ from pymodbus.datastore import (
     ModbusServerContext,
     ModbusSlaveContext,
 )
+from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.server import StartTcpServer
 
 from app.config import Settings, settings as default_settings
@@ -32,9 +33,26 @@ def _build_context() -> ModbusServerContext:
     return ModbusServerContext(slaves=store, single=True)
 
 
+def _build_identity(settings: Settings) -> ModbusDeviceIdentification:
+    # Real Modicon PLCs answer Modbus function code 0x2B (Read Device
+    # Identification) - pymodbus serves it automatically once an identity
+    # object is attached to the server, no extra wiring needed. This also
+    # closes a previously-documented gap in this project: nmap's
+    # modbus-discover NSE script returned "open but no data" against this
+    # fixture before an identity object existed at all.
+    identity = ModbusDeviceIdentification()
+    identity.VendorName = settings.device_vendor
+    identity.ProductCode = settings.device_model
+    identity.ProductName = settings.device_model
+    identity.ModelName = settings.device_model
+    identity.MajorMinorRevision = settings.firmware_version
+    return identity
+
+
 def _serve(settings: Settings) -> None:
     context = _build_context()
-    StartTcpServer(context=context, address=("0.0.0.0", settings.modbus_port))
+    identity = _build_identity(settings)
+    StartTcpServer(context=context, identity=identity, address=("0.0.0.0", settings.modbus_port))
 
 
 def start_modbus_server(settings: Settings = default_settings) -> None:
