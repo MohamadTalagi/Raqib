@@ -1,4 +1,6 @@
-# Privacy Notice — AcmeCam AC-200 (Partially Hardened Reference Configuration)
+# Privacy Notice — Hikvision DS-2CD2143G2-IU (Partially Hardened Reference Configuration)
+
+*Simulated device for security research — not affiliated with or endorsed by Hikvision.*
 
 - Data collected: video telemetry heartbeat (simulated), device metadata.
 - Retention period: 90 days (undocumented deletion mechanics).

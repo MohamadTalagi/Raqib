@@ -44,7 +44,7 @@ def test_device_info_endpoint():
     assert resp.status_code == 200
     body = resp.json()
     assert body["device_type"] == "smart-camera"
-    assert body["mac"] == "AA:BB:CC:00:11:22"
+    assert body["mac"] == "A4:14:37:00:11:22"
 
 
 def test_config_leaks_api_key_when_exposed():
@@ -98,8 +98,8 @@ def test_admin_reset_requires_auth_when_required_and_rejects_missing_header(monk
 def test_dashboard_loads_and_shows_device_identity():
     resp = client.get("/dashboard")
     assert resp.status_code == 200
-    assert "AcmeCam" in resp.text
-    assert "AC-100" in resp.text
+    assert "Hikvision" in resp.text
+    assert "DS-2CD2143G2-I" in resp.text
 
 
 def test_dashboard_shows_api_key_when_exposed():

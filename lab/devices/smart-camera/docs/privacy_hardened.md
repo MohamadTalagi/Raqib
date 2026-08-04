@@ -1,4 +1,6 @@
-# Privacy Notice — AcmeCam AC-300 (Hardened Reference Configuration)
+# Privacy Notice — Axis Communications M3216-LVE (Hardened Reference Configuration)
+
+*Simulated device for security research — not affiliated with or endorsed by Axis Communications.*
 
 - Data collected: video telemetry heartbeat (simulated), device metadata.
 - Retention period: 30 days, automatically purged.

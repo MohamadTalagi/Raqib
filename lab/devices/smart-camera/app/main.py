@@ -38,6 +38,7 @@ LOGIN_PAGE_TEMPLATE = """<!DOCTYPE html>
   <button type="submit">Login</button>
 </form>
 <p><a href="/dashboard">View device dashboard</a></p>
+<p style="font-size:11px;color:#888;">Simulated device for security research &mdash; not affiliated with or endorsed by {vendor}.</p>
 </body></html>"""
 
 
@@ -101,6 +102,7 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   </div>
 
   <p style="font-size:12px;"><a href="/privacy">Privacy document</a> &middot; <a href="/">Back to login</a></p>
+  <p style="font-size:11px;color:#5a5f6a;">Simulated device for security research &mdash; not affiliated with or endorsed by {vendor}.</p>
 </div>
 <script>
   async function triggerReset() {{
