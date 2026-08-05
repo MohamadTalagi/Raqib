@@ -139,6 +139,20 @@ def _patch(job_id: int, fields: dict) -> None:
     response.raise_for_status()
 
 
+def _failure_detail(result: subprocess.CompletedProcess, prefix: str) -> str:
+    """Builds a readable INCONCLUSIVE-evidence failure message from a
+    collector's non-zero exit: the exit code plus a bounded tail of
+    stderr (falling back to stdout) so the auditor sees *why* it failed,
+    not just that it did. Bounded to keep the message a reasonable size -
+    the full raw_output is still preserved separately wherever the caller
+    already stores it."""
+    tail = (result.stderr or result.stdout or "").strip()
+    tail = tail[-500:]
+    if tail:
+        return f"{prefix} exited with status {result.returncode}: {tail}"
+    return f"{prefix} exited with status {result.returncode} (no output)"
+
+
 def _record_failure(job_id: int, error_detail: str) -> None:
     """Called only when the collector genuinely attempted to run and failed
     (timeout, execution exception) - not for pre-execution rejections like an
@@ -195,6 +209,9 @@ def _run_network_discovery(
     except Exception as exc:  # noqa: BLE001 - report any execution failure back to the caller
         fail_fn(f"discovery phase (Stage A) failed: {exc}")
         return
+    if result.returncode != 0:
+        fail_fn(_failure_detail(result, "discovery phase (Stage A)"))
+        return
 
     tool_version = _tool_version(["nmap", "--version"])
     live_hosts = scan_tests._parse_stage_a_live_hosts(stage_a_raw_output)
@@ -237,6 +254,9 @@ def _run_network_discovery(
         return
     except Exception as exc:  # noqa: BLE001 - report any execution failure back to the caller
         fail_fn(f"service-scan phase (Stage B) failed: {exc}")
+        return
+    if result.returncode != 0:
+        fail_fn(_failure_detail(result, "service-scan phase (Stage B)"))
         return
 
     observations = SCAN_CATALOG["TEST-NET-DISCOVERY"]["parse_observations"]({}, stage_b_raw_output)
@@ -307,6 +327,9 @@ def process_job(job: dict) -> None:
         return
     except Exception as exc:  # noqa: BLE001 - report any execution failure back to the job
         _record_failure(job_id, str(exc))
+        return
+    if result.returncode != 0:
+        _record_failure(job_id, _failure_detail(result, "command"))
         return
 
     observations = spec["parse_observations"](target, raw_output)

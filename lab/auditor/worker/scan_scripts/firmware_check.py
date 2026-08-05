@@ -246,7 +246,7 @@ def main() -> None:
     archive_path = _archive_path(device_id)
     if not archive_path.exists():
         print("error=firmware archive not found")
-        return
+        sys.exit(1)
 
     with open_archive(archive_path) as archive:
         members = list(archive.iter_members())

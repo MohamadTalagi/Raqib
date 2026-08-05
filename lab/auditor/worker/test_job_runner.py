@@ -80,6 +80,71 @@ def test_process_job_marks_failed_on_timeout(mock_run, mock_patch, mock_post):
     assert "timed out" in final_call.kwargs["json"]["error_detail"]
 
 
+@patch("job_runner.requests.post")
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_job_marks_inconclusive_on_nonzero_exit(mock_run, mock_patch, mock_post):
+    # A collector that runs and exits non-zero (e.g. curl: connection
+    # refused) must be treated exactly like a timeout - real INCONCLUSIVE
+    # evidence via record-failure, never a false "clean" awaiting_finding
+    # result built from whatever near-empty output the failed run produced.
+    mock_run.return_value = _mock_completed(stdout="", stderr="curl: (7) Failed to connect", returncode=7)
+
+    process_job({
+        "id": 13, "device_id": "device-insecure", "test_id": "TEST-NET-PORTSCAN",
+        "host": "device-insecure", "service_type": "http", "port": 80,
+    })
+
+    assert mock_patch.call_args_list[-1].kwargs["json"]["status"] == "running"
+    final_call = mock_post.call_args_list[-1]
+    assert "record-failure" in final_call.args[0]
+    detail = final_call.kwargs["json"]["error_detail"]
+    assert "exited with status 7" in detail
+    assert "Failed to connect" in detail
+
+
+@patch("job_runner.requests.post")
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_job_network_discovery_stage_a_nonzero_exit_never_attempts_stage_b(mock_run, mock_patch, mock_post):
+    mock_run.return_value = _mock_completed(stdout="", stderr="nmap: bad option", returncode=1)
+
+    process_job({
+        "id": 14, "device_id": "device-insecure", "test_id": "TEST-NET-DISCOVERY",
+        "host": None, "service_type": None, "port": None,
+    })
+
+    # Only the one (failed) Stage A call - never a second attempt.
+    assert mock_run.call_count == 1
+    final_call = mock_post.call_args_list[-1]
+    assert "record-failure" in final_call.args[0]
+    detail = final_call.kwargs["json"]["error_detail"]
+    assert "discovery phase (Stage A)" in detail
+    assert "exited with status 1" in detail
+
+
+@patch("job_runner.requests.post")
+@patch("job_runner.requests.patch")
+@patch("job_runner.subprocess.run")
+def test_process_job_network_discovery_stage_b_nonzero_exit_reports_failure(mock_run, mock_patch, mock_post):
+    mock_run.side_effect = [
+        _mock_completed(stdout="Nmap scan report for 172.30.0.5\nHost is up.\n"),  # Stage A - succeeds
+        _mock_completed(stdout="nmap version 7.95\n"),  # tool --version probe
+        _mock_completed(stdout="", stderr="nmap: fatal error", returncode=1),  # Stage B - fails
+    ]
+
+    process_job({
+        "id": 15, "device_id": "device-insecure", "test_id": "TEST-NET-DISCOVERY",
+        "host": None, "service_type": None, "port": None,
+    })
+
+    final_call = mock_post.call_args_list[-1]
+    assert "record-failure" in final_call.args[0]
+    detail = final_call.kwargs["json"]["error_detail"]
+    assert "service-scan phase (Stage B)" in detail
+    assert "exited with status 1" in detail
+
+
 @patch("job_runner.requests.get")
 @patch("job_runner.process_job")
 def test_poll_once_processes_every_pending_job(mock_process_job, mock_get):

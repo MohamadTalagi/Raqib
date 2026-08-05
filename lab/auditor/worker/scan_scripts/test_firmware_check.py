@@ -241,10 +241,20 @@ def test_main_dispatches_on_a_zip_archive(tmp_path, monkeypatch, capsys):
 
 
 def test_main_reports_a_clear_error_when_archive_is_missing(tmp_path, monkeypatch, capsys):
+    # A missing archive is a genuine collector failure, not a clean "nothing
+    # found" result - main() must now exit non-zero so job_runner.py's
+    # returncode check turns this into real INCONCLUSIVE evidence, instead
+    # of every TEST-FW-* check silently reporting "no secrets/keys/etc.
+    # found" from an archive that was never actually scanned.
     monkeypatch.setenv("DOCUMENT_STORE_DIR", str(tmp_path))
     monkeypatch.setattr(firmware_check, "DOCUMENT_STORE_DIR", tmp_path)
     monkeypatch.setattr("sys.argv", ["firmware_check.py", "device-does-not-exist", "version"])
-    firmware_check.main()
+    with pytest.raises(SystemExit) as exc_info:
+        firmware_check.main()
+    assert exc_info.value.code == 1
+    # The human-readable error line is still printed, for a real
+    # auditor reading the raw_output, even though the process now exits
+    # non-zero.
     assert "error=firmware archive not found" in capsys.readouterr().out
 
 
