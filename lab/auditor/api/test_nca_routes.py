@@ -644,6 +644,112 @@ def test_override_supersedes_original_and_writes_audit_trail(client, conn):
     assert detail["overall_status"] == "pass"
 
 
+def test_override_carries_forward_audit_trail_fields_not_in_the_payload(client, conn):
+    # override_assessment used to build its merged payload from an explicit
+    # field list that omitted raw_result_reference/scanner_tool/
+    # scanner_tool_version/firmware_version_assessed/remediation_due_date -
+    # an override that didn't re-supply them silently erased which
+    # scanner/tool/firmware version produced the original finding.
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    first = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
+            "raw_result_reference": "EV-2026-08-05-0001",
+            "scanner_tool": "nmap", "scanner_tool_version": "7.95",
+            "firmware_version_assessed": "1.0.0-old",
+            "remediation_due_date": "2026-09-01T00:00:00Z",
+        },
+    ).json()
+    assert first["raw_result_reference"] == "EV-2026-08-05-0001"  # sanity: the seed actually carries them
+
+    overridden = client.post(
+        f"/nca/assessments/{first['id']}/override",
+        json={
+            "status": "pass",
+            "justification": "compensating control verified on-site",
+            "overridden_by": "auditor-1",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
+            # Deliberately NOT re-supplying any of the 5 fields below.
+        },
+    ).json()
+
+    assert overridden["raw_result_reference"] == "EV-2026-08-05-0001"
+    assert overridden["scanner_tool"] == "nmap"
+    assert overridden["scanner_tool_version"] == "7.95"
+    assert overridden["firmware_version_assessed"] == "1.0.0-old"
+    assert overridden["remediation_due_date"] is not None
+    assert overridden["remediation_due_date"].startswith("2026-09-01")
+
+
+def test_override_still_allows_an_explicit_value_to_win(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    first = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
+            "scanner_tool": "nmap",
+        },
+    ).json()
+
+    overridden = client.post(
+        f"/nca/assessments/{first['id']}/override",
+        json={
+            "status": "pass",
+            "justification": "reassessed with a different tool",
+            "overridden_by": "auditor-1",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
+            "scanner_tool": "openssl",
+        },
+    ).json()
+
+    assert overridden["scanner_tool"] == "openssl"
+
+
+def test_retest_carries_forward_audit_trail_fields_not_in_the_payload(client, conn):
+    # The sibling retest_assessment endpoint had the identical bug -
+    # its merged dict also omitted these 5 fields before spreading
+    # **payload, so a retest that didn't re-supply them lost them too.
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn)
+    first = client.post(
+        "/nca/assessments",
+        json={
+            "control_id": CONTROL_ID, "device_id": "cam-1", "status": "fail",
+            "severity": "high", "test_method": "automated", "assessed_by": "reviewer-1",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
+            "raw_result_reference": "EV-2026-08-05-0002",
+            "scanner_tool": "curl", "scanner_tool_version": "8.5.0",
+            "firmware_version_assessed": "1.0.0-old",
+        },
+    ).json()
+
+    retested = client.post(
+        f"/nca/assessments/{first['id']}/retest",
+        json={
+            "status": "pass", "assessed_by": "reviewer-2", "finding": "fixed",
+            "attested_role": "Lead Auditor", "attestation_confirmed": True,
+            "attestation_statement": "Reviewed the evidence and reasons above; this finding is certified.",
+        },
+    ).json()
+
+    assert retested["raw_result_reference"] == "EV-2026-08-05-0002"
+    assert retested["scanner_tool"] == "curl"
+    assert retested["scanner_tool_version"] == "8.5.0"
+    assert retested["firmware_version_assessed"] == "1.0.0-old"
+
+
 def test_override_rejects_stale_original_status(client, conn):
     _seed_control(conn, CONTROL_ID)
     _register_device(conn)

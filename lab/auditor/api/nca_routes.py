@@ -882,6 +882,15 @@ def retest_assessment(assessment_id: str, payload: dict):
             "applicability_reason": prior["applicability_reason"],
             "severity": prior["severity"],
             "test_method": prior["test_method"],
+            # Carried forward from the prior assessment so a retest that
+            # doesn't explicitly re-supply these doesn't silently lose them -
+            # **payload below still lets an explicit retest payload override
+            # any of them.
+            "raw_result_reference": prior["raw_result_reference"],
+            "scanner_tool": prior["scanner_tool"],
+            "scanner_tool_version": prior["scanner_tool_version"],
+            "firmware_version_assessed": prior["firmware_version_assessed"],
+            "remediation_due_date": prior["remediation_due_date"],
             **payload,
         }
         data = _validate_assessment_payload(merged)
@@ -944,6 +953,16 @@ def override_assessment(assessment_id: str, payload: dict):
             "evidence_ids": prior["evidence_ids"],
             "status": new_status,
             "remediation": payload.get("remediation", prior["remediation"]),
+            # Carried forward from the prior assessment (an override should
+            # supersede the *status*, not silently erase what scanner/tool/
+            # firmware version produced the original finding) - still
+            # overridable by an explicit payload value, same pattern as
+            # remediation above.
+            "raw_result_reference": payload.get("raw_result_reference", prior["raw_result_reference"]),
+            "scanner_tool": payload.get("scanner_tool", prior["scanner_tool"]),
+            "scanner_tool_version": payload.get("scanner_tool_version", prior["scanner_tool_version"]),
+            "firmware_version_assessed": payload.get("firmware_version_assessed", prior["firmware_version_assessed"]),
+            "remediation_due_date": payload.get("remediation_due_date", prior["remediation_due_date"]),
             "assessed_by": overridden_by,
             "attested_role": payload.get("attested_role"),
             "attestation_confirmed": payload.get("attestation_confirmed"),
