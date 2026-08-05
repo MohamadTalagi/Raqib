@@ -60,10 +60,24 @@ def detect_conflict(control: dict, evidence_rows: list[dict]) -> tuple[dict | No
     candidates = automated_rows or evidence_rows
     chosen = max(candidates, key=lambda r: r["timestamp"])
 
+    # Only rows that actually differ from the chosen value on a conflicting
+    # field are "disagreeing" - conflicting_fields being non-empty means
+    # *some* pair of rows disagrees, but that doesn't mean every other row
+    # disagrees with the one that was chosen (e.g. 4 rows agree and only 1
+    # is the outlier). Naming every other row here regardless of whether it
+    # actually disagreed with the chosen value would mislead the auditor
+    # reading conflict_reason about how much of the evidence set actually
+    # conflicted.
+    disagreeing = [
+        r for r in evidence_rows
+        if r is not chosen
+        and any(_get_field(r, field) is not None and _get_field(r, field) != _get_field(chosen, field)
+                for field in conflicting_fields)
+    ]
     reason = (
         f"Conflicting evidence on {', '.join(conflicting_fields)}: "
         f"{chosen['evidence_id']} (source_type={chosen.get('source_type', _DEFAULT_SOURCE_TYPE)}) "
-        f"was preferred over {len(evidence_rows) - 1} other disagreeing record(s) "
-        f"({', '.join(r['evidence_id'] for r in evidence_rows if r is not chosen)})."
+        f"was preferred over {len(disagreeing)} other disagreeing record(s) "
+        f"({', '.join(r['evidence_id'] for r in disagreeing)})."
     )
     return chosen, True, reason

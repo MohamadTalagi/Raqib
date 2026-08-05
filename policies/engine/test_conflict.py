@@ -73,6 +73,28 @@ def test_two_conflicting_automated_rows_falls_back_to_most_recent():
     assert chosen["evidence_id"] == "EV-NEW"
 
 
+def test_conflict_reason_names_only_the_rows_that_actually_disagree():
+    # Regression: the reason text used to name *every* non-chosen row as
+    # "disagreeing," even ones that actually agreed with the chosen value.
+    # 4 rows agree (True); 1 is the real outlier (False) - the reason must
+    # name exactly that 1 row, not all 4 others.
+    agreeing = [
+        _row("EV-1", True, timestamp="2026-07-08T08:00:00Z"),
+        _row("EV-2", True, timestamp="2026-07-08T08:30:00Z"),
+        _row("EV-3", True, timestamp="2026-07-08T09:00:00Z"),
+        _row("EV-4", True, timestamp="2026-07-08T11:00:00Z"),  # most recent -> chosen
+    ]
+    outlier = _row("EV-OUTLIER", False, timestamp="2026-07-08T09:30:00Z")
+    chosen, conflict, reason = detect_conflict(CONTROL, [*agreeing, outlier])
+
+    assert conflict is True
+    assert chosen["evidence_id"] == "EV-4"
+    assert "1 other disagreeing record" in reason
+    assert "EV-OUTLIER" in reason
+    for agreeing_id in ("EV-1", "EV-2", "EV-3"):
+        assert agreeing_id not in reason
+
+
 def test_disagreement_on_an_unrelated_field_is_not_a_conflict():
     # Both rows agree on mqtt_tls (the field this control actually keys on);
     # disagreeing on some other, irrelevant field must not trigger a conflict.
