@@ -357,6 +357,21 @@ def _row_to_assessment(row: tuple) -> dict:
     }
 
 
+def _version_sort_key(version: str) -> tuple:
+    """Semantic-version-aware sort key so "1.10.0" correctly sorts after
+    "1.9.0" - a plain string sort (Python's default) puts it before, since
+    "1" < "9" characterwise ignores that "10" > "9" numerically. Falls back
+    to sorting the raw string after every well-formed numeric-dotted
+    version for anything that doesn't parse as one, so a malformed or
+    future version format never crashes policy_version selection - it just
+    sorts as "newest," consistent with the selection's own "pick the
+    newest relevant version" intent."""
+    try:
+        return (0, tuple(int(p) for p in version.split(".")))
+    except ValueError:
+        return (1, version)
+
+
 def _next_assessment_id(conn) -> str:
     return next_sequential_id(conn, "ASMT", "assessments", "id")
 
@@ -396,7 +411,7 @@ def create_assessment(payload: dict):
             control.get("version") for control in controls
             if any(req["test_id"] in test_ids for req in control["required_evidence"])
         }
-        policy_version = sorted(v for v in relevant_versions if v)[-1] if relevant_versions else None
+        policy_version = max((v for v in relevant_versions if v), key=_version_sort_key, default=None)
 
         assessment_id = _next_assessment_id(conn)
         conn.execute(

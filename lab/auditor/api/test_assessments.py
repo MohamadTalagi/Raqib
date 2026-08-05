@@ -61,6 +61,51 @@ def test_create_assessment_records_policy_version_from_matching_controls(client)
     assert response.json()["policy_version"] == "1.0.0"
 
 
+def test_version_sort_key_orders_versions_numerically_not_lexicographically():
+    from main import _version_sort_key
+
+    assert sorted(["1.9.0", "1.10.0", "1.2.0"], key=_version_sort_key) == ["1.2.0", "1.9.0", "1.10.0"]
+    # A malformed/non-numeric version never crashes the sort - it just
+    # sorts after every well-formed one.
+    assert sorted(["1.0.0", "not-a-version"], key=_version_sort_key) == ["1.0.0", "not-a-version"]
+
+
+def test_create_assessment_picks_the_semantically_newest_version_not_the_lexicographically_last(
+    postgres_url, monkeypatch, tmp_path
+):
+    # Regression: a plain string sort puts "1.9.0" after "1.10.0"
+    # ("1" < "9" character-wise ignores that 10 > 9 numerically) - masked in
+    # the real control catalog only because every control YAML happens to
+    # be pinned at "1.0.0" today. Uses its own scratch CONTROLS_DIR (real
+    # control YAMLs are all "1.0.0", so this can't be reproduced against
+    # them) with two minimal synthetic controls.
+    monkeypatch.setenv("DATABASE_URL", postgres_url)
+    controls_dir = tmp_path / "controls"
+    controls_dir.mkdir()
+    (controls_dir / "OLD.yaml").write_text(
+        "control_id: OLD\nversion: \"1.9.0\"\nrequired_evidence:\n  - test_id: TEST-FAKE-A\n"
+    )
+    (controls_dir / "NEW.yaml").write_text(
+        "control_id: NEW\nversion: \"1.10.0\"\nrequired_evidence:\n  - test_id: TEST-FAKE-B\n"
+    )
+    monkeypatch.setenv("CONTROLS_DIR", str(controls_dir))
+    monkeypatch.setenv("DOCUMENT_STORE_DIR", str(tmp_path))
+
+    # CONTROLS_DIR (unlike DATABASE_URL) is a module-level constant read
+    # once at import time, not lazily per-request - if `main` was already
+    # imported earlier in this test session (by another file's `client`
+    # fixture), just setting the env var here has no effect on the
+    # already-bound value. Patch the module attribute directly instead.
+    import main as main_module
+    monkeypatch.setattr(main_module, "CONTROLS_DIR", controls_dir)
+    client = TestClient(main_module.app)
+    _register_device(client)
+    response = client.post(
+        "/assessments", json={"device_id": "cam-1", "test_ids": ["TEST-FAKE-A", "TEST-FAKE-B"]},
+    )
+    assert response.json()["policy_version"] == "1.10.0"
+
+
 def test_create_assessment_reports_per_test_errors_without_failing_the_whole_batch(client):
     _register_device(client, service_type="http", port=80)
     response = client.post(
