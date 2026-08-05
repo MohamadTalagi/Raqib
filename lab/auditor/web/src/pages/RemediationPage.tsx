@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
@@ -54,6 +54,14 @@ export function RemediationPage() {
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [rowError, setRowError] = useState<Record<string, string>>({});
 
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const findings = useMemo<RemediationFinding[]>(() => {
     const saIot: RemediationFinding[] = (verdicts.data ?? [])
       .filter((v) => v.status === "FAIL" || v.status === "PARTIAL")
@@ -99,28 +107,34 @@ export function RemediationPage() {
     setRowError((prev) => ({ ...prev, [key]: "" }));
     try {
       await api.generateRemediation(finding.findingType, finding.findingId);
-      setRefreshKey((k) => k + 1);
+      if (mountedRef.current) setRefreshKey((k) => k + 1);
     } catch (err) {
-      setRowError((prev) => ({
-        ...prev,
-        [key]: err instanceof ApiError ? err.message : "Could not generate remediation.",
-      }));
+      if (mountedRef.current) {
+        setRowError((prev) => ({
+          ...prev,
+          [key]: err instanceof ApiError ? err.message : "Could not generate remediation.",
+        }));
+      }
     } finally {
-      setGenerating((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
+      if (mountedRef.current) {
+        setGenerating((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
     }
   }
 
   async function handleGenerateAllMissing() {
     setBulkGenerating(true);
     for (const finding of findingsWithoutBlueprint) {
+      if (!mountedRef.current) return;
       await handleGenerate(finding);
+      if (!mountedRef.current) return;
       await delay(BULK_GENERATE_DELAY_MS);
     }
-    setBulkGenerating(false);
+    if (mountedRef.current) setBulkGenerating(false);
   }
 
   async function handleReview(blueprintId: string) {

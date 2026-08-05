@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -114,6 +114,33 @@ describe("ScanConsolePage", () => {
     // Testing Library normalizes the double space to one.
     expect(screen.getByText(/23\/tcp open telnet/)).toBeInTheDocument();
   });
+
+  it("stops polling once the page is unmounted mid-scan", async () => {
+    // Regression: pollToCompletion's ~90s loop had no unmount guard -
+    // navigating away mid-poll kept firing requests (and would call
+    // setState on an unmounted page) until the loop's own 60-iteration
+    // bound expired. Uses the page's own real ~1.5s poll interval rather
+    // than fake timers, which fought with Testing Library's own internal
+    // polling in this suite.
+    vi.spyOn(api, "createScanJob").mockResolvedValue({ ...DONE_JOB, status: "pending" });
+    const getJob = vi.spyOn(api, "getScanJob").mockResolvedValue({ ...DONE_JOB, status: "pending" }); // always in flight
+    const view = renderPage();
+    const user = userEvent.setup();
+
+    const input = screen.getByLabelText("Console command");
+    await user.click(input);
+    await user.type(input, "scan device-insecure TEST-NET-PORTSCAN{Enter}");
+
+    await waitFor(() => expect(getJob.mock.calls.length).toBeGreaterThan(0), { timeout: 3000 });
+    const callsBeforeUnmount = getJob.mock.calls.length;
+
+    view.unmount();
+
+    // Would be several more real poll iterations (~1.5s apart) if the loop
+    // weren't stopped.
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    expect(getJob.mock.calls.length).toBe(callsBeforeUnmount);
+  }, 10000);
 
   it("refuses to scan an unregistered device without calling the API", async () => {
     const create = vi.spyOn(api, "createScanJob");

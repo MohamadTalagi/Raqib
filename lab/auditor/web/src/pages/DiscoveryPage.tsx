@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ErrorState } from "@/components/ui/state";
 import { RegisterDeviceForm } from "@/components/devices/RegisterDeviceForm";
 import {
   NetworkDiscoveryPanel,
@@ -64,6 +65,7 @@ export function DiscoveryPage() {
     if (!bulkHosts || bulkHosts.length === 0) return;
     setBulkBusy(true);
     setBulkError(null);
+    let registeredCount = 0;
     try {
       for (const host of bulkHosts) {
         const hostPrefill = prefillFromHost(host);
@@ -74,12 +76,21 @@ export function DiscoveryPage() {
           host: hostPrefill.host,
           services: hostPrefill.services.map((s) => ({ ...s, published_port: null })),
         });
+        registeredCount += 1;
       }
       showToast(`Registered ${bulkHosts.length} device(s).`, "success");
       setBulkHosts(null);
       setRefreshKey((key) => key + 1);
     } catch (err) {
-      setBulkError(bulkRegisterError(err));
+      if (registeredCount > 0) {
+        // Some hosts in this batch were already registered before the
+        // failure - refresh so isAlreadyRegistered() reflects them, or a
+        // retry of the same selection would collide on their now-existing
+        // device ids instead of only retrying the one that actually failed.
+        setRefreshKey((key) => key + 1);
+      }
+      const prefix = registeredCount > 0 ? `${registeredCount} of ${bulkHosts.length} registered before this failed. ` : "";
+      setBulkError(prefix + bulkRegisterError(err));
     } finally {
       setBulkBusy(false);
     }
@@ -87,6 +98,11 @@ export function DiscoveryPage() {
 
   return (
     <Shell title="Discovery" subtitle="Sweep the network to find candidate devices">
+      {devices.error && (
+        <div className="mb-6">
+          <ErrorState message={`Could not load the registered device list: ${devices.error}. Registration status shown below may be inaccurate until this loads.`} />
+        </div>
+      )}
       <NetworkDiscoveryPanel
         devices={devices.data ?? []}
         onRegisterHost={openFormWithPrefill}

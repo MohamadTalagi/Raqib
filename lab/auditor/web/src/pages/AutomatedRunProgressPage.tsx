@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   Ban,
@@ -46,28 +46,34 @@ export function AutomatedRunProgressPage() {
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
+  // Refs, not the useScanJob.ts-style closure-local `cancelled` boolean
+  // this codebase otherwise uses for polling: handleCancel (outside the
+  // effect below) needs to be able to stop the poll loop too, which a
+  // variable scoped inside the effect's own closure can't support.
+  const cancelledRef = useRef(false);
+  const timerRef = useRef<number | undefined>(undefined);
+
   useEffect(() => {
     if (!runId) return;
-    let cancelled = false;
-    let timer: number | undefined;
+    cancelledRef.current = false;
 
     async function fetchOnce() {
       try {
         const latest = await api.getAutomatedRun(Number(runId));
-        if (cancelled) return;
+        if (cancelledRef.current) return;
         setRun(latest);
         if (IN_FLIGHT_STATUSES.has(latest.status)) {
-          timer = window.setTimeout(fetchOnce, POLL_INTERVAL_MS);
+          timerRef.current = window.setTimeout(fetchOnce, POLL_INTERVAL_MS);
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load this run.");
+        if (!cancelledRef.current) setError(err instanceof Error ? err.message : "Could not load this run.");
       }
     }
 
     fetchOnce();
     return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
+      cancelledRef.current = true;
+      window.clearTimeout(timerRef.current);
     };
   }, [runId]);
 
@@ -76,6 +82,13 @@ export function AutomatedRunProgressPage() {
     setCancelling(true);
     try {
       const updated = await api.cancelAutomatedRun(Number(runId));
+      // Stop trusting any poll response still in flight, and stop the next
+      // scheduled poll - otherwise a stale "running" response that
+      // resolves after this cancel call can overwrite `run` right back to
+      // "Running" and silently resume polling, since it would still see an
+      // in-flight status and re-arm its own timeout.
+      cancelledRef.current = true;
+      window.clearTimeout(timerRef.current);
       setRun(updated);
     } finally {
       setCancelling(false);

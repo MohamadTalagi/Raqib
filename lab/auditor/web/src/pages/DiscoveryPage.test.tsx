@@ -156,4 +156,46 @@ describe("DiscoveryPage", () => {
     expect(await screen.findByText("device_id already exists")).toBeInTheDocument();
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   });
+
+  it("shows an error banner instead of silently rendering an empty registered-device list when GET /devices fails", async () => {
+    // Regression: devices.error was fetched but never rendered - a failed
+    // GET /devices used to make every discovered host look unregistered
+    // with no indication anything had gone wrong.
+    vi.spyOn(api, "devices").mockRejectedValue(new Error("network error"));
+
+    renderPage();
+
+    expect(await screen.findByText(/could not load the registered device list/i)).toBeInTheDocument();
+    expect(screen.getByText(/network error/i)).toBeInTheDocument();
+    // The scan panel itself still renders - a failed device list shouldn't
+    // block discovery, just warn that registration status may be stale.
+    expect(screen.getByRole("button", { name: /scan network/i })).toBeInTheDocument();
+  });
+
+  it("refreshes the device list and reports the partial count when a bulk register fails partway through", async () => {
+    // Regression: a mid-batch failure never bumped refreshKey, so a retry
+    // of the same selection would collide on the hosts that already
+    // succeeded, with no indication which host actually caused the failure.
+    const scan = twoHostScan();
+    vi.spyOn(api, "createNetworkScan").mockResolvedValue({ ...scan, status: "pending", observations: null });
+    vi.spyOn(api, "getNetworkScan").mockResolvedValue(scan);
+    const devicesSpy = vi.spyOn(api, "devices").mockResolvedValue([]);
+    vi.spyOn(api, "createDevice")
+      .mockResolvedValueOnce({} as never) // first host succeeds
+      .mockRejectedValueOnce(new Error("device_id already exists")); // second fails
+
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: /scan network/i }));
+    await screen.findByText("172.30.0.50");
+
+    const callsBefore = devicesSpy.mock.calls.length;
+    await user.click(screen.getByRole("checkbox", { name: /select all registerable/i }));
+    await user.click(screen.getByRole("button", { name: /register selected \(2\)/i }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /^register$/i }));
+
+    expect(await screen.findByText(/1 of 2 registered before this failed/i)).toBeInTheDocument();
+    expect(devicesSpy.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
 });

@@ -180,6 +180,35 @@ describe("RemediationPage", () => {
     expect(reviewSpy).toHaveBeenCalledWith("RB-1", "Lead Auditor");
   });
 
+  it("stops the bulk-generate loop once the page is unmounted mid-run", async () => {
+    // Regression: handleGenerateAllMissing's loop had no unmount guard -
+    // navigating away mid-bulk-generate kept firing real generateRemediation
+    // (LLM) calls, paced 4s apart, for however many findings remained.
+    // Uses the page's own real 4s pacing delay rather than fake timers,
+    // which fought with Testing Library's own internal polling elsewhere
+    // in this suite.
+    vi.spyOn(api, "verdicts").mockResolvedValue([FAILING_VERDICT]);
+    vi.spyOn(api, "ncaAssessments").mockResolvedValue([FAILING_NCA_ASSESSMENT]);
+    vi.spyOn(api, "allRemediationBlueprints").mockResolvedValue([]); // never gains a blueprint
+    const generateSpy = vi.spyOn(api, "generateRemediation").mockResolvedValue(BLUEPRINT);
+    const user = userEvent.setup();
+    const view = renderPage();
+
+    const bulkButton = await screen.findByRole("button", { name: /generate all missing \(2\)/i });
+    await user.click(bulkButton);
+
+    await waitFor(() => expect(generateSpy.mock.calls.length).toBeGreaterThan(0), { timeout: 3000 });
+    const callsBeforeUnmount = generateSpy.mock.calls.length;
+    expect(callsBeforeUnmount).toBeLessThan(2); // still mid-loop, not both processed yet (4s pacing)
+
+    view.unmount();
+
+    // Would advance past the 4s pacing delay into the second finding's
+    // call if the loop weren't stopped.
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    expect(generateSpy.mock.calls.length).toBe(callsBeforeUnmount);
+  }, 15000);
+
   it("Generate all missing is disabled once every failing finding already has a blueprint", async () => {
     vi.spyOn(api, "verdicts").mockResolvedValue([FAILING_VERDICT]);
     vi.spyOn(api, "ncaAssessments").mockResolvedValue([]);

@@ -53,10 +53,18 @@ export function ScanConsolePage() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [lines]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   function append(...newLines: Line[]) {
     setLines((prev) => [...prev, ...newLines]);
@@ -64,7 +72,11 @@ export function ScanConsolePage() {
 
   async function pollToCompletion(jobId: number): Promise<ScanJob | null> {
     // Bounded poll (~90s) so a stuck job never hangs the console forever.
+    // mountedRef guards against navigating away mid-poll - without it this
+    // loop keeps firing requests and updating state on an unmounted page
+    // for up to the full 90s.
     for (let i = 0; i < 60; i += 1) {
+      if (!mountedRef.current) return null;
       let job: ScanJob;
       try {
         job = await api.getScanJob(jobId);
@@ -99,6 +111,7 @@ export function ScanConsolePage() {
       const created = await api.createScanJob(deviceId, testId);
       append({ kind: "system", text: `job #${created.id} queued; running on auditor-worker…` });
       const job = await pollToCompletion(created.id);
+      if (!mountedRef.current) return;
       if (!job) {
         append({ kind: "error", text: `job #${created.id} did not finish within the time limit.` });
         return;
@@ -118,9 +131,11 @@ export function ScanConsolePage() {
         });
       }
     } catch (err) {
-      append({ kind: "error", text: err instanceof ApiError ? err.message : "could not start the scan." });
+      if (mountedRef.current) {
+        append({ kind: "error", text: err instanceof ApiError ? err.message : "could not start the scan." });
+      }
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
     }
   }
 
