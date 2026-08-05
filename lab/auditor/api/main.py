@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from db import get_connection
+from id_generation import lock_id_sequence, next_sequential_id
 from device_validation import (
     TIERS,
     ValidationError,
@@ -357,10 +358,7 @@ def _row_to_assessment(row: tuple) -> dict:
 
 
 def _next_assessment_id(conn) -> str:
-    now = datetime.now(timezone.utc)
-    prefix = f"ASMT-{now:%Y-%m-%d}-"
-    existing = conn.execute("SELECT id FROM assessments WHERE id LIKE %s", (f"{prefix}%",)).fetchall()
-    return f"{prefix}{len(existing) + 1:04d}"
+    return next_sequential_id(conn, "ASMT", "assessments", "id")
 
 
 def _collector_versions_for_assessment(conn, assessment_id: str) -> list[dict]:
@@ -773,12 +771,7 @@ def patch_network_scan(scan_id: int, payload: dict):
 
 
 def _next_evidence_id(conn, now: datetime) -> str:
-    date_str = now.strftime("%Y-%m-%d")
-    prefix = f"EV-{date_str}-"
-    existing = conn.execute(
-        "SELECT evidence_id FROM evidence WHERE evidence_id LIKE %s", (f"{prefix}%",)
-    ).fetchall()
-    return f"{prefix}{len(existing) + 1:04d}"
+    return next_sequential_id(conn, "EV", "evidence", "evidence_id", now)
 
 
 def _write_raw_output(evidence_id: str, raw_output: str) -> tuple[str, str]:
@@ -1042,6 +1035,13 @@ def recompute_verdicts():
 
         now = datetime.now(timezone.utc)
         date_str = now.strftime("%Y-%m-%d")
+        # Held for the rest of this transaction (released at conn.commit()
+        # below) so this whole batch's verdict ids can never collide with
+        # another concurrent request generating verdict ids for the same
+        # date - see id_generation.py. The counted-once/incremented-locally
+        # loop below stays as-is; only the id sequence itself needs
+        # serializing, not every individual insert.
+        lock_id_sequence(conn, "verdicts")
         existing_count = conn.execute(
             "SELECT COUNT(*) FROM verdicts WHERE verdict_id LIKE %s", (f"VD-{date_str}-%",)
         ).fetchone()[0]
@@ -1155,6 +1155,11 @@ def assess_control_verdict(device_id: str, control_id: str, payload: dict | None
 
         now = datetime.now(timezone.utc)
         date_str = now.strftime("%Y-%m-%d")
+        # Same lock key as recompute_verdicts' own verdict-id generation
+        # above - the two code paths must serialize against each other,
+        # not just against themselves, since both mint ids from the same
+        # VD-<date>- sequence.
+        lock_id_sequence(conn, "verdicts")
         seq = conn.execute(
             "SELECT COUNT(*) FROM verdicts WHERE verdict_id LIKE %s", (f"VD-{date_str}-%",)
         ).fetchone()[0] + 1
@@ -1558,12 +1563,7 @@ def _device_row(conn, device_id: str) -> dict | None:
 
 
 def _next_report_id(conn, now: datetime) -> str:
-    date_str = now.strftime("%Y-%m-%d")
-    prefix = f"RPT-{date_str}-"
-    existing = conn.execute(
-        "SELECT id FROM report_records WHERE id LIKE %s", (f"{prefix}%",)
-    ).fetchall()
-    return f"{prefix}{len(existing) + 1:04d}"
+    return next_sequential_id(conn, "RPT", "report_records", "id", now)
 
 
 def _record_report_generated(conn, device_id: str, fmt: str) -> None:

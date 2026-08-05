@@ -21,6 +21,7 @@ import yaml
 from fastapi import APIRouter, HTTPException
 
 from db import get_connection
+from id_generation import next_sequential_id
 from remediation_engine import generate_remediation_blueprint
 
 router = APIRouter(prefix="/remediation", tags=["remediation"])
@@ -54,12 +55,7 @@ def _row_to_blueprint(row) -> dict:
 
 
 def _next_id(conn) -> str:
-    now = datetime.now(timezone.utc)
-    prefix = f"RB-{now:%Y-%m-%d}-"
-    existing = conn.execute(
-        "SELECT id FROM remediation_blueprints WHERE id LIKE %s", (f"{prefix}%",)
-    ).fetchall()
-    return f"{prefix}{len(existing) + 1:04d}"
+    return next_sequential_id(conn, "RB", "remediation_blueprints", "id")
 
 
 def _load_sa_iot_control(control_id: str) -> dict:

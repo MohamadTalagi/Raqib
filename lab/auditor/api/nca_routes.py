@@ -30,6 +30,7 @@ from fastapi.responses import Response
 
 from db import get_connection
 from device_validation import ValidationError
+from id_generation import next_sequential_id
 from nca_report import build_nca_executive_report_model, render_nca_executive_report_pdf
 from policies.nca.compliance_text import (
     DISCLAIMER,
@@ -160,12 +161,7 @@ def _row_to_compliance_evidence(row) -> dict:
 
 
 def _next_id(conn, prefix: str, table: str, id_column: str) -> str:
-    now = datetime.now(timezone.utc)
-    full_prefix = f"{prefix}-{now:%Y-%m-%d}-"
-    existing = conn.execute(
-        f"SELECT {id_column} FROM {table} WHERE {id_column} LIKE %s", (f"{full_prefix}%",)
-    ).fetchall()
-    return f"{full_prefix}{len(existing) + 1:04d}"
+    return next_sequential_id(conn, prefix, table, id_column)
 
 
 def _expired_assessment_ids(conn, assessment_ids: list[str]) -> set[str]:
