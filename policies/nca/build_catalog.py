@@ -86,7 +86,24 @@ CLOUD_GUIDELINES = {"4-2-1", "4-2-2", "4-2-3", "4-2-4", "4-2-5"}
 # mark any as optional), severity defaults to "medium" except where a
 # concrete, well-known device weakness is at stake.
 HIGH_SEVERITY_GUIDELINES = {
-    "2-2-2", "2-4-3", "2-7-1", "2-7-2", "2-9-1", "2-9-2", "2-15-1", "2-15-2",
+    "2-2-2", "2-4-3", "2-7-1", "2-7-2", "2-15-2",
+}
+
+# The severity tier above "high": serious enough that a high aggregate
+# score alone should not read as an outright "Passed" readiness
+# classification (see evaluator.py::overall_classification's
+# critical_failure_rows check), but deliberately not part of
+# BLOCKING_GUIDELINES below - those are severe enough to force FAILED
+# regardless of score; this tier downgrades PASSED to PARTIALLY_PASSED
+# instead. IoTGuard's own judgment call, same authoring convention as
+# HIGH_SEVERITY_GUIDELINES/BLOCKING_GUIDELINES: unpatched known
+# vulnerabilities (2-9-1/2-9-2) and a missing secure-boot/root-of-trust
+# chain (2-15-1) are each, on their own, a real-world exploitation path
+# that a device's other passing controls don't mitigate.
+CRITICAL_SEVERITY_GUIDELINES = {
+    "2-9-1",   # vulnerability identification
+    "2-9-2",   # vulnerability remediation
+    "2-15-1",  # secure boot / root of trust
 }
 
 # Guidelines whose FAILURE alone forces the overall device readiness
@@ -129,6 +146,8 @@ def _scope_and_assessment(guideline_id: str) -> tuple[str, str]:
 
 
 def _severity(guideline_id: str) -> str:
+    if guideline_id in CRITICAL_SEVERITY_GUIDELINES:
+        return "critical"
     return "high" if guideline_id in HIGH_SEVERITY_GUIDELINES else "medium"
 
 

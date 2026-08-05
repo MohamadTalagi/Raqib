@@ -86,6 +86,27 @@ def test_every_entry_has_framework_metadata_and_required_fields():
         assert isinstance(entry["enabled"], bool)
 
 
+def test_critical_severity_is_reachable_and_disjoint_from_high():
+    # _severity() used to only ever return "high"/"medium" - no real
+    # guideline was ever "critical", which made
+    # evaluator.py::overall_classification's critical-failure-downgrade
+    # branch (Passed -> Partially Passed) permanently dead code against
+    # real data. These 3 are IoTGuard's own judgment call (see
+    # build_catalog.py's CRITICAL_SEVERITY_GUIDELINES docstring) - serious
+    # enough to downgrade a high score, but deliberately not part of
+    # BLOCKING_GUIDELINES (which forces FAILED outright).
+    catalog = build_catalog()
+    by_id = {g["guideline_id"]: g for g in catalog}
+    for guideline_id in ("2-9-1", "2-9-2", "2-15-1"):
+        assert by_id[guideline_id]["severity"] == "critical"
+    # A representative high-severity guideline is unaffected by the change.
+    assert by_id["2-2-2"]["severity"] == "high"
+    # No guideline is ever double-classified across tiers.
+    critical_ids = {g["guideline_id"] for g in catalog if g["severity"] == "critical"}
+    high_ids = {g["guideline_id"] for g in catalog if g["severity"] == "high"}
+    assert critical_ids.isdisjoint(high_ids)
+
+
 def test_known_device_testable_guideline_is_classified_correctly():
     catalog = build_catalog()
     by_id = {g["guideline_id"]: g for g in catalog}

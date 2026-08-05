@@ -373,6 +373,24 @@ def test_classification_partially_passed_when_high_score_but_critical_failure():
     assert result["critical_failure_control_ids"] == ["crit"]
 
 
+def test_classification_partially_passed_when_a_real_critical_guideline_fails():
+    # Same scenario as the hand-constructed test above, but proving the
+    # whole real path (catalog -> evaluator) together: 2-9-1 is one of
+    # build_catalog.py's real CRITICAL_SEVERITY_GUIDELINES, not a synthetic
+    # severity value a test invented. Before that catalog fix, no real
+    # guideline_id could ever exercise this branch.
+    from policies.nca.build_catalog import build_catalog
+
+    catalog = {g["guideline_id"]: g for g in build_catalog()}
+    assert catalog["2-9-1"]["severity"] == "critical"
+
+    rows = [_row(control_id=f"c{i}", status="pass") for i in range(9)]
+    rows.append(_row(control_id="NCA-CGIoT-1_2024-2-9-1", status="fail", severity=catalog["2-9-1"]["severity"]))
+    result = overall_classification(rows)
+    assert result["classification"] == "partially_passed"
+    assert result["critical_failure_control_ids"] == ["NCA-CGIoT-1_2024-2-9-1"]
+
+
 def test_classification_failed_when_score_below_partial_threshold():
     rows = [_row(control_id="a", status="pass"), _row(control_id="b", status="fail")]
     result = overall_classification(rows)  # 50% score, but partial_threshold default is 50 -> not below
