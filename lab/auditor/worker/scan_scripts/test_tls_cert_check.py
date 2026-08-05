@@ -43,6 +43,17 @@ def test_classify_protocol_probe_treats_an_unrecognized_flag_as_untestable():
     assert classify_protocol_probe(output) == "untestable"
 
 
+def test_classify_protocol_probe_treats_a_connection_failure_as_untestable_not_rejected():
+    # A connection-level failure (target unreachable/connection refused)
+    # never got far enough to ask the server anything about this specific
+    # protocol version - conflating it with "rejected" (the server actively
+    # declined) is the same misclassification a network timeout used to
+    # produce below. "connect:errno" is openssl's own real error text on
+    # this project's Linux worker image.
+    output = "4045B2E67F000000:error:...:connect:errno=111\n"
+    assert classify_protocol_probe(output) == "untestable"
+
+
 def test_probe_protocols_runs_all_four_candidates_in_order():
     calls = []
 
@@ -59,14 +70,18 @@ def test_probe_protocols_runs_all_four_candidates_in_order():
     ]
 
 
-def test_probe_protocols_reports_a_timeout_as_rejected_not_a_crash():
+def test_probe_protocols_reports_a_timeout_as_untestable_not_rejected():
+    # Regression: a network hang used to be reported as "rejected" - the
+    # exact "the server explicitly declined" claim this module's own
+    # docstring says must never be made about a probe that got no answer
+    # at all.
     def fake_run(command, **kwargs):
         raise subprocess.TimeoutExpired(cmd=command, timeout=8)
 
     with patch("subprocess.run", side_effect=fake_run):
         results = _probe_protocols("device-hardened", "443")
 
-    assert all(outcome == "rejected" for _, outcome in results)
+    assert all(outcome == "untestable" for _, outcome in results)
 
 
 def test_main_prints_a_delimited_probe_block(capsys):

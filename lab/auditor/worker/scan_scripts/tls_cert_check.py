@@ -60,9 +60,21 @@ def classify_protocol_probe(output: str) -> str:
     Matches the exact same string-based approach _parse_tls_observations
     already uses for the default handshake (no returncode check - a `-brief`
     handshake given no stdin can exit non-zero even on a real successful
-    negotiation, since the server sees EOF and closes first)."""
+    negotiation, since the server sees EOF and closes first).
+
+    A connection-level failure (target unreachable, connection refused) is
+    also "untestable", not "rejected" - the probe never got far enough to
+    ask the server anything about this protocol version at all, which is a
+    different, honest state from the server explicitly negotiating some
+    other version instead. "connect:errno" is openssl's own real error
+    string on a failed connect() in this project's Linux worker image."""
     lowered = output.lower()
-    if "no protocols available" in lowered or "unknown option" in lowered or "invalid command" in lowered:
+    if (
+        "no protocols available" in lowered
+        or "unknown option" in lowered
+        or "invalid command" in lowered
+        or "connect:errno" in lowered
+    ):
         return "untestable"
     if "protocol version:" in lowered:
         return "accepted"
@@ -79,7 +91,12 @@ def _probe_protocols(host: str, port: str) -> list[tuple[str, str]]:
             )
             outcome = classify_protocol_probe(attempt.stdout + attempt.stderr)
         except subprocess.TimeoutExpired:
-            outcome = "rejected"
+            # A network hang is not "the server rejected this version" - the
+            # probe simply never got an answer at all, the same honest
+            # "untestable" state as a connection failure or a client-side
+            # limitation above, not the stronger claim that a response was
+            # observed and it declined this specific version.
+            outcome = "untestable"
         results.append((label, outcome))
     return results
 
