@@ -82,3 +82,19 @@ didn't.
 Caught the same way as ERR-024 — inspecting the real `POST
 /verdicts/recompute` response against the live dev database, not just
 trusting a green unit-test run.
+
+## Later note (2026-08-06) — the worked example changed, the rule did not
+
+This writeup's running example, `SA-IOT-001` / `TEST-DEVICE-ID`, is no
+longer an instance of the problem: `TEST-DEVICE-ID` gained a real
+`SCAN_CATALOG` collector with the device-identity auto-detection feature, so
+`SA-IOT-001` now resolves through the ordinary service-matching path — and a
+device with no HTTP service correctly *does* become `NOT_APPLICABLE` for it,
+which is what that control's own `limitations` field always specified. The
+text above is left as written; it is an accurate point-in-time record.
+
+The fix itself is unchanged and still load-bearing for the next control
+authored before its collector exists. Its regression test was rewritten to
+use a synthetic uncollected test_id rather than SA-IOT-001, precisely so the
+rule stays covered independently of which real control happens to illustrate
+it (`policies/engine/test_policy_engine.py`).

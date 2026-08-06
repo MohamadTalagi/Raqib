@@ -206,10 +206,16 @@ format). In summary:
 
 - **SA-IOT-001** (device identification): only checks that a device-info
   endpoint discloses vendor/model/firmware — doesn't verify the values are
-  accurate. `TEST-DEVICE-ID` has no automated collector wired into
-  `SCAN_CATALOG` at all yet, so this control is never automatically
-  evaluated in practice; it stays unassessed (not `NOT_APPLICABLE` — see
-  below) until a real collector is built for it.
+  accurate, doesn't check MAC disclosure, and doesn't cover devices with no
+  HTTP service. `TEST-DEVICE-ID` **now has a real `SCAN_CATALOG` collector**
+  (a curl read of `GET /api/device/info`), added with the device-identity
+  auto-detection feature; before that it had none, and this control was
+  never automatically evaluated in practice for the entire prior life of the
+  project. Two consequences worth knowing: a device with an HTTP/HTTPS
+  service is now genuinely evaluable, and a registered device with *no*
+  HTTP/HTTPS service now correctly resolves to `NOT_APPLICABLE` rather than
+  staying unassessed — which is what this control's own `limitations` field
+  always said should happen.
 - **SA-IOT-002** (default credentials): only tries 10 commonly documented
   default pairs against an HTTP(S) login form — no brute force, no
   SSH/Telnet/MQTT credential checking.

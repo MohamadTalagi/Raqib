@@ -12,7 +12,120 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Rebrand to "Raqib" + a new KAUSTify color theme + a new
+**Phase:** **Device-Fingerprint CVE Lookup — device identity auto-detection
+(`TEST-DEVICE-ID`) + device-level NVD CVE matching with no firmware image
+required (`TEST-DEVICE-CVE-LOOKUP`) — COMPLETE** (2026-08-06). Executed from
+the full design in `handoff.txt`, written earlier the same day by a
+planning-only session. The owner's original framing: *"currently users are
+expected to upload their own firmware for CVE assessment. This is kinda
+counter intuitive and most auditors wont have a firmware file on-hand."* The
+literal ask (web-based firmware grabbing) was declined with reasons and a
+better technique agreed instead — match vendor+model+firmware-version against
+**real NVD data by CPE**, the same technique Shodan/Vulners/cve-search use.
+Full architecture, the live-verified CPE table, and the honest limitations:
+`docs/vulnerability-intelligence.md`'s new "Device-level CVE lookup" section.
+
+- **The plan was audited before being implemented, not just executed**, and 9
+  real defects/omissions were found and recorded in a new `handoff.txt` §11
+  (which is now authoritative wherever it contradicts §5-§10). Most of the
+  plan held up exactly; these did not:
+  - **One would have shipped a feature that cannot run in its own headline
+    case.** The plan assigned `TEST-DEVICE-CVE-LOOKUP` `CATEGORY_FIRMWARE` to
+    inherit "no live target" handling, claiming "zero changes needed to
+    main.py's scan-job creation logic". But `_create_scan_job`'s firmware
+    branch hard-400s with *"device has no firmware uploaded"* — so a
+    firmware-less device, the entire point of the feature, could never create
+    the job. Fixed with a third test class, `CATEGORY_DEVICE_INTEL` +
+    `is_device_intel_test()`, alongside the existing firmware and
+    network-discovery ones (registered-device is the only precondition). A
+    regression test pins it.
+  - **Three existing tests and five doc comments encode "TEST-DEVICE-ID has
+    no collector" as a deliberate, regression-locked fact** — unmentioned by
+    the plan. Two would have failed outright. Updated, with the
+    `docs/errors/025` regression rewritten to use a synthetic uncollected
+    test_id so the rule it protects stays covered independently of which real
+    control happens to illustrate it.
+  - The plan's fixture table listed **7 (vendor, model) pairs; there are 8** —
+    `device-insecure` is `DS-2CD2143G2-I` but `device-partial` is
+    `DS-2CD2143G2-IU`, a different product with a different CPE.
+  - `lib/pipeline.ts` was never mentioned: a device with only device-level CVE
+    evidence would still have shown "Fingerprinting" as its furthest phase.
+  - The Fully Automated Run was never mentioned: `_run_vuln_intelligence`
+    skipped every device without firmware, so the owner's own one-click flow
+    would never have exercised the headline capability.
+  - The plan's live-verification step demanded exact CVE IDs from
+    `docs/device-vendor-realism.md` come back; live data disagrees (NVD
+    attaches e.g. Sonos's cited CVEs to different CPEs), so that acceptance
+    criterion was rewritten rather than fudged.
+- **Every CPE was verified individually against the live NVD API before being
+  written down — and the obvious convention turned out to be wrong.** The
+  plan's `{vendor}:{product}_firmware` guesses were placeholders for exactly
+  this reason. Real results: Axis M3216-LVE is catalogued only as **hardware**
+  (`h:axis:m3216-lve`, no firmware product at all — yet 6 real CVEs, which is
+  why the stored value carries the CPE *part*); Yale's NVD vendor is
+  `assaabloy`, Schneider's is `schneider-electric`; Hikvision's product string
+  carries NVD's own backslash escaping (`ds-2cd2143g2-i\(s\)_firmware`). And
+  **Dahua's NVR4108-8P has no NVD CPE coverage at all** (confirmed three ways),
+  so it is deliberately omitted — making `device-nvr` the lab's live, in-product
+  demonstration of the honest `cpe_matched: false` / "a gap, not a clean bill of
+  health" path rather than a hole in the feature.
+- **NVD access facts measured, not assumed** (12 real calls): no API key needed,
+  the default `python-requests` UA is served normally (unlike IEEE's OUI
+  registry — its WAF workaround was deliberately NOT copied), ~6s spacing draws
+  no rate limiting. `NVD_API_KEY` is supported but never required.
+- **`TEST-DEVICE-ID` finally makes SA-IOT-001 evaluable** — it had referenced
+  that test_id since Day 3 with no collector anywhere, independently documented
+  as a gap in `docs/known-limitations.md` and in `main.py`'s own comment. Live
+  recompute now returns 8 real PASS verdicts and 3 correct `NOT_APPLICABLE`
+  (the MQTT-broker/telnet-only devices with no HTTP service) — the latter being
+  exactly what SA-IOT-001.yaml's own `limitations` field always specified, so a
+  deliberate behaviour change, called out rather than left to look accidental.
+- **New migration `016-device-identity-auto-detect.sql`** (+ `init.sql` mirror):
+  `devices.firmware_version` (what the device reports about itself, distinct
+  from the existing upload-metadata columns) and `identity_source`
+  (`manual`/`auto_detected`). The auto-populate hook in
+  `record_scan_job_evidence` only ever fills a row where all three identity
+  fields are NULL, never overwrites, and `identity_source` is deliberately NOT
+  in `PATCHABLE_DEVICE_FIELDS` — editing any identity field by hand resets it to
+  `manual` in the same statement, so the dashboard's "auto-detected, not
+  auditor-verified" badge can't be made to lie.
+- **Verified live end to end against the real running stack, not just unit
+  tests**: `TEST-DEVICE-ID` run against all 8 fixtures, each returning its exact
+  real vendor/model/firmware and auto-populating the DB with
+  `identity_source=auto_detected`; a real `PATCH` then proved a human's value
+  survives a second run untouched and correctly flips provenance back to
+  `manual`; a real NVD refresh inside the worker cached **169 real CVEs across 7
+  products** with real CISA-KEV cross-referencing (CVE-2021-36260 for Hikvision
+  and CVE-2016-6277 for Netgear both correctly KEV-flagged); `TEST-DEVICE-CVE-LOOKUP`
+  run against all 8 devices with real results (139 CVEs for the Netgear R7000, 16
+  for the Modicon M221, and the honest no-CPE result for `device-nvr`); a real
+  scoped Fully Automated Run reported `device_cve_devices_scanned: 1` with
+  `vuln_intel_devices_scanned: 0` (no firmware) and zero errors; and a real
+  browser (headless Playwright — the Claude-in-Chrome extension was not connected
+  this session, noted rather than claimed) confirmed the Vulnerability
+  Intelligence page renders 139 real CVEs with a KEV badge for a device whose
+  firmware-upload control is still sitting there empty, `device-nvr`'s honest-gap
+  text, and the `auto-detected` badge on all three identity fields of the device
+  detail page.
+- **Environment note for the next session**: the `auditor-db-data` volume found
+  on this host predated migrations 009/011/013/014/015 (5 tables missing) and
+  `auditor-api` could not start against it. It was backed up with `pg_dump` and
+  recreated from `init.sql`. Only 6 devices are in `policies/engine/seed_devices.py`
+  — the 5 newer fixtures (smart-lock, plc-gateway, router-gw, nvr, speaker) must
+  still be registered via the API after a fresh volume.
+- **Regression**: 438 `policies` (+10) + 177 `lab/auditor/worker` in-container
+  (+21) + 362 `lab/auditor/api` (4 WeasyPrint-dependent tests skipped on this
+  Windows host, the same long-standing native-library gap) + 344 frontend tests
+  (54 files) all passing; `tsc -b --force` clean, `oxlint` clean (same 6
+  pre-existing warnings, none in a touched file). `auditor-api`/`auditor-web`
+  rebuilt (baked-in code), `auditor-worker` restarted (bind-mounted).
+- **Docs**: `docs/vulnerability-intelligence.md`'s own scoped-out limitation
+  marked CLOSED with a new section covering the design and its real limits;
+  `docs/known-limitations.md`'s SA-IOT-001 entry rewritten; a dated "the worked
+  example changed, the rule did not" note appended to `docs/errors/025` rather
+  than rewriting a point-in-time record; `handoff.txt` §11; this entry.
+
+Before that: **Rebrand to "Raqib" + a new KAUSTify color theme + a new
 minimal Home page — COMPLETE** (2026-08-06). The owner asked for four
 related `auditor-web` frontend changes: rename the product from "IoTGuard"
 to "Raqib" everywhere a user sees it; add a Color Theme switcher that keeps
@@ -2623,6 +2736,8 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-06 | **The 3 camera fixtures' display names changed from posture labels to their real product identity** (`policies/engine/seed_devices.py` + the live dev DB via `PATCH /devices/{id}`), ahead of a mentor demo. "Smart Camera — Insecure/Partially Hardened/Hardened" → "Hikvision DS-2CD2143G2-I" / "Hikvision DS-2CD2143G2-IU" / "Axis M3216-LVE", with the vulnerability-enumerating descriptions ("Default creds, plain HTTP, Telnet, unencrypted MQTT, hard-coded API key.") replaced by neutral product descriptions. The owner's own choice between three offered schemes: an assessment should have to **discover** a device's posture from evidence rather than read it off the inventory label - closer to a real engagement, where nothing arrives pre-labelled "insecure". **`device_id`s are deliberately unchanged** (`device-insecure`/`-partial`/`-hardened`): they are load-bearing - committed Day-2 evidence, verdicts and `document-store/raw/*.txt` all join on those exact strings, and they are the Docker service names - so renaming them would orphan the audit trail. Same UI-facing-text-only scope as the Raqib rebrand. `tier` is also unchanged, so no classification, verdict or risk logic is affected; confirmed by re-running the seed, report-smoke and devices-summary suites. Known cosmetic leak, stated rather than glossed: every device card still shows its `device_id` in monospace beside the display name, so the posture is inferable there - removing that would mean breaking the evidence join. The two MQTT brokers still carry "— Insecure"/"— Secure" labels; out of scope for this pass. |
+| 2026-08-06 | **Device-Fingerprint CVE Lookup — `TEST-DEVICE-ID` (device identity auto-detection) + `TEST-DEVICE-CVE-LOOKUP` (device-level NVD CVE matching, no firmware image required)** — see §0 for the full breakdown and `docs/vulnerability-intelligence.md`'s new "Device-level CVE lookup" section for the architecture and its real limits. Implemented from `handoff.txt`'s complete design, which was **audited against the real repo and the live NVD API before any code was written** - 9 real defects/omissions found and recorded in a new authoritative `handoff.txt` §11. The most serious: the plan's recommendation to give the new test `CATEGORY_FIRMWARE` would have shipped a feature that cannot run in its own headline case, because `_create_scan_job`'s firmware branch 400s any device with no firmware uploaded - fixed with a third test class (`CATEGORY_DEVICE_INTEL`/`is_device_intel_test()`). Also unmentioned by the plan: three existing tests that regression-lock "TEST-DEVICE-ID has no collector" (two would have failed), an 8th distinct (vendor, model) pair (`device-partial` is `DS-2CD2143G2-IU`, not `-I`), `lib/pipeline.ts`'s phase computation, and the Fully Automated Run's own vuln-intel stage. Every CPE was verified individually against the live NVD dictionary and the naive `{vendor}:{product}_firmware` convention turned out to be wrong three ways (Axis is hardware-only with no firmware CPE at all yet 6 real CVEs; Yale's NVD vendor is `assaabloy` and Schneider's is `schneider-electric`; Dahua's NVR4108-8P has no CPE coverage whatsoever and is deliberately omitted, making `device-nvr` the live in-product demonstration of the honest "no CPE mapping - a gap, not a clean bill of health" path). New migration 016 adds `devices.firmware_version`/`identity_source`; the auto-populate hook in `record_scan_job_evidence` only ever fills an all-NULL identity and never overwrites a human, and `identity_source` is deliberately not PATCHable so the "auto-detected, not auditor-verified" badge can't be made to lie. **SA-IOT-001 is now automatically evaluable for the first time in this project's life** (it referenced TEST-DEVICE-ID since Day 3 with no collector) - 8 real PASS verdicts plus 3 correct NOT_APPLICABLE for the devices with no HTTP service, exactly as that control's own `limitations` field always specified. Verified live end to end against the real stack: all 8 fixtures identified, a real PATCH proving non-overwrite, a real NVD refresh caching 169 real CVEs across 7 products with real CISA-KEV flags, all 8 devices scanned, a real Fully Automated Run reporting `device_cve_devices_scanned: 1` / `vuln_intel_devices_scanned: 0` with zero errors, and a real browser (headless Playwright; the Claude-in-Chrome extension wasn't connected, noted rather than claimed) showing 139 real CVEs for a device whose firmware-upload control is still empty. 438 `policies` + 177 `lab/auditor/worker` in-container + 362 `lab/auditor/api` (4 WeasyPrint tests skipped, pre-existing host gap) + 344 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-06 | **Rebrand to "Raqib" + a new KAUSTify color theme + a new minimal Home page** — see §0 for the full breakdown. 4 owner-requested `auditor-web` changes in one pass: (1) renamed the product from "IoTGuard" to "Raqib" in every UI-facing string (sidebar/topbar, browser title, Scan Console banner, Remediation subtitle/tooltip, the Executive Summary PDF/HTML report) - internal identifiers/filenames/docs deliberately left untouched, confirmed by grep. (2) A new, independent Color Theme toggle (`lib/useColorScheme.ts`, mirrors `lib/useTheme.ts`'s own pattern exactly) adds "KAUSTify" alongside today's "Default" scheme - 4 new `--color-phase-*` CSS vars (`index.css`) default to the existing brand amber (zero change under Default) and only resolve to KAUST's real 4 brand colors (`#00A5AA`/`#CCCC42`/`#F4B636`/`#F89131`) under KAUSTify; a new `lib/phaseTheme.ts` splits the 10-stage pipeline into 4 color-coded groups by phase (Discovery/Compliance/Intelligence/Solution), reused by the Sidebar's per-item color dots, a new `Shell`/`TopBar` `phase` prop (colored top border on all 10 pipeline pages), and Overview (3 of 4 stat tiles + one card tinted, with the "Failing verdicts" severity tile correctly staying red always, never phase-tinted). Deliberately scoped to UI chrome, never recharts series colors. (3) New minimal `pages/HomePage.tsx` at `/` - 3 action cards (manual run → Fingerprinting, automated run → the existing `AutomatedRunDialog`, view devices → Devices) plus one thin fleet-stat line, no gauges/charts. (4) The existing dashboard, unchanged, moved to `/overview` and renamed "Overview" in the sidebar's first group (now "Start"), one slot below the new Home item. One real bug caught by this session's own new Sidebar test (two `render()` calls without an `unmount()` between them) during verification, fixed with a regression-safe rewrite. `tsc -b --force`/`oxlint` clean, full Vitest suite 332/332 passing in an isolated run (a first parallel run's 14-16 failures confirmed pre-existing host flakes, not regressions, matching this project's own established diagnostic pattern), `vite build` succeeds. Rebuilt and redeployed the real `auditor-web` Docker image; confirmed live in a real browser (Claude-in-Chrome) against real fleet data - the Home page, all 4 KAUSTify colors across Home/Overview/Sidebar/a pipeline page's top border, and both dark×KAUSTify/light×KAUSTify contrast, all confirmed correct (`--color-brand` verified via `getComputedStyle`, not just visually). |
 | 2026-08-04 | **Device vendor realism — all 6 lab device fixtures reskinned from fictional vendors (AcmeCam/BoltGuard/IndustraLink/NetCore/ViewKeep/VoxHome) to real, market-relevant products** — see §0 for the full breakdown and `docs/device-vendor-realism.md` for per-device CVE citations and the honesty disclaimers. Owner asked to assess the lab's device realism and find real vendor analogs; research grounded 7 real vendors (Hikvision/Axis Communications split across the camera's 3 postures, Yale, Schneider Electric, Netgear, Dahua, Sonos) in real, documented public CVEs. Scope deliberately bounded to identity + protocol-level signal (vendor/model/firmware, Telnet/SSDP/UPnP/mDNS/RTSP banners, a new real Modbus function-code-0x2B device-identification feature, confirmed live via a direct pymodbus client call - an initial claim that this would also close a previously-documented `modbus-discover` "no data" gap was caught wrong by live verification and corrected: nmap's script gates the 0x2B read behind a working function-0x11 response pymodbus's server never provides, so that specific gap remains open) - not a full REST API-shape rewrite, named as a deliberate limitation since `scan_tests.py`'s collectors already parse generically by banner/port/protocol. `device_id`/container names and all classification/compliance logic confirmed vendor-agnostic before any edit. Real IEEE OUI prefixes (verified against the public registry, never invented) given to every device's self-reported MAC, documented as cosmetic since the real network-discovery OUI lookup only ever resolves nmap's ARP-discovered Docker-virtual MAC. Two cross-package "real captured shape" test fixtures (UPnP, mDNS) re-captured live from the rebuilt responders rather than hand-typed. Historical `document-store/raw/*.txt` evidence showing the old fictional vendors is deliberately left untouched (append-only), with a dated cutover note added to the rewritten `docs/architecture/device-inventory.md`. Added a small in-app "simulated device, not affiliated" disclaimer to every device. 56 per-device fixture tests + 300 `policies/catalog`+`policies/nca` tests + 334/337 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 315/315 frontend tests (isolated run) passing, `tsc -b`/`oxlint` clean. Full live verification against a rebuilt 16-container stack: every device's real identity surface (Telnet/SSDP/mDNS/RTSP/Modbus, plus the real `broadcast-upnp-info` NSE script byte-matching the updated fixture) directly probed and confirmed; a real network-discovery sweep and two real scan jobs recorded genuine fresh evidence (`EV-2026-08-04-0001`/`-0002`) carrying the new identity end to end; caught and fixed a real live-only-visible gap (every device's DB-stored `display_name`/inventory `vendor`/`model` still showed the old names or null) via real `PATCH /devices/{id}` calls, confirmed in an actual browser afterward. |
 | 2026-08-03 | **Network Discovery precision & scale hardening — all 4 tasks COMPLETE**, each its own independently-live-verified commit (`e0f58b0`, `a1c3be4`, `4702d78`, `2fc8283`). See §0 for the full per-task breakdown and `docs/superpowers/plans/2026-08-03-network-discovery-precision-and-scale.md` (every checklist item now checked off with its real outcome). Origin: a code-review pass on `TEST-NET-DISCOVERY` flagged a Telnet/SSH classification-confidence conflation, a hardcoded 90s timeout that can't survive the /16-sized subnets the platform's own just-shipped "adjustable subnets" feature (`984864f`) allows, and three named gaps. (1) Telnet-open now gets `confidence: "medium"`, SSH-only stays `"low"`. (2) MAC address + a maintained IEEE OUI-registry lookup (`oui_lookup.py`, mirrors `cisa_kev.py`) - a real live-caught finding: the registry's front-end 418s on the default `requests` User-Agent (a WAF bot-block), fixed with a browser-shaped header; also caught and fixed a real pre-existing test gap (`NetworkDiscoveryPanel.test.tsx` never wrapped the panel in a Router, masked until this session's live stack made its unmocked fetch start succeeding). (3) `broadcast-upnp-info`/`broadcast-dns-service-discovery` folded into the sweep for UDP-only devices - live-first verification surfaced two real, unplanned fixture bugs: neither `device-router-gw`'s SSDP responder nor `device-speaker`'s mDNS responder ever joined its multicast group (zero response to a real broadcast query despite unicast probes already working), and `device-router-gw`'s SSDP `LOCATION` header echoed the requester's address instead of its own with no `/description.xml` endpoint to serve anyway - both fixed, the real UPnP discovery flow now works end to end; mDNS/DNS-SD enumeration honestly documented as not live-verifiable against this lab's intentionally minimal mDNS fixture. (4) Two-phase discovery (Stage A fast `-sn` sweep finds live hosts, Stage B `-sV` scan targets only those) makes the /16 scope ceiling practical - **a live large-scope verification attempt surfaced a real, only partially understood anomaly** (`docs/errors/033`): an unrouted RFC1918 proxy range caused a real Stage A job timeout against the first-draft estimate, and a smaller isolated check of the same range showed every address falsely "up" (likely a Docker Desktop host-networking artifact, not conclusively root-caused) - responded by substantially raising the timeout constants from this real data rather than a confident recalculation, then re-verified the real audit-network `/24` case still reproduces the pre-Task-4 sweep exactly; what remains genuinely unverified is stated plainly rather than implied as settled. 414 `policies` + 333 `lab/auditor/worker`-in-container + 334 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 315 frontend tests passing, `tsc -b`/`oxlint` clean. |
