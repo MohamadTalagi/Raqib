@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export type Theme = "dark" | "light";
 
-const STORAGE_KEY = "iotguard-theme";
+const STORAGE_KEY = "raqib-theme";
 
 function readStoredTheme(): Theme {
   return localStorage.getItem(STORAGE_KEY) === "light" ? "light" : "dark";

@@ -33,7 +33,7 @@ const LINE_CLASS: Record<LineKind, string> = {
 };
 
 const WELCOME: Line[] = [
-  { kind: "system", text: "IoTGuard scan console — whitelisted catalog scans only, not a shell." },
+  { kind: "system", text: "Raqib scan console — whitelisted catalog scans only, not a shell." },
   { kind: "system", text: "Type `help` for commands, `list tests`, or `list devices` to get started." },
 ];
 

@@ -4,15 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IoTGuard — NCA Compliance Dashboard</title>
+    <title>Raqib — NCA Compliance Dashboard</title>
     <script>
       // Applied before first paint so the page never flashes the wrong
-      // theme while React hydrates - useTheme.ts is the source of truth
-      // for this key/attribute, kept in sync there.
+      // theme/color-scheme while React hydrates - useTheme.ts/
+      // useColorScheme.ts are the source of truth for these keys/
+      // attributes, kept in sync here.
       (function () {
-        var stored = localStorage.getItem("iotguard-theme");
+        var stored = localStorage.getItem("raqib-theme");
         if (stored === "light") {
           document.documentElement.setAttribute("data-theme", "light");
+        }
+        var scheme = localStorage.getItem("raqib-color-scheme");
+        if (scheme === "kaustify") {
+          document.documentElement.setAttribute("data-color-scheme", "kaustify");
         }
       })();
     </script>

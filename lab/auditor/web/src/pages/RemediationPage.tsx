@@ -154,7 +154,8 @@ export function RemediationPage() {
   return (
     <Shell
       title="Remediation"
-      subtitle="AI-assisted remediation guidance per finding (IoTGuard Stage 07)"
+      subtitle="AI-assisted remediation guidance per finding (Raqib Stage 07)"
+      phase="solution"
     >
       <div className="space-y-6">
         <Card>
