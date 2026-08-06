@@ -37,6 +37,7 @@ from policies.catalog.scan_tests import (
     SCAN_CATALOG,
     configure_active_scopes,
     is_applicable,
+    is_device_intel_test,
     is_firmware_test,
     is_network_discovery_test,
     suggest_finding_and_confidence,
@@ -267,6 +268,22 @@ def _create_scan_job(conn, device_id: str, test_id: str, assessment_id: str | No
             raise HTTPException(status_code=400, detail="device is not registered")
         if row[0] is None:
             raise HTTPException(status_code=400, detail="device has no firmware uploaded")
+        insert_row = conn.execute(
+            f"INSERT INTO scan_jobs (device_id, test_id, assessment_id) VALUES (%s, %s, %s) RETURNING {SCAN_JOB_COLUMNS}",
+            (device_id, test_id, assessment_id),
+        ).fetchone()
+        return _row_to_scan_job(insert_row)
+
+    # Device-intel tests reason about a device's already-known identity
+    # rather than probing it: no live host/port and - crucially, unlike the
+    # firmware branch above - no uploaded archive required either. Being
+    # registered is the only precondition. Routing these through the firmware
+    # branch would 400 exactly the firmware-less devices device-level CVE
+    # lookup exists to serve.
+    if is_device_intel_test(test_id):
+        row = conn.execute("SELECT 1 FROM devices WHERE device_id = %s", (device_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=400, detail="device is not registered")
         insert_row = conn.execute(
             f"INSERT INTO scan_jobs (device_id, test_id, assessment_id) VALUES (%s, %s, %s) RETURNING {SCAN_JOB_COLUMNS}",
             (device_id, test_id, assessment_id),
@@ -799,6 +816,67 @@ def _write_raw_output(evidence_id: str, raw_output: str) -> tuple[str, str]:
     return f"document-store/raw/{evidence_id}.txt", sha256
 
 
+def _maybe_autofill_device_identity(conn, device_id: str, observations: dict) -> bool:
+    """Fills devices.vendor/model/firmware_version from a just-recorded
+    TEST-DEVICE-ID evidence row, and marks the row 'auto_detected'.
+
+    Two deliberate restrictions, both about never overwriting a human:
+
+    1. It only ever writes into a row where ALL THREE identity fields are
+       currently NULL. If a human already set even one of them, this leaves
+       the row completely alone rather than blending manual and auto-detected
+       values under one ambiguous provenance flag - a partially-manual row is
+       for a person to reconcile, not for this hook to silently complete.
+    2. It only fires when the row is still identity_source='manual' AND the
+       evidence says device_identified is true. A row a human has edited
+       since (which resets identity_source to 'manual' but leaves values
+       non-NULL) is already excluded by restriction 1.
+
+    Returns whether it actually wrote. SELECT ... FOR UPDATE locks the row for
+    the rest of this transaction so a concurrent PATCH can't slip a manual
+    value in between the read and the write.
+
+    This is a side effect of the human-reviewed evidence-recording moment, not
+    a bypass of it: the auditor has already read the collector's raw output
+    and typed a finding before this runs. Same honesty discipline as
+    compliance_assessments.auto_recorded - the provenance is always recorded,
+    never implied.
+    """
+    if not observations.get("device_identified"):
+        return False
+    vendor = observations.get("vendor")
+    model = observations.get("model")
+    firmware_version = observations.get("firmware_version")
+    if not (vendor and model and firmware_version):
+        return False
+
+    row = conn.execute(
+        """
+        SELECT vendor, model, firmware_version, identity_source
+        FROM devices WHERE device_id = %s FOR UPDATE
+        """,
+        (device_id,),
+    ).fetchone()
+    if row is None:
+        return False  # evidence outlives deregistration - nothing to fill
+    current_vendor, current_model, current_firmware, identity_source = row
+    if identity_source != "manual":
+        return False
+    if current_vendor is not None or current_model is not None or current_firmware is not None:
+        return False
+
+    conn.execute(
+        """
+        UPDATE devices
+        SET vendor = %s, model = %s, firmware_version = %s,
+            identity_source = 'auto_detected', updated_at = now()
+        WHERE device_id = %s
+        """,
+        (vendor, model, firmware_version, device_id),
+    )
+    return True
+
+
 @app.post("/scan-jobs/{job_id}/record", status_code=201)
 def record_scan_job_evidence(job_id: int, payload: dict):
     finding = payload.get("finding")
@@ -861,6 +939,10 @@ def record_scan_job_evidence(job_id: int, payload: dict):
             (evidence_id, job_id),
         )
         _refresh_assessment_status(conn, job["assessment_id"])
+        if job["test_id"] == "TEST-DEVICE-ID":
+            _maybe_autofill_device_identity(
+                conn, job["device_id"], evidence["observations"],
+            )
         conn.commit()
     finally:
         conn.close()
@@ -1199,9 +1281,12 @@ def assess_control_verdict(device_id: str, control_id: str, payload: dict | None
             if is_control_applicable(control, services):
                 # Applicable but no evidence collected yet - nothing to assess.
                 # Only some required tests have an automated collector (a
-                # SCAN_CATALOG entry). If none do (e.g. SA-IOT-001's
-                # TEST-DEVICE-ID), telling the user to "run" them is
-                # misleading - the control is manual-assessment-only.
+                # SCAN_CATALOG entry). If none do, telling the user to "run"
+                # them is misleading - the control is manual-assessment-only.
+                # (SA-IOT-001's TEST-DEVICE-ID used to be the standing example
+                # here; it gained a real collector with the device-identity
+                # auto-detection feature, so this branch is now reached only
+                # by a control whose required tests are all unautomated.)
                 runnable = sorted(t for t in required_test_ids if t in SCAN_CATALOG)
                 if runnable:
                     detail = (
@@ -1380,6 +1465,10 @@ def _validate_device_payload(payload: dict) -> dict:
         "host": host,
         "vendor": payload.get("vendor"),
         "model": payload.get("model"),
+        # Symmetric with vendor/model: a human MAY supply it, but the
+        # intended path is TEST-DEVICE-ID auto-detection (see
+        # record_scan_job_evidence's auto-populate hook below).
+        "firmware_version": payload.get("firmware_version"),
         "location": payload.get("location"),
         "owner": payload.get("owner"),
         "notes": payload.get("notes"),
@@ -1447,15 +1536,16 @@ def create_device(payload: dict) -> dict:
         conn.execute(
             """
             INSERT INTO devices (device_id, display_name, description, tier, host,
-                                 vendor, model, location, owner, notes, source,
+                                 vendor, model, firmware_version, location, owner,
+                                 notes, source, identity_source,
                                  criticality, exposure)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'manual', %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'manual', 'manual', %s, %s)
             """,
             (
                 device["device_id"], device["display_name"], device["description"],
                 device["tier"], device["host"], device["vendor"], device["model"],
-                device["location"], device["owner"], device["notes"],
-                criticality, exposure,
+                device["firmware_version"], device["location"], device["owner"],
+                device["notes"], criticality, exposure,
             ),
         )
         for service in device["services"]:
@@ -1477,6 +1567,7 @@ def create_device(payload: dict) -> dict:
     return {
         **device, "source": "manual", "services": services, "registered": True,
         "firmware_filename": None, "firmware_sha256": None, "firmware_uploaded_at": None,
+        "identity_source": "manual",
         "criticality": criticality, "exposure": exposure,
     }
 
@@ -1498,7 +1589,8 @@ def get_devices() -> list[dict]:
                 COALESCE(e.evidence_count, 0),
                 COALESCE(v.verdict_count, 0),
                 d.firmware_filename, d.firmware_sha256, d.firmware_uploaded_at,
-                d.criticality, d.exposure
+                d.criticality, d.exposure,
+                d.firmware_version, d.identity_source
             FROM (
                 SELECT device_id FROM devices
                 UNION SELECT device_id FROM evidence
@@ -1535,6 +1627,12 @@ def get_devices() -> list[dict]:
                     "firmware_uploaded_at": r[16].isoformat() if r[16] else None,
                     "criticality": r[17],
                     "exposure": r[18],
+                    "firmware_version": r[19],
+                    # An orphan device_id (evidence only, no devices row) has
+                    # no provenance to report - "manual" would be a claim, so
+                    # the NOT NULL column's value is only reported for a real
+                    # registered row.
+                    "identity_source": r[20] if r[11] else None,
                     "services": _services_for(conn, device_id) if r[11] else [],
                 }
             )
@@ -1545,9 +1643,17 @@ def get_devices() -> list[dict]:
 
 PATCHABLE_DEVICE_FIELDS = (
     "display_name", "description", "tier", "host",
-    "vendor", "model", "location", "owner", "notes",
+    "vendor", "model", "firmware_version", "location", "owner", "notes",
     "criticality", "exposure",
 )
+
+# The subset of PATCHABLE_DEVICE_FIELDS whose provenance identity_source
+# describes. A human editing any one of them means the row is no longer
+# "auto-detected and untouched", so update_device flips identity_source back
+# to 'manual' in the same statement - otherwise the dashboard's
+# "auto-detected, not auditor-verified" badge would keep making that claim
+# about a value a person just typed in themselves.
+IDENTITY_DEVICE_FIELDS = ("vendor", "model", "firmware_version")
 
 
 def _device_row(conn, device_id: str) -> dict | None:
@@ -1556,7 +1662,7 @@ def _device_row(conn, device_id: str) -> dict | None:
         SELECT device_id, display_name, description, tier, host, vendor, model,
                location, owner, notes, source, created_at, updated_at,
                firmware_filename, firmware_sha256, firmware_uploaded_at,
-               criticality, exposure
+               criticality, exposure, firmware_version, identity_source
         FROM devices WHERE device_id = %s
         """,
         (device_id,),
@@ -1567,7 +1673,7 @@ def _device_row(conn, device_id: str) -> dict | None:
         "device_id", "display_name", "description", "tier", "host", "vendor",
         "model", "location", "owner", "notes", "source", "created_at", "updated_at",
         "firmware_filename", "firmware_sha256", "firmware_uploaded_at",
-        "criticality", "exposure",
+        "criticality", "exposure", "firmware_version", "identity_source",
     )
     device = dict(zip(keys, row))
     device["created_at"] = device["created_at"].isoformat()
@@ -1762,6 +1868,12 @@ def update_device(device_id: str, payload: dict) -> dict:
         )
 
     assignments = ", ".join(f"{field} = %s" for field in updates)
+    # identity_source is deliberately NOT patchable (it would make the
+    # "auto-detected" badge lie-able), but editing any identity field by hand
+    # must still reset it - see IDENTITY_DEVICE_FIELDS.
+    if any(field in updates for field in IDENTITY_DEVICE_FIELDS):
+        assignments += ", identity_source = 'manual'"
+
     conn = get_connection()
     try:
         result = conn.execute(

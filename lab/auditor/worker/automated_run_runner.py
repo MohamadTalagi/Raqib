@@ -22,9 +22,11 @@ this iteration.
 Two things are deliberately never automated, and skipped rather than faked:
 the ~60 organizational/mobile/supplier/cloud NCA guidelines need a human's
 answers to their guided checklist (nothing in the evidence tells the system
-whether a policy was approved), and Vulnerability Intelligence only ever
-runs against a device that already has firmware uploaded - a run never
-invents one.
+whether a policy was approved), and PACKAGE-level Vulnerability Intelligence
+only ever runs against a device that already has firmware uploaded - a run
+never invents one. DEVICE-level CVE lookup (TEST-DEVICE-CVE-LOOKUP) does run
+for any device with a known vendor and model, since it needs no firmware
+image at all.
 """
 import os
 import re
@@ -219,12 +221,44 @@ def _run_fingerprinting_and_sa_iot(devices: list[dict], summary: dict) -> None:
         summary["verdicts_computed"] = recompute.json().get("created", 0)
 
 
+def _refresh_devices(devices: list[dict], summary: dict) -> list[dict]:
+    """Re-read the same device_ids from auditor-api, preserving order.
+
+    Returns the original list unchanged if the re-read fails - a stale
+    snapshot is strictly better than dropping the remaining stages, and the
+    failure is recorded rather than swallowed."""
+    device_ids = [d["device_id"] for d in devices]
+    try:
+        response = requests.get(f"{API_URL}/devices", timeout=15)
+        response.raise_for_status()
+        by_id = {d["device_id"]: d for d in response.json() if d["registered"]}
+    except (requests.RequestException, ValueError) as exc:
+        summary["errors"].append(f"could not re-read devices after fingerprinting: {exc}")
+        return devices
+    return [by_id[device_id] for device_id in device_ids if device_id in by_id]
+
+
 def _run_vuln_intelligence(devices: list[dict], summary: dict) -> None:
+    """Two independent sources, each with its own precondition.
+
+    Package-level (TEST-FW-MANIFEST) still only ever runs for a device that
+    already has firmware uploaded - a run never invents one.
+
+    Device-level (TEST-DEVICE-CVE-LOOKUP) needs no firmware at all, only a
+    known vendor and model, which the fingerprinting stage above has usually
+    just auto-detected via TEST-DEVICE-ID. Skipping it here would mean the
+    one-click run never exercises the one form of vulnerability intelligence
+    that works for a device nobody has a firmware image for - the common case
+    this feature exists for. The caller re-reads `devices` (via
+    _refresh_devices) before this stage so vendor/model reflect what
+    TEST-DEVICE-ID just found, not the pre-fingerprinting snapshot."""
     for device in devices:
-        if not device.get("firmware_sha256"):
-            continue
-        _run_scan_test(device["device_id"], "TEST-FW-MANIFEST", summary)
-        summary["vuln_intel_devices_scanned"] += 1
+        if device.get("firmware_sha256"):
+            _run_scan_test(device["device_id"], "TEST-FW-MANIFEST", summary)
+            summary["vuln_intel_devices_scanned"] += 1
+        if device.get("vendor") and device.get("model"):
+            _run_scan_test(device["device_id"], "TEST-DEVICE-CVE-LOOKUP", summary)
+            summary["device_cve_devices_scanned"] += 1
 
 
 def _pqc_applicable_test_ids(device: dict) -> list[str]:
@@ -304,7 +338,8 @@ def process_automated_run(run: dict) -> None:
     summary = {
         "hosts_discovered": 0, "devices_registered": 0, "tests_run": 0,
         "evidence_recorded": 0, "verdicts_computed": 0,
-        "vuln_intel_devices_scanned": 0, "pqc_devices_scanned": 0,
+        "vuln_intel_devices_scanned": 0, "device_cve_devices_scanned": 0,
+        "pqc_devices_scanned": 0,
         "nca_assessments_recorded": 0, "errors": [],
     }
 
@@ -331,6 +366,13 @@ def process_automated_run(run: dict) -> None:
 
         if not _advance(run_id, summary, stage="vulnerability_intelligence"):
             return
+        # Re-read the fleet first: the fingerprinting stage above just ran
+        # TEST-DEVICE-ID, whose recorded evidence auto-populates
+        # devices.vendor/model for any device that had none. The device-level
+        # CVE lookup keys on exactly those two fields, so using the pre-
+        # fingerprinting snapshot would skip every device the run itself just
+        # identified.
+        devices = _refresh_devices(devices, summary)
         _run_vuln_intelligence(devices, summary)
 
         if not _advance(run_id, summary, stage="pqc_readiness"):

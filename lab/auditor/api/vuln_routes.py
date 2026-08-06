@@ -18,6 +18,16 @@ per-package advisory shape (observations.packages[]) - TEST-NET-HTTP-INSPECT's
 Server-banner enrichment stayed on the small static policies/catalog/
 vuln_reference.py table only, a deliberate scope decision (see the
 vulnerability-intelligence plan's Phase 1 notes), so it's not included here.
+
+Since the device-level CVE feature, GET /vuln-intel/devices/{id} also serves
+a SECOND, independent source: TEST-DEVICE-CVE-LOOKUP evidence, which matches
+a device's vendor/model against real NVD data by CPE and needs no firmware
+image at all. Same architecture - the worker did the matching at write time,
+this only re-reads it. The two are gated by separate flags (`has_data` for
+package-level, `has_device_cve_data` for device-level); a device may have
+either, both, or neither. This closes the "device-level vendor/model CPE
+matching... is not implemented" limitation docs/vulnerability-intelligence.md
+named explicitly as scoped out of that pass.
 """
 
 from fastapi import APIRouter
@@ -126,29 +136,94 @@ def get_vuln_intel_fleet_summary() -> dict:
     }
 
 
+def _latest_evidence(conn, device_id: str, test_id: str):
+    return conn.execute(
+        """
+        SELECT evidence_id, observations, timestamp
+        FROM evidence
+        WHERE device_id = %s AND test_id = %s
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """,
+        (device_id, test_id),
+    ).fetchone()
+
+
+def _empty_device_cve_fields() -> dict:
+    return {
+        "has_device_cve_data": False,
+        "device_cve_evidence_id": None,
+        "device_cve_observed_at": None,
+        "device_identity": None,
+        "device_cves": [],
+        "total_device_cves": 0,
+        "kev_listed_device_cves": 0,
+        "highest_device_cvss": None,
+    }
+
+
+def _device_cve_fields(row) -> dict:
+    """Reshapes TEST-DEVICE-CVE-LOOKUP evidence for the API response.
+
+    Like the package-level half above, this is a pure re-read: the CPE match
+    and the KEV cross-reference both already happened in the worker at scan
+    time (policies/catalog/scan_tests.py's
+    _parse_device_cve_lookup_observations). No lookup logic lives here."""
+    if row is None:
+        return _empty_device_cve_fields()
+
+    evidence_id, observations, timestamp = row
+    observations = observations or {}
+    return {
+        "has_device_cve_data": True,
+        "device_cve_evidence_id": evidence_id,
+        "device_cve_observed_at": timestamp.isoformat(),
+        "device_identity": {
+            "vendor": observations.get("vendor"),
+            "model": observations.get("model"),
+            "firmware_version": observations.get("firmware_version"),
+            "cpe": observations.get("cpe"),
+            "cpe_matched": bool(observations.get("cpe_matched")),
+        },
+        "device_cves": observations.get("device_cves") or [],
+        "total_device_cves": observations.get("total_device_cves") or 0,
+        "kev_listed_device_cves": observations.get("kev_listed_device_cves") or 0,
+        "highest_device_cvss": observations.get("highest_device_cvss"),
+        "notes": observations.get("notes") or [],
+    }
+
+
 @router.get("/devices/{device_id}")
 def get_device_vuln_summary(device_id: str) -> dict:
-    """The most recent TEST-FW-MANIFEST evidence for one device, with its
-    full per-package advisory list plus a rollup. `has_data: false` (not a
-    404) when the device has never had a firmware manifest scan - a real,
-    reachable state, not an error."""
+    """One device's vulnerability intelligence from both independent sources.
+
+    Two reads, deliberately gated separately, because a device may have
+    either, both, or neither:
+
+      * package-level (`has_data`, `packages`) - the most recent
+        TEST-FW-MANIFEST evidence. Needs an uploaded firmware archive.
+      * device-level (`has_device_cve_data`, `device_cves`) - the most recent
+        TEST-DEVICE-CVE-LOOKUP evidence. Needs no firmware at all, only a
+        known vendor/model.
+
+    `has_data` keeps its original, narrower meaning ("a firmware manifest
+    scan happened") on purpose: report.py, risk_routes.py and the frontend's
+    lib/pipeline.ts all read it that way, and widening it here would silently
+    change a device's risk inputs and pipeline-phase badge. The device-level
+    half gets its own flag instead.
+
+    Neither `false` is a 404 - both are real, reachable states."""
     validate_device_id(device_id)
     conn = get_connection()
     try:
-        row = conn.execute(
-            """
-            SELECT evidence_id, observations, timestamp
-            FROM evidence
-            WHERE device_id = %s AND test_id = 'TEST-FW-MANIFEST'
-            ORDER BY timestamp DESC
-            LIMIT 1
-            """,
-            (device_id,),
-        ).fetchone()
+        manifest_row = _latest_evidence(conn, device_id, "TEST-FW-MANIFEST")
+        device_cve_row = _latest_evidence(conn, device_id, "TEST-DEVICE-CVE-LOOKUP")
     finally:
         conn.close()
 
-    if row is None:
+    device_cve_fields = _device_cve_fields(device_cve_row)
+
+    if manifest_row is None:
         return {
             "device_id": device_id,
             "has_data": False,
@@ -160,9 +235,10 @@ def get_device_vuln_summary(device_id: str) -> dict:
             "total_cves": 0,
             "kev_listed_cves": 0,
             "highest_cvss": None,
+            **device_cve_fields,
         }
 
-    evidence_id, observations, timestamp = row
+    evidence_id, observations, timestamp = manifest_row
     packages = _manifest_packages(observations)
     return {
         "device_id": device_id,
@@ -171,4 +247,5 @@ def get_device_vuln_summary(device_id: str) -> dict:
         "observed_at": timestamp.isoformat(),
         "packages": packages,
         **_summarize_packages(packages),
+        **device_cve_fields,
     }

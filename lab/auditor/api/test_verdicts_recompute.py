@@ -89,11 +89,11 @@ def test_recompute_marks_not_applicable_for_a_device_with_no_matching_service(cl
     assert sa_iot_004["evidence_ids"] == []
 
 
-def test_recompute_leaves_a_control_with_no_automated_collector_unassessed(client):
-    # SA-IOT-001 requires TEST-DEVICE-ID, which has no SCAN_CATALOG entry at
-    # all - regression: this must stay unassessed (no verdict at all), not
-    # be marked NOT_APPLICABLE, since an absent collector says nothing about
-    # whether the control actually applies to this device.
+def test_recompute_leaves_an_applicable_but_untested_control_unassessed(client):
+    # SA-IOT-001 requires TEST-DEVICE-ID, an http collector; this device has
+    # an http service, so the control applies - but nothing has run it yet.
+    # Applicable-but-untested must stay unassessed (no verdict at all), never
+    # NOT_APPLICABLE.
     _register_device(client, "any-cam", "http", 80)
 
     response = client.post("/verdicts/recompute")

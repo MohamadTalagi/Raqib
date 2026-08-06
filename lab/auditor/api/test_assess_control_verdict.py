@@ -74,10 +74,35 @@ def test_assess_400_when_applicable_but_no_evidence(client):
     assert "run" in response.json()["detail"].lower()
 
 
-def test_assess_400_explains_manual_only_control_without_a_collector(client):
-    # SA-IOT-001 requires TEST-DEVICE-ID, which has NO SCAN_CATALOG entry - it
-    # can't be run through the product, so the message must not tell the user
-    # to "run" it; it must point them at manual assessment instead.
+def test_assess_400_names_test_device_id_now_that_it_has_a_collector(client):
+    # SA-IOT-001 requires TEST-DEVICE-ID, which spent most of this project's
+    # life with no SCAN_CATALOG entry (so the 400 had to say "manual only").
+    # It has a real collector now, so the message must name it like any other
+    # runnable required test - the old wording would send an auditor to do by
+    # hand something the product can actually run.
+    _register_device(client, "device-insecure", "http", 80)
+    response = client.post("/devices/device-insecure/controls/SA-IOT-001/assess")
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "TEST-DEVICE-ID" in detail
+    assert "run" in detail.lower()
+
+
+def test_assess_400_explains_manual_only_control_without_a_collector(client, monkeypatch):
+    # The manual-only branch still has to work for the next control written
+    # before its collector exists. No real SA-IOT-* control is manual-only any
+    # more, so this reproduces the condition by hiding TEST-DEVICE-ID from the
+    # catalog rather than by asserting a fact about the catalog that is no
+    # longer true.
+    from policies.catalog import scan_tests
+
+    catalog_without_device_id = {
+        k: v for k, v in scan_tests.SCAN_CATALOG.items() if k != "TEST-DEVICE-ID"
+    }
+    monkeypatch.setattr(scan_tests, "SCAN_CATALOG", catalog_without_device_id)
+    import main
+    monkeypatch.setattr(main, "SCAN_CATALOG", catalog_without_device_id)
+
     _register_device(client, "device-insecure", "http", 80)
     response = client.post("/devices/device-insecure/controls/SA-IOT-001/assess")
     assert response.status_code == 400

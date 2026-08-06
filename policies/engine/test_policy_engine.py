@@ -173,15 +173,36 @@ def test_is_control_applicable_false_for_a_device_with_no_services_at_all():
 
 
 def test_is_control_applicable_true_when_the_required_test_has_no_automated_collector():
-    # SA-IOT-001 requires TEST-DEVICE-ID, which has no entry in SCAN_CATALOG
-    # at all (never wired into Run Scan) - regression: this must NOT be
-    # treated as "doesn't apply to this device" (which would wrongly mark
-    # every device NOT_APPLICABLE for a control that's simply not automated
-    # yet), it must stay possibly-applicable so the control is left
-    # unassessed instead.
-    control = load_control(str(CONTROLS_DIR / "SA-IOT-001.yaml"))
+    # Regression for docs/errors/025: a required test_id with no SCAN_CATALOG
+    # entry at all must NOT be treated as "doesn't apply to this device"
+    # (which would wrongly mark every device NOT_APPLICABLE for a control
+    # that's simply not automated yet) - it must stay possibly-applicable so
+    # the control is left unassessed instead.
+    #
+    # SA-IOT-001/TEST-DEVICE-ID was the real-world example of this for most of
+    # this project's life, but TEST-DEVICE-ID now has a real collector (see
+    # the device-identity auto-detection feature), so this uses a synthetic
+    # control instead - the rule itself still has to hold for the next
+    # control that gets written before its collector exists.
+    control = {
+        "control_id": "SA-IOT-TEST-UNCOLLECTED",
+        "required_evidence": [{"test_id": "TEST-DOES-NOT-EXIST-IN-CATALOG"}],
+    }
     assert is_control_applicable(control, [{"service_type": "http"}]) is True
     assert is_control_applicable(control, []) is True
+
+
+def test_is_control_applicable_for_sa_iot_001_now_follows_its_collectors_services():
+    # TEST-DEVICE-ID is a real HTTP collector now, so SA-IOT-001 resolves
+    # through the normal service-matching path - which is exactly what the
+    # control's own `limitations` field has always promised: "does not cover
+    # devices with no HTTP service at all (evaluates to NOT_APPLICABLE for
+    # those)". A deliberate behaviour change, not a regression.
+    control = load_control(str(CONTROLS_DIR / "SA-IOT-001.yaml"))
+    assert is_control_applicable(control, [{"service_type": "http"}]) is True
+    assert is_control_applicable(control, [{"service_type": "https"}]) is True
+    assert is_control_applicable(control, [{"service_type": "mqtt"}]) is False
+    assert is_control_applicable(control, []) is False
 
 
 def test_build_not_applicable_verdict_has_no_evidence_and_the_right_status():

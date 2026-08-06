@@ -159,6 +159,16 @@ CREATE TABLE devices (
     firmware_filename     TEXT,
     firmware_sha256       TEXT,
     firmware_uploaded_at  TIMESTAMPTZ,
+    -- The device's OWN self-reported firmware version (from TEST-DEVICE-ID's
+    -- read of GET /api/device/info), as opposed to the three upload-metadata
+    -- columns above, which describe an archive an auditor supplied. Paired
+    -- with identity_source, the provenance flag for vendor/model/
+    -- firmware_version as a set - only ever system-set (never PATCHable), so
+    -- the dashboard's "auto-detected, not auditor-verified" badge can't lie.
+    -- See migrations/016-device-identity-auto-detect.sql.
+    firmware_version TEXT,
+    identity_source  TEXT NOT NULL DEFAULT 'manual'
+        CHECK (identity_source IN ('manual', 'auto_detected')),
     -- Dynamic Risk Assessment (Stage 06) inputs no scan can determine -
     -- auditor-set, with a computed default applied at registration (see
     -- main.py's create_device). See migrations/008-device-risk-fields.sql.

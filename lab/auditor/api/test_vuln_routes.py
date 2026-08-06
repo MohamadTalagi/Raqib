@@ -174,3 +174,115 @@ def test_device_vuln_summary_returns_real_package_and_cve_data(client, conn):
 def test_device_vuln_summary_rejects_an_invalid_device_id(client):
     response = client.get("/vuln-intel/devices/NOT valid!!")
     assert response.status_code == 400
+
+
+# -- GET /vuln-intel/devices/{id}: the device-level (no-firmware) half -------
+# Package-level and device-level data are independently gated: a device may
+# have either, both, or neither. `has_data` deliberately keeps its narrower
+# "a firmware manifest scan happened" meaning (report.py, risk_routes.py and
+# the frontend's lib/pipeline.ts all read it that way).
+
+
+def _seed_device_cve_evidence(conn, evidence_id, device_id, observations):
+    conn.execute(
+        """
+        INSERT INTO evidence (evidence_id, device_id, test_id, tool, tool_version,
+                              command, timestamp, finding, observations,
+                              raw_output_path, confidence, sha256)
+        VALUES (%s, %s, 'TEST-DEVICE-CVE-LOOKUP', 'python3', '3.12',
+                'device_cve_lookup.py', now(), 'device-level CVE lookup', %s::jsonb,
+                'document-store/raw/test.txt', 'high', 'abc123')
+        """,
+        (evidence_id, device_id, json.dumps(observations)),
+    )
+    conn.commit()
+
+
+NETGEAR_DEVICE_CVE_OBSERVATIONS = {
+    "vendor": "Netgear", "model": "R7000", "firmware_version": "V1.0.11.132_10.2.132",
+    "cpe": "o:netgear:r7000_firmware", "cpe_matched": True,
+    "device_cves": [
+        {"id": "CVE-2021-34991", "cvss": 8.8, "summary": "UPnP RCE",
+         "kev_listed": True, "kev_date_added": "2022-01-10"},
+        {"id": "CVE-2016-6277", "cvss": 8.8, "summary": "CSRF",
+         "kev_listed": False, "kev_date_added": None},
+    ],
+    "total_device_cves": 2, "kev_listed_device_cves": 1, "highest_device_cvss": 8.8,
+    "notes": ["2 CVE(s) are published against Netgear R7000 at the device level"],
+}
+
+
+def test_device_summary_reports_no_device_cve_data_when_none_was_ever_collected(client, conn):
+    _seed_manifest_evidence(conn, "EV-FW-ONLY", "device-insecure", [OPENSSL_PACKAGE_WITH_KEV])
+
+    body = client.get("/vuln-intel/devices/device-insecure").json()
+
+    assert body["has_data"] is True  # package-level, unchanged
+    assert body["has_device_cve_data"] is False
+    assert body["device_identity"] is None
+    assert body["device_cves"] == []
+    assert body["total_device_cves"] == 0
+
+
+def test_device_summary_returns_device_cves_with_no_firmware_scan_at_all(client, conn):
+    # The feature's whole premise: real CVE data for a device that has never
+    # had a firmware archive uploaded.
+    _seed_device_cve_evidence(conn, "EV-DEV-1", "device-router-gw", NETGEAR_DEVICE_CVE_OBSERVATIONS)
+
+    body = client.get("/vuln-intel/devices/device-router-gw").json()
+
+    assert body["has_data"] is False  # no firmware manifest, and that stays false
+    assert body["has_device_cve_data"] is True
+    assert body["device_cve_evidence_id"] == "EV-DEV-1"
+    assert body["device_identity"] == {
+        "vendor": "Netgear", "model": "R7000", "firmware_version": "V1.0.11.132_10.2.132",
+        "cpe": "o:netgear:r7000_firmware", "cpe_matched": True,
+    }
+    assert [c["id"] for c in body["device_cves"]] == ["CVE-2021-34991", "CVE-2016-6277"]
+    assert body["kev_listed_device_cves"] == 1
+    assert body["highest_device_cvss"] == 8.8
+
+
+def test_device_summary_returns_both_sources_together(client, conn):
+    _seed_manifest_evidence(conn, "EV-FW-BOTH", "device-router-gw", [BUSYBOX_PACKAGE_NO_KEV])
+    _seed_device_cve_evidence(conn, "EV-DEV-BOTH", "device-router-gw", NETGEAR_DEVICE_CVE_OBSERVATIONS)
+
+    body = client.get("/vuln-intel/devices/device-router-gw").json()
+
+    assert body["has_data"] is True
+    assert body["has_device_cve_data"] is True
+    assert body["total_packages"] == 1          # package-level rollup intact
+    assert body["total_cves"] == 1
+    assert body["total_device_cves"] == 2       # and independent of it
+
+
+def test_device_summary_reports_an_unmatched_cpe_as_a_real_checked_result(client, conn):
+    # device-nvr's real case - Dahua NVR4108-8P has no NVD CPE coverage.
+    _seed_device_cve_evidence(conn, "EV-DEV-NOCPE", "device-nvr", {
+        "vendor": "Dahua", "model": "NVR4108-8P", "firmware_version": "3.218.0000019.0",
+        "cpe": None, "cpe_matched": False, "device_cves": [],
+        "total_device_cves": 0, "kev_listed_device_cves": 0, "highest_device_cvss": None,
+        "notes": ["No CPE mapping is available for Dahua NVR4108-8P"],
+    })
+
+    body = client.get("/vuln-intel/devices/device-nvr").json()
+
+    # has_device_cve_data is True - the lookup DID run and produced a real
+    # answer. cpe_matched carries the "we could not map this product" nuance,
+    # so the UI never renders a gap as a clean bill of health.
+    assert body["has_device_cve_data"] is True
+    assert body["device_identity"]["cpe_matched"] is False
+    assert body["device_cves"] == []
+    assert any("No CPE mapping" in note for note in body["notes"])
+
+
+def test_device_summary_uses_only_the_most_recent_device_cve_evidence(client, conn):
+    _seed_device_cve_evidence(conn, "EV-DEV-OLD", "device-router-gw", {
+        **NETGEAR_DEVICE_CVE_OBSERVATIONS, "device_cves": [], "total_device_cves": 0,
+    })
+    _seed_device_cve_evidence(conn, "EV-DEV-NEW", "device-router-gw", NETGEAR_DEVICE_CVE_OBSERVATIONS)
+
+    body = client.get("/vuln-intel/devices/device-router-gw").json()
+
+    assert body["device_cve_evidence_id"] == "EV-DEV-NEW"
+    assert body["total_device_cves"] == 2

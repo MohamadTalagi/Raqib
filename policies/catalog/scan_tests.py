@@ -74,6 +74,15 @@ CATEGORY_WEB_AUTH = "web-and-auth"
 CATEGORY_NETWORK_PROTOCOL = "network-and-protocol"
 CATEGORY_FIRMWARE = "firmware"
 CATEGORY_NETWORK_DISCOVERY = "network-discovery"
+# A third "no live host:port" class, distinct from the two above. Firmware
+# tests need an uploaded archive; network-discovery tests sweep a subnet.
+# A device-intel test needs neither - only that the device is registered and
+# already has identity data - so it cannot reuse either category: the firmware
+# branch of main.py's _create_scan_job hard-rejects a device with no firmware
+# uploaded, which is exactly the case this class exists to serve, and the
+# network-discovery branch routes into job_runner's two-stage nmap
+# orchestrator. See is_device_intel_test() below.
+CATEGORY_DEVICE_INTEL = "device-intel"
 
 # Dashboard-overhaul pipeline phase tagging - a separate axis from `category`
 # above (category drives is_firmware_test()/is_network_discovery_test() and
@@ -1699,6 +1708,239 @@ def _parse_fw_updatescript_observations(target: dict, output: str) -> dict:
     }
 
 
+# Device (vendor, model) -> the real NVD CPE 2.3 "part:vendor:product" prefix
+# that product is catalogued under. Mirrors the precedent set by
+# lab/auditor/worker/scan_scripts/sbom.py's CPE_OVERRIDES: a small,
+# hand-verified table for the cases where naive name-lowercasing does not
+# produce a real CPE string.
+#
+# EVERY entry below was verified individually against the live NVD CPE
+# dictionary (services.nvd.nist.gov/rest/json/cpes/2.0) and then confirmed to
+# return real CVEs from the live CVE API, on 2026-08-06. None were guessed,
+# because guessing does not work here - three things the obvious
+# "{vendor}:{model}_firmware" convention gets wrong:
+#
+#   1. The `_firmware` suffix is NOT universal. Axis's M3216-LVE is catalogued
+#      only as a HARDWARE CPE (part `h:`) with no firmware product at all -
+#      which still returns 6 real CVEs. That is why the value carries the CPE
+#      part, not just vendor:product.
+#   2. NVD vendor slugs are not the vendor's marketing name lowercased. Yale
+#      locks are catalogued under `assaabloy`; Schneider under
+#      `schneider-electric` (hyphen).
+#   3. Some real products have no CPE coverage at all. Dahua's NVR4108-8P is
+#      deliberately ABSENT below (confirmed absent three ways: keyword
+#      searches for "nvr4108", "dahua nvr" and "dahua nvr4" return no such
+#      product). An honest "no CPE mapping available" for that device is the
+#      correct result and the collector reports it as such - inventing a
+#      plausible-looking CPE would be exactly the fabrication this project
+#      forbids everywhere else.
+#
+# Keyed by (vendor, model) EXACTLY as stored on devices.vendor/devices.model,
+# which for this lab's fixtures is what TEST-DEVICE-ID reads from each
+# device's own /api/device/info. Backslash escapes inside a product value are
+# NVD's own CPE-component escaping and must be preserved verbatim - they are
+# what the live API matches on (confirmed: the Hikvision entry returns 1 CVE
+# with them, and would be a different, non-existent product without them).
+DEVICE_CPE_OVERRIDES: dict[tuple[str, str], str] = {
+    ("Hikvision", "DS-2CD2143G2-I"): r"o:hikvision:ds-2cd2143g2-i\(s\)_firmware",
+    ("Hikvision", "DS-2CD2143G2-IU"): r"o:hikvision:ds-2cd2143g2-iu_firmware",
+    ("Axis Communications", "M3216-LVE"): r"h:axis:m3216-lve",
+    ("Yale", "Conexis L1"): r"o:assaabloy:yale_conexis_l1_firmware",
+    ("Schneider Electric", "Modicon M221"): r"o:schneider-electric:modicon_m221_firmware",
+    ("Netgear", "R7000"): r"o:netgear:r7000_firmware",
+    ("Sonos", "One (Gen 2)"): r"o:sonos:one_firmware",
+}
+
+
+def lookup_device_cpe(vendor: str | None, model: str | None) -> str | None:
+    """The one accessor for DEVICE_CPE_OVERRIDES, so an unmapped device always
+    produces the same honest miss rather than a KeyError in one caller and a
+    guess in another - the discipline vuln_reference.lookup_component()
+    already follows for package-level data."""
+    if not vendor or not model:
+        return None
+    return DEVICE_CPE_OVERRIDES.get((vendor, model))
+
+
+def _device_id_command(target: dict) -> list[str]:
+    scheme = _scheme_for(target)
+    flags = _http_flags(scheme)
+    authority = _authority_for(target, scheme)
+    return ["curl", *flags, f"{scheme}://{authority}/api/device/info"]
+
+
+def _parse_device_id_observations(target: dict, output: str) -> dict:
+    """SA-IOT-001's long-missing collector: reads a device's own
+    unauthenticated device-info endpoint for the structured identity fields
+    an asset inventory needs.
+
+    `device_identified` is the EXACT field name SA-IOT-001.yaml's pass/fail
+    conditions read (observations.device_identified) - it is a pre-existing
+    contract dating to Day 3 of this project, not a naming choice. Per that
+    control's own `limitations` text, MAC disclosure is deliberately NOT part
+    of the pass condition; only vendor + model + firmware_version together
+    are. `mac` is still surfaced because an auditor doing inventory wants it,
+    it just doesn't decide the verdict.
+
+    Parsed with per-field regexes rather than json.loads(): every other
+    collector in this catalog parses defensively out of possibly-noisy
+    command output (curl can prepend/append its own text, a device can return
+    a partial body), and a JSONDecodeError on one malformed byte would lose
+    the fields that DID come back."""
+    def _field(name: str) -> str | None:
+        match = re.search(rf'"{name}"\s*:\s*"([^"]*)"', output)
+        return match.group(1) if match and match.group(1) else None
+
+    vendor = _field("vendor")
+    model = _field("model")
+    firmware_version = _field("firmware_version")
+    device_identified = bool(vendor and model and firmware_version)
+
+    if device_identified:
+        notes = [
+            "This device exposes vendor, model, and firmware version via an "
+            "unauthenticated read-only endpoint - it supports asset inventory "
+            "and downstream device-level CVE lookup (TEST-DEVICE-CVE-LOOKUP).",
+        ]
+    else:
+        missing = [
+            name for name, value in (
+                ("vendor", vendor), ("model", model), ("firmware version", firmware_version),
+            ) if not value
+        ]
+        notes = [
+            "No unauthenticated device-info endpoint disclosed "
+            f"{', '.join(missing)} - asset inventory for this device must be "
+            "completed manually, and device-level CVE lookup cannot run "
+            "without a vendor and model.",
+        ]
+    return {
+        "device_identified": device_identified,
+        "vendor": vendor,
+        "model": model,
+        "firmware_version": firmware_version,
+        "mac": _field("mac"),
+        "notes": notes,
+    }
+
+
+def _suggest_confidence_device_id(observations: dict) -> str:
+    # A clean structured read of all three fields is as strong as this
+    # collector gets; a partial or absent disclosure is a real observation
+    # too, but one an auditor should look at before it hardens into
+    # inventory data.
+    return "high" if observations.get("device_identified") else "medium"
+
+
+DEVICE_CVE_LOOKUP_SCRIPT = "/work/lab/auditor/worker/scan_scripts/device_cve_lookup.py"
+
+
+def _device_cve_lookup_command(target: dict) -> list[str]:
+    return ["python3", DEVICE_CVE_LOOKUP_SCRIPT, target["device_id"]]
+
+
+def _parse_device_cve_lookup_observations(target: dict, output: str) -> dict:
+    """Assembles the device-level CVE advisory at WRITE time, exactly like
+    _parse_fw_manifest_observations does for package-level data - the API
+    stays a dumb, honest read of whatever the worker already recorded.
+
+    Three genuinely different outcomes, each reported as itself and never
+    blurred into "no CVEs found":
+      - identity unknown       -> nothing to look up yet, run TEST-DEVICE-ID
+      - identity known, no CPE -> this product has no NVD CPE coverage
+      - CPE matched            -> a real (possibly empty) CVE list
+    """
+    def _line(name: str) -> str | None:
+        match = re.search(rf"^{name}=(.*)$", output, re.MULTILINE)
+        return match.group(1) if match and match.group(1) else None
+
+    vendor = _line("vendor")
+    model = _line("model")
+    firmware_version = _line("firmware_version")
+    cpe = _line("cpe")
+    cpe_matched = "cpe_matched=True" in output
+
+    cves: list[dict] = []
+    raw_cves = _line("device_cves")
+    if raw_cves:
+        try:
+            cves = json.loads(raw_cves)
+        except json.JSONDecodeError:
+            cves = []
+
+    index_available = "index_available=True" in output
+    error = _line("error")
+
+    kev_listed = [c for c in cves if c.get("kev_listed")]
+    highest_cvss = max(
+        (c["cvss"] for c in cves if c.get("cvss") is not None), default=None,
+    )
+
+    notes: list[str] = []
+    if error:
+        notes.append(f"Could not read this device's inventory record: {error}")
+    elif not (vendor and model):
+        notes.append(
+            "This device has no vendor and model recorded yet, so there is "
+            "nothing to match against the CVE database - run TEST-DEVICE-ID "
+            "(or enter them manually) first.",
+        )
+    elif not cpe_matched:
+        notes.append(
+            f"No CPE mapping is available for {vendor} {model}, so no "
+            "device-level CVE lookup was performed. This is an honest gap, "
+            "not a clean bill of health: the product may simply not be "
+            "catalogued in NVD's CPE dictionary. Package-level analysis "
+            "(TEST-FW-MANIFEST, needs a firmware archive) is unaffected.",
+        )
+    elif not index_available:
+        notes.append(
+            "This device's product IS mapped to a CPE, but the local NVD "
+            "cache has not been populated yet - the worker refreshes it out "
+            "of band. Re-run this test after the next refresh.",
+        )
+    elif not cves:
+        notes.append(
+            f"NVD has no published CVEs for {vendor} {model} at this CPE. "
+            "This is a real checked result, not missing data.",
+        )
+    else:
+        notes.append(
+            f"{len(cves)} CVE(s) are published against {vendor} {model} at "
+            "the device level - matched by vendor/model CPE, with no firmware "
+            "image required. Cross-check each against this device's reported "
+            f"firmware version ({firmware_version or 'unknown'}): CPE "
+            "matching here is product-level, so a listed CVE may already be "
+            "fixed in the running firmware.",
+        )
+        if kev_listed:
+            notes.append(
+                f"{len(kev_listed)} of them are on CISA's Known Exploited "
+                "Vulnerabilities catalog - treat those as actively exploited "
+                "in the wild, not theoretical.",
+            )
+
+    return {
+        "vendor": vendor,
+        "model": model,
+        "firmware_version": firmware_version,
+        "cpe": cpe,
+        "cpe_matched": cpe_matched,
+        "device_cves": cves,
+        "total_device_cves": len(cves),
+        "kev_listed_device_cves": len(kev_listed),
+        "highest_device_cvss": highest_cvss,
+        "notes": notes,
+    }
+
+
+def _suggest_confidence_device_cve_lookup(observations: dict) -> str:
+    # A matched CPE read against a populated cache is a real, reproducible
+    # lookup. Anything else is a partial answer an auditor should read before
+    # it becomes evidence.
+    return "high" if observations.get("cpe_matched") else "medium"
+
+
 SCAN_CATALOG = {
     "TEST-NET-REACHABILITY": {
         "label": "Host reachability",
@@ -1775,6 +2017,17 @@ SCAN_CATALOG = {
         "applicable_service_types": MDNS_SERVICE_TYPES,
         "build_command": _mdns_probe_command,
         "parse_observations": _parse_mdns_probe_observations,
+        "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
+    },
+    "TEST-DEVICE-ID": {
+        "label": "Device identification",
+        "tool": "curl",
+        "tool_version_command": ["curl", "--version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": HTTP_SERVICE_TYPES,
+        "build_command": _device_id_command,
+        "parse_observations": _parse_device_id_observations,
+        "suggest_confidence": _suggest_confidence_device_id,
         "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
     },
     "TEST-AUTH-DEFAULT-CREDS": {
@@ -1992,6 +2245,20 @@ SCAN_CATALOG = {
         "suggest_confidence": _suggest_confidence_fw_manifest,
         "pipeline_phase": PIPELINE_PHASE_VULN_INTELLIGENCE,
     },
+    "TEST-DEVICE-CVE-LOOKUP": {
+        "label": "Device CVE lookup (NVD, no firmware required)",
+        "tool": "python3",
+        "tool_version_command": ["python3", "--version"],
+        # Not CATEGORY_FIRMWARE - see is_device_intel_test()'s docstring for
+        # why that choice would break this test for firmware-less devices,
+        # which are the entire point of it.
+        "category": CATEGORY_DEVICE_INTEL,
+        "applicable_service_types": (),
+        "build_command": _device_cve_lookup_command,
+        "parse_observations": _parse_device_cve_lookup_observations,
+        "suggest_confidence": _suggest_confidence_device_cve_lookup,
+        "pipeline_phase": PIPELINE_PHASE_VULN_INTELLIGENCE,
+    },
     "TEST-PQC-FIRMWARE-CRYPTO": {
         "label": "Post-quantum firmware crypto currency",
         "tool": "python3",
@@ -2065,3 +2332,19 @@ def is_network_discovery_test(test_id: str) -> bool:
     main.py)."""
     spec = SCAN_CATALOG.get(test_id)
     return spec is not None and spec["category"] == CATEGORY_NETWORK_DISCOVERY
+
+
+def is_device_intel_test(test_id: str) -> bool:
+    """True for tests that reason about a device's already-known identity
+    rather than probing it: no live host/port, and - unlike a firmware test -
+    no uploaded archive either. The ONLY precondition is that the device is
+    registered.
+
+    This distinction is load-bearing, not cosmetic: giving
+    TEST-DEVICE-CVE-LOOKUP the firmware category instead would make
+    _create_scan_job reject it with "device has no firmware uploaded" for
+    precisely the firmware-less devices the device-level CVE lookup exists to
+    serve. Like the other two predicates, these carry
+    applicable_service_types=() and skip live-target validation entirely."""
+    spec = SCAN_CATALOG.get(test_id)
+    return spec is not None and spec["category"] == CATEGORY_DEVICE_INTEL

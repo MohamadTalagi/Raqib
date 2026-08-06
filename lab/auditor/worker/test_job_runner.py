@@ -1,6 +1,8 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import requests
+
 import job_runner
 from job_runner import (
     maybe_refresh_grype_db,
@@ -787,3 +789,124 @@ def test_maybe_refresh_network_scope_never_raises_on_a_failed_fetch(mock_get, mo
     mock_get.side_effect = job_runner.requests.RequestException("connection refused")
 
     maybe_refresh_network_scope(now=0.0)  # must not raise
+
+
+# -- NVD device-CVE index scheduled refresh --------------------------------
+# Fourth use of the same sentinel-based staleness pattern. The one structural
+# difference from the other three: this refresher is fleet-scoped, so it asks
+# auditor-api which devices exist before deciding what (if anything) to fetch.
+
+
+@patch("job_runner.nvd_lookup.fetch_and_cache_device_advisories")
+def test_maybe_refresh_device_cve_index_skips_check_within_the_interval(mock_fetch, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_nvd_cve_check_monotonic", 100.0)
+    job_runner.maybe_refresh_device_cve_index(
+        now=100.0 + job_runner.NVD_CVE_CHECK_INTERVAL_SECONDS - 1,
+    )
+    mock_fetch.assert_not_called()
+
+
+@patch("job_runner._fleet_cpe_prefixes", return_value=["o:netgear:r7000_firmware"])
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.nvd_lookup.fetch_and_cache_device_advisories")
+def test_maybe_refresh_device_cve_index_fetches_when_sentinel_is_stale(
+    mock_fetch, mock_age, _prefixes, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(job_runner, "_last_nvd_cve_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "NVD_CVE_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = job_runner.NVD_CVE_MAX_AGE_SECONDS + 1
+    mock_fetch.return_value = True
+
+    job_runner.maybe_refresh_device_cve_index(now=0.0)
+
+    mock_fetch.assert_called_once_with(["o:netgear:r7000_firmware"])
+    assert (tmp_path / "sentinel").exists()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.nvd_lookup.fetch_and_cache_device_advisories")
+def test_maybe_refresh_device_cve_index_skips_fetch_when_sentinel_is_fresh(mock_fetch, mock_age, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_nvd_cve_check_monotonic", None)
+    mock_age.return_value = 60.0
+
+    job_runner.maybe_refresh_device_cve_index(now=0.0)
+
+    mock_fetch.assert_not_called()
+
+
+@patch("job_runner._fleet_cpe_prefixes", return_value=["o:netgear:r7000_firmware"])
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.nvd_lookup.fetch_and_cache_device_advisories")
+def test_maybe_refresh_device_cve_index_does_not_touch_sentinel_on_failed_fetch(
+    mock_fetch, mock_age, _prefixes, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(job_runner, "_last_nvd_cve_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "NVD_CVE_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = None
+    mock_fetch.return_value = False
+
+    job_runner.maybe_refresh_device_cve_index(now=0.0)
+
+    assert not (tmp_path / "sentinel").exists()
+
+
+@patch("job_runner._fleet_cpe_prefixes", return_value=None)
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.nvd_lookup.fetch_and_cache_device_advisories")
+def test_maybe_refresh_device_cve_index_does_not_fetch_when_the_device_list_is_unreadable(
+    mock_fetch, mock_age, _prefixes, monkeypatch, tmp_path,
+):
+    # None means "could not read the fleet" - a failure worth retrying, so no
+    # sentinel touch either.
+    monkeypatch.setattr(job_runner, "_last_nvd_cve_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "NVD_CVE_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = None
+
+    job_runner.maybe_refresh_device_cve_index(now=0.0)
+
+    mock_fetch.assert_not_called()
+    assert not (tmp_path / "sentinel").exists()
+
+
+@patch("job_runner._fleet_cpe_prefixes", return_value=[])
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.nvd_lookup.fetch_and_cache_device_advisories")
+def test_maybe_refresh_device_cve_index_treats_an_unmapped_fleet_as_a_real_answer(
+    mock_fetch, mock_age, _prefixes, monkeypatch, tmp_path,
+):
+    # [] is different from None: no registered device maps to a known CPE yet,
+    # which is the normal state of a fresh install. Touch the sentinel so it
+    # isn't re-asked every single interval.
+    monkeypatch.setattr(job_runner, "_last_nvd_cve_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "NVD_CVE_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = None
+
+    job_runner.maybe_refresh_device_cve_index(now=0.0)
+
+    mock_fetch.assert_not_called()
+    assert (tmp_path / "sentinel").exists()
+
+
+@patch("job_runner.requests.get")
+def test_fleet_cpe_prefixes_maps_only_devices_with_a_verified_cpe(mock_get):
+    response = MagicMock()
+    response.raise_for_status.side_effect = None
+    response.json.return_value = [
+        {"device_id": "device-router-gw", "vendor": "Netgear", "model": "R7000"},
+        {"device_id": "device-nvr", "vendor": "Dahua", "model": "NVR4108-8P"},  # no CPE coverage
+        {"device_id": "device-new", "vendor": None, "model": None},
+        {"device_id": "device-insecure", "vendor": "Hikvision", "model": "DS-2CD2143G2-I"},
+    ]
+    mock_get.return_value = response
+
+    prefixes = job_runner._fleet_cpe_prefixes()
+
+    assert prefixes == [
+        r"o:hikvision:ds-2cd2143g2-i\(s\)_firmware",
+        "o:netgear:r7000_firmware",
+    ]
+
+
+@patch("job_runner.requests.get", side_effect=requests.ConnectionError("api down"))
+def test_fleet_cpe_prefixes_returns_none_when_the_device_list_cannot_be_read(_mock_get):
+    assert job_runner._fleet_cpe_prefixes() is None

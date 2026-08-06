@@ -29,15 +29,17 @@ from device_validation import (
 )
 from policies.catalog import scan_tests
 from policies.catalog.scan_tests import (
+    DEVICE_CPE_OVERRIDES,
     SCAN_CATALOG,
     configure_active_scopes,
     estimate_stage_a_timeout,
     estimate_stage_b_timeout,
     is_applicable,
+    is_device_intel_test,
     is_firmware_test,
     is_network_discovery_test,
 )
-from lab.auditor.worker.scan_scripts import cisa_kev, oui_lookup
+from lab.auditor.worker.scan_scripts import cisa_kev, nvd_lookup, oui_lookup
 from lab.auditor.worker.scan_scripts.interface_detect import detect_candidate_subnets
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
@@ -86,9 +88,23 @@ OUI_REFRESH_SENTINEL = os.environ.get(
     "OUI_REFRESH_SENTINEL", os.path.expanduser("~/.cache/grype/db/.oui-last-refresh"),
 )
 
+# Fourth use of the same hybrid model/sentinel pattern - NVD device-level CVE
+# data (nvd_lookup.py), for TEST-DEVICE-CVE-LOOKUP. Unlike the three above,
+# this one is fleet-dependent: it queries only the CPE prefixes that
+# currently-registered devices actually map to, so it first has to ask
+# auditor-api which devices exist. A 7-day max age matches the others; NVD
+# publishes continuously, but a device-level product CPE gaining a new CVE is
+# a weekly-scale event, not an hourly one.
+NVD_CVE_CHECK_INTERVAL_SECONDS = float(os.environ.get("NVD_CVE_CHECK_INTERVAL_SECONDS", str(6 * 3600)))
+NVD_CVE_MAX_AGE_SECONDS = float(os.environ.get("NVD_CVE_MAX_AGE_SECONDS", str(7 * 24 * 3600)))
+NVD_CVE_REFRESH_SENTINEL = os.environ.get(
+    "NVD_CVE_REFRESH_SENTINEL", os.path.expanduser("~/.cache/grype/db/.nvd-device-cves-last-refresh"),
+)
+
 _last_grype_check_monotonic: float | None = None
 _last_kev_check_monotonic: float | None = None
 _last_oui_check_monotonic: float | None = None
+_last_nvd_cve_check_monotonic: float | None = None
 
 # Network Scope: unlike auditor-api, which reconfigures device_validation/
 # scan_tests in-process on every write (see network_scope_routes.py), this
@@ -113,9 +129,15 @@ def resolve_target(job: dict) -> dict:
     uploaded archive keyed only by device_id - so they skip the live-target
     validators entirely rather than failing them on empty/None input.
     Network-discovery tests are the same shape: they sweep the whole
-    audit-network subnet rather than one device's host/port.
+    audit-network subnet rather than one device's host/port. So are
+    device-intel tests, which reason about a device's already-recorded
+    identity (vendor/model) rather than probing it at all.
     """
-    if is_firmware_test(job["test_id"]) or is_network_discovery_test(job["test_id"]):
+    if (
+        is_firmware_test(job["test_id"])
+        or is_network_discovery_test(job["test_id"])
+        or is_device_intel_test(job["test_id"])
+    ):
         return {"device_id": job["device_id"], "host": None, "service_type": None, "port": None}
     return {
         "device_id": job["device_id"],
@@ -292,12 +314,13 @@ def process_job(job: dict) -> None:
         _patch(job_id, {"status": "failed", "error": f"invalid target: {exc.message}"})
         return
 
-    # is_applicable() gates on service_type, which firmware and
-    # network-discovery tests don't have (applicable_service_types=() would
-    # always return False for them).
+    # is_applicable() gates on service_type, which firmware,
+    # network-discovery and device-intel tests don't have
+    # (applicable_service_types=() would always return False for them).
     if (
         not is_firmware_test(test_id)
         and not is_network_discovery_test(test_id)
+        and not is_device_intel_test(test_id)
         and not is_applicable(target, test_id)
     ):
         _patch(job_id, {"status": "failed", "error": "test does not apply to this service"})
@@ -504,6 +527,77 @@ def maybe_refresh_oui_registry(now: float | None = None) -> None:
         print("job_runner: IEEE OUI registry refresh failed", file=sys.stderr, flush=True)
 
 
+def _fleet_cpe_prefixes() -> list[str] | None:
+    """The distinct CPE prefixes the currently-registered fleet maps to, or
+    None if the device list couldn't be read.
+
+    None and [] mean different things and are handled differently by the
+    caller: None is a failure worth retrying, [] is the real, valid answer
+    "no registered device has a verified CPE mapping yet" - which is the
+    normal state of a fresh install and must not be retried every cycle."""
+    try:
+        response = requests.get(f"{API_URL}/devices", timeout=10)
+        response.raise_for_status()
+        devices = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        print(
+            f"job_runner: device CVE index refresh failed (could not list devices): {exc}",
+            file=sys.stderr, flush=True,
+        )
+        return None
+
+    return sorted({
+        DEVICE_CPE_OVERRIDES[(device["vendor"], device["model"])]
+        for device in devices
+        if device.get("vendor") and device.get("model")
+        and (device["vendor"], device["model"]) in DEVICE_CPE_OVERRIDES
+    })
+
+
+def maybe_refresh_device_cve_index(now: float | None = None) -> None:
+    """Same hybrid model and sentinel pattern as maybe_refresh_cisa_kev, for
+    the NVD device-CVE cache (nvd_lookup.py). Never raises - a failed fetch
+    leaves the last-good cache in place (fetch_and_cache_device_advisories
+    only atomically swaps what it did retrieve) and is retried next check.
+
+    The one structural difference from the other three refreshers: this one
+    is fleet-scoped, so it reads GET /devices first to learn which CPE
+    prefixes are worth querying at all. Nothing is fetched for a product no
+    registered device uses."""
+    global _last_nvd_cve_check_monotonic
+    now = time.monotonic() if now is None else now
+    if (
+        _last_nvd_cve_check_monotonic is not None
+        and (now - _last_nvd_cve_check_monotonic) < NVD_CVE_CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_nvd_cve_check_monotonic = now
+
+    sentinel_age = _sentinel_age_seconds(NVD_CVE_REFRESH_SENTINEL)
+    if sentinel_age is not None and sentinel_age < NVD_CVE_MAX_AGE_SECONDS:
+        return
+
+    cpe_prefixes = _fleet_cpe_prefixes()
+    if cpe_prefixes is None:
+        return
+    if not cpe_prefixes:
+        # A real, valid state, not a failure: nothing in the fleet maps to a
+        # verified CPE yet. Touch the sentinel so this doesn't re-ask on every
+        # single check interval.
+        print("job_runner: no registered device maps to a known CPE - skipping NVD refresh", flush=True)
+        _touch_sentinel(NVD_CVE_REFRESH_SENTINEL)
+        return
+
+    if nvd_lookup.fetch_and_cache_device_advisories(cpe_prefixes):
+        print(
+            f"job_runner: NVD device-CVE index refresh completed ({len(cpe_prefixes)} product(s))",
+            flush=True,
+        )
+        _touch_sentinel(NVD_CVE_REFRESH_SENTINEL)
+    else:
+        print("job_runner: NVD device-CVE index refresh failed", file=sys.stderr, flush=True)
+
+
 def _enrich_mac_vendors(observations: dict) -> dict:
     """Overrides each host's mac_vendor/mac_vendor_source with a maintained
     IEEE OUI-registry lookup when one resolves, falling back to whatever
@@ -592,6 +686,7 @@ def main() -> None:
             maybe_refresh_grype_db()
             maybe_refresh_cisa_kev()
             maybe_refresh_oui_registry()
+            maybe_refresh_device_cve_index()
         except Exception as exc:  # noqa: BLE001 - never let a poll failure kill the loop
             print(f"job_runner: poll error: {exc}", file=sys.stderr, flush=True)
         time.sleep(POLL_INTERVAL_SECONDS)

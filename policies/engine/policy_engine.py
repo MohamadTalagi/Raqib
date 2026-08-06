@@ -91,11 +91,15 @@ def is_control_applicable(control: dict, device_services: list[dict]) -> bool:
     any column devices actually have).
 
     A required test_id with no automated collector at all (not in
-    SCAN_CATALOG - e.g. SA-IOT-001's TEST-DEVICE-ID, never wired into Run
-    Scan) tells us nothing about whether the control applies to this
+    SCAN_CATALOG) tells us nothing about whether the control applies to this
     device - the honest answer is "not yet automated," not "doesn't apply,"
     so this returns True (meaning: don't treat it as inapplicable) rather
-    than assuming an absent collector means the control can never apply."""
+    than assuming an absent collector means the control can never apply.
+    (SA-IOT-001's TEST-DEVICE-ID was the standing example of that case for
+    most of this project's life; it now has a real collector, so SA-IOT-001
+    resolves through the normal service-matching path below - which is what
+    its own `limitations` field always said should happen: a device with no
+    HTTP service evaluates to NOT_APPLICABLE.)"""
     from policies.catalog.scan_tests import SCAN_CATALOG, is_applicable
 
     test_ids = {req["test_id"] for req in control["required_evidence"]}

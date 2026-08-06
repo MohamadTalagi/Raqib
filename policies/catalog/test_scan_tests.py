@@ -1525,11 +1525,13 @@ def test_every_test_id_has_the_expected_pipeline_phase():
         "TEST-FW-CERTKEY": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         "TEST-FW-UPDATESCRIPT": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         "TEST-FW-MANIFEST": PIPELINE_PHASE_VULN_INTELLIGENCE,
+        "TEST-DEVICE-CVE-LOOKUP": PIPELINE_PHASE_VULN_INTELLIGENCE,
         "TEST-NET-DISCOVERY": None,
         "TEST-MODBUS-PROBE": PIPELINE_PHASE_FINGERPRINTING,
         "TEST-RTSP-PROBE": PIPELINE_PHASE_FINGERPRINTING,
         "TEST-UPNP-PROBE": PIPELINE_PHASE_FINGERPRINTING,
         "TEST-MDNS-PROBE": PIPELINE_PHASE_FINGERPRINTING,
+        "TEST-DEVICE-ID": PIPELINE_PHASE_FINGERPRINTING,
         "TEST-PHYSICAL-TAMPER-STATUS": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         "TEST-TLS-CLIENT-AUTH": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         "TEST-SECURITY-LOG-ENDPOINT": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
@@ -1925,3 +1927,261 @@ def test_tls_client_auth_is_only_applicable_to_tls_service_types():
 def test_security_log_and_monitoring_endpoints_are_applicable_to_http_service_types():
     assert is_applicable(HTTP_TARGET, "TEST-SECURITY-LOG-ENDPOINT")
     assert is_applicable(HTTP_TARGET, "TEST-MONITORING-ENDPOINT")
+
+
+# -- TEST-DEVICE-ID (device identity auto-detection) ------------------------
+# SA-IOT-001's collector, absent from this catalog for most of the project's
+# life. The `device_identified` key name is a hard pre-existing contract with
+# policies/controls/SA-IOT-001.yaml's pass/fail conditions - a rename here
+# silently stops that control evaluating, so it is asserted explicitly below.
+
+REAL_DEVICE_INFO_RESPONSE = (
+    '{"device_id":"device-insecure","vendor":"Hikvision",'
+    '"model":"DS-2CD2143G2-I","mac":"A4:14:37:00:11:22",'
+    '"device_type":"smart-camera","firmware_version":"V5.3.0 build 160530"}'
+)
+
+
+def test_device_id_command_targets_the_device_info_endpoint():
+    from policies.catalog.scan_tests import _device_id_command
+
+    assert _device_id_command(HTTP_TARGET) == [
+        "curl", "-s", "http://device-insecure/api/device/info",
+    ]
+
+
+def test_device_id_command_uses_https_and_insecure_flag_for_a_tls_target():
+    from policies.catalog.scan_tests import _device_id_command
+
+    command = _device_id_command(HTTPS_TARGET)
+    assert "-k" in command
+    assert command[-1] == "https://device-hardened/api/device/info"
+
+
+def test_device_id_parses_a_real_fixture_response():
+    from policies.catalog.scan_tests import _parse_device_id_observations
+
+    observations = _parse_device_id_observations(HTTP_TARGET, REAL_DEVICE_INFO_RESPONSE)
+    assert observations["device_identified"] is True
+    assert observations["vendor"] == "Hikvision"
+    assert observations["model"] == "DS-2CD2143G2-I"
+    assert observations["firmware_version"] == "V5.3.0 build 160530"
+    assert observations["mac"] == "A4:14:37:00:11:22"
+    assert observations["notes"]
+
+
+def test_device_id_is_not_identified_when_a_required_field_is_missing():
+    from policies.catalog.scan_tests import _parse_device_id_observations
+
+    output = '{"vendor":"Hikvision","model":"DS-2CD2143G2-I"}'
+    observations = _parse_device_id_observations(HTTP_TARGET, output)
+    assert observations["device_identified"] is False
+    assert observations["firmware_version"] is None
+    assert "firmware version" in observations["notes"][0]
+
+
+def test_device_id_treats_an_empty_string_field_as_absent():
+    from policies.catalog.scan_tests import _parse_device_id_observations
+
+    output = '{"vendor":"","model":"M","firmware_version":"1.0"}'
+    observations = _parse_device_id_observations(HTTP_TARGET, output)
+    assert observations["device_identified"] is False
+    assert observations["vendor"] is None
+
+
+def test_device_id_recovers_fields_from_a_truncated_response():
+    # A partial body would raise on json.loads(); the per-field regexes keep
+    # whatever genuinely came back rather than losing all of it.
+    from policies.catalog.scan_tests import _parse_device_id_observations
+
+    output = '{"vendor":"Sonos","model":"One (Gen 2)","firmware_ver'
+    observations = _parse_device_id_observations(HTTP_TARGET, output)
+    assert observations["vendor"] == "Sonos"
+    assert observations["model"] == "One (Gen 2)"
+    assert observations["device_identified"] is False
+
+
+def test_device_id_returns_nothing_identified_for_an_empty_response():
+    from policies.catalog.scan_tests import _parse_device_id_observations
+
+    observations = _parse_device_id_observations(HTTP_TARGET, "")
+    assert observations["device_identified"] is False
+    assert observations["vendor"] is None
+    assert observations["model"] is None
+    assert observations["firmware_version"] is None
+    assert observations["mac"] is None
+
+
+def test_device_id_observation_key_matches_the_sa_iot_001_contract():
+    # policies/controls/SA-IOT-001.yaml keys its pass/fail conditions on
+    # observations.device_identified - this asserts the exact field name so a
+    # rename can never silently un-automate that control again.
+    from policies.catalog.scan_tests import _parse_device_id_observations
+
+    observations = _parse_device_id_observations(HTTP_TARGET, REAL_DEVICE_INFO_RESPONSE)
+    assert "device_identified" in observations
+    assert isinstance(observations["device_identified"], bool)
+
+
+def test_device_id_is_a_fingerprinting_test_applicable_to_http_services():
+    assert SCAN_CATALOG["TEST-DEVICE-ID"]["pipeline_phase"] == PIPELINE_PHASE_FINGERPRINTING
+    assert is_applicable(HTTP_TARGET, "TEST-DEVICE-ID")
+    assert is_applicable(HTTPS_TARGET, "TEST-DEVICE-ID")
+    assert not is_applicable(MQTT_TARGET, "TEST-DEVICE-ID")
+    assert not is_firmware_test("TEST-DEVICE-ID")
+
+
+def test_device_id_suggests_high_confidence_only_on_a_clean_identification():
+    from policies.catalog.scan_tests import _suggest_confidence_device_id
+
+    assert _suggest_confidence_device_id({"device_identified": True}) == "high"
+    assert _suggest_confidence_device_id({"device_identified": False}) == "medium"
+
+
+# -- TEST-DEVICE-CVE-LOOKUP (device-level NVD CVE matching) ------------------
+# The premise of this collector is that it works with NO firmware image, so
+# the tests that matter most are the ones pinning it OUT of the firmware test
+# class (which would make main.py's _create_scan_job reject it for exactly
+# the firmware-less devices it exists for) and the ones proving each of its
+# three distinct outcomes is reported as itself.
+
+DEVICE_CVE_TARGET = {"device_id": "device-router-gw"}
+
+
+def test_device_cve_lookup_is_device_intel_not_firmware():
+    from policies.catalog.scan_tests import is_device_intel_test
+
+    assert is_device_intel_test("TEST-DEVICE-CVE-LOOKUP")
+    # If this ever becomes True, the API will 400 every firmware-less device.
+    assert not is_firmware_test("TEST-DEVICE-CVE-LOOKUP")
+    assert not is_network_discovery_test("TEST-DEVICE-CVE-LOOKUP")
+    assert SCAN_CATALOG["TEST-DEVICE-CVE-LOOKUP"]["applicable_service_types"] == ()
+
+
+def test_device_intel_predicate_is_false_for_the_other_test_classes():
+    from policies.catalog.scan_tests import is_device_intel_test
+
+    assert not is_device_intel_test("TEST-FW-MANIFEST")
+    assert not is_device_intel_test("TEST-NET-DISCOVERY")
+    assert not is_device_intel_test("TEST-NET-PORTSCAN")
+    assert not is_device_intel_test("TEST-DOES-NOT-EXIST")
+
+
+def test_device_cve_lookup_command_passes_only_the_device_id():
+    from policies.catalog.scan_tests import DEVICE_CVE_LOOKUP_SCRIPT, _device_cve_lookup_command
+
+    assert _device_cve_lookup_command(DEVICE_CVE_TARGET) == [
+        "python3", DEVICE_CVE_LOOKUP_SCRIPT, "device-router-gw",
+    ]
+
+
+def test_device_cve_lookup_parses_a_matched_product_with_cves():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    cves = [
+        {"id": "CVE-2021-34991", "cvss": 8.8, "summary": "UPnP RCE",
+         "kev_listed": True, "kev_date_added": "2022-01-10"},
+        {"id": "CVE-2016-6277", "cvss": 8.8, "summary": "CSRF", "kev_listed": False, "kev_date_added": None},
+    ]
+    output = (
+        "vendor=Netgear\nmodel=R7000\nfirmware_version=V1.0.11.132_10.2.132\n"
+        "cpe_matched=True\ncpe=o:netgear:r7000_firmware\nindex_available=True\n"
+        f"device_cves={json.dumps(cves)}\n"
+    )
+    observations = _parse_device_cve_lookup_observations(DEVICE_CVE_TARGET, output)
+
+    assert observations["cpe_matched"] is True
+    assert observations["cpe"] == "o:netgear:r7000_firmware"
+    assert observations["total_device_cves"] == 2
+    assert observations["kev_listed_device_cves"] == 1
+    assert observations["highest_device_cvss"] == 8.8
+    assert [c["id"] for c in observations["device_cves"]] == ["CVE-2021-34991", "CVE-2016-6277"]
+    assert any("CISA" in note for note in observations["notes"])
+
+
+def test_device_cve_lookup_reports_an_unmapped_product_as_a_gap_not_a_clean_result():
+    # device-nvr's real case: Dahua NVR4108-8P has no NVD CPE coverage at all.
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = "vendor=Dahua\nmodel=NVR4108-8P\nfirmware_version=3.218.0000019.0\ncpe_matched=False\ncpe=\n"
+    observations = _parse_device_cve_lookup_observations(DEVICE_CVE_TARGET, output)
+
+    assert observations["cpe_matched"] is False
+    assert observations["device_cves"] == []
+    note = observations["notes"][0]
+    assert "No CPE mapping" in note
+    # The distinction this whole collector's honesty rests on.
+    assert "not a clean bill of health" in note
+
+
+def test_device_cve_lookup_distinguishes_an_unpopulated_cache_from_zero_cves():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    stale = (
+        "vendor=Netgear\nmodel=R7000\nfirmware_version=1.0\n"
+        "cpe_matched=True\ncpe=o:netgear:r7000_firmware\nindex_available=False\ndevice_cves=[]\n"
+    )
+    assert "has not been populated yet" in _parse_device_cve_lookup_observations(
+        DEVICE_CVE_TARGET, stale,
+    )["notes"][0]
+
+    checked = (
+        "vendor=Netgear\nmodel=R7000\nfirmware_version=1.0\n"
+        "cpe_matched=True\ncpe=o:netgear:r7000_firmware\nindex_available=True\ndevice_cves=[]\n"
+    )
+    note = _parse_device_cve_lookup_observations(DEVICE_CVE_TARGET, checked)["notes"][0]
+    assert "no published CVEs" in note
+    assert "real checked result" in note
+
+
+def test_device_cve_lookup_reports_an_unidentified_device():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = "vendor=\nmodel=\nfirmware_version=\ncpe_matched=False\ncpe=\n"
+    observations = _parse_device_cve_lookup_observations(DEVICE_CVE_TARGET, output)
+
+    assert observations["vendor"] is None
+    assert "run TEST-DEVICE-ID" in observations["notes"][0]
+
+
+def test_device_cve_lookup_survives_malformed_cve_json():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = (
+        "vendor=Netgear\nmodel=R7000\ncpe_matched=True\ncpe=o:netgear:r7000_firmware\n"
+        "index_available=True\ndevice_cves=[{truncated\n"
+    )
+    observations = _parse_device_cve_lookup_observations(DEVICE_CVE_TARGET, output)
+    assert observations["device_cves"] == []
+    assert observations["total_device_cves"] == 0
+
+
+def test_device_cve_lookup_suggests_medium_confidence_without_a_cpe_match():
+    from policies.catalog.scan_tests import _suggest_confidence_device_cve_lookup
+
+    assert _suggest_confidence_device_cve_lookup({"cpe_matched": True}) == "high"
+    assert _suggest_confidence_device_cve_lookup({"cpe_matched": False}) == "medium"
+
+
+def test_device_cpe_overrides_are_well_formed_and_cover_the_real_fixtures():
+    from policies.catalog.scan_tests import DEVICE_CPE_OVERRIDES, lookup_device_cpe
+
+    for key, value in DEVICE_CPE_OVERRIDES.items():
+        assert isinstance(key, tuple) and len(key) == 2, key
+        assert all(isinstance(part, str) and part for part in key), key
+        # "part:vendor:product" - the CPE part is load-bearing (Axis is
+        # catalogued as hardware, not firmware), so it must always be present.
+        parts = value.split(":")
+        assert len(parts) == 3, value
+        assert parts[0] in ("o", "h", "a"), value
+        assert all(parts), value
+
+    # Verified live against NVD's CPE dictionary on 2026-08-06.
+    assert lookup_device_cpe("Netgear", "R7000") == "o:netgear:r7000_firmware"
+    assert lookup_device_cpe("Axis Communications", "M3216-LVE") == "h:axis:m3216-lve"
+    assert lookup_device_cpe("Yale", "Conexis L1") == "o:assaabloy:yale_conexis_l1_firmware"
+    # Deliberately absent: Dahua's NVR4108-8P has no NVD CPE coverage at all,
+    # and an invented one would be a fabrication.
+    assert lookup_device_cpe("Dahua", "NVR4108-8P") is None
+    assert lookup_device_cpe(None, "R7000") is None
+    assert lookup_device_cpe("Netgear", None) is None

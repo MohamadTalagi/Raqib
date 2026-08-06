@@ -454,3 +454,54 @@ def test_record_scan_job_evidence_ids_increment_within_same_day(client):
     seq_a = int(ev_a["evidence_id"].rsplit("-", 1)[1])
     seq_b = int(ev_b["evidence_id"].rsplit("-", 1)[1])
     assert seq_b == seq_a + 1
+
+
+# -- Device-intel tests: registered device, no firmware, no live target ------
+
+
+def test_device_cve_lookup_runs_for_a_device_with_no_firmware_uploaded(client):
+    # The regression that matters most for this feature. Giving
+    # TEST-DEVICE-CVE-LOOKUP the firmware category would route it through the
+    # branch above and 400 with "device has no firmware uploaded" - for
+    # precisely the firmware-less devices device-level CVE lookup exists to
+    # serve.
+    _register_device(client, "device-router-gw")
+    response = client.post(
+        "/scan-jobs", json={"device_id": "device-router-gw", "test_id": "TEST-DEVICE-CVE-LOOKUP"},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == "pending"
+
+
+def test_device_cve_lookup_runs_for_a_device_with_no_http_service_either(client):
+    # applicable_service_types=() - it never touches the device over the
+    # network at all, so a modbus-only device is just as valid a target.
+    _register_device(client, "device-plc-gateway", service_type="modbus", port=502)
+    response = client.post(
+        "/scan-jobs", json={"device_id": "device-plc-gateway", "test_id": "TEST-DEVICE-CVE-LOOKUP"},
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_device_cve_lookup_still_requires_the_device_to_be_registered(client):
+    response = client.post(
+        "/scan-jobs", json={"device_id": "device-unknown", "test_id": "TEST-DEVICE-CVE-LOOKUP"},
+    )
+    assert response.status_code == 400
+    assert "not registered" in response.json()["detail"]
+
+
+def test_device_cve_lookup_job_resolves_with_no_live_target(client):
+    # GET /scan-jobs is where the worker reads its target from; a device-intel
+    # job must come back with host/service_type/port all null, which
+    # resolve_target then short-circuits rather than rejecting.
+    _register_device(client, "device-router-gw")
+    client.post("/scan-jobs", json={"device_id": "device-router-gw", "test_id": "TEST-DEVICE-CVE-LOOKUP"})
+
+    job = next(
+        j for j in client.get("/scan-jobs", params={"status": "pending"}).json()
+        if j["test_id"] == "TEST-DEVICE-CVE-LOOKUP"
+    )
+    assert job["host"] is None
+    assert job["service_type"] is None
+    assert job["port"] is None
