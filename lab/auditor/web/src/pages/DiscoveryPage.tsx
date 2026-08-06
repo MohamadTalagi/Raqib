@@ -97,7 +97,7 @@ export function DiscoveryPage() {
   }
 
   return (
-    <Shell title="Discovery" subtitle="Sweep the network to find candidate devices">
+    <Shell title="Discovery" subtitle="Sweep the network to find candidate devices" phase="discovery">
       {devices.error && (
         <div className="mb-6">
           <ErrorState message={`Could not load the registered device list: ${devices.error}. Registration status shown below may be inaccurate until this loads.`} />

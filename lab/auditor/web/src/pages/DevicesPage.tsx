@@ -193,7 +193,7 @@ export function DevicesPage() {
   }
 
   return (
-    <Shell title="Devices" subtitle="Simulated IoT device profiles in the lab">
+    <Shell title="Devices" subtitle="Simulated IoT device profiles in the lab" phase="discovery">
       <div className="mb-4 flex items-center justify-between gap-2">
         <Link
           to="/discovery"

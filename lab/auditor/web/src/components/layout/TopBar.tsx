@@ -1,17 +1,29 @@
-import { Activity, Menu, Moon, Sun } from "lucide-react";
+import { Activity, Menu, Moon, Palette, Sun } from "lucide-react";
 import { useTheme } from "@/lib/useTheme";
+import { useColorScheme } from "@/lib/useColorScheme";
+import type { PipelinePhaseGroup } from "@/lib/phaseTheme";
+import { PHASE_GROUP_VAR } from "@/lib/phaseTheme";
 
 interface TopBarProps {
   title: string;
   subtitle?: string;
   onMenuClick?: () => void;
+  /** Optional pipeline-phase accent (see lib/phaseTheme.ts) — renders a
+   * thin colored top border under the header. One color under the Default
+   * scheme (matches today's brand accent, no visible change); 4 distinct
+   * KAUST colors under KAUSTify. */
+  phase?: PipelinePhaseGroup;
 }
 
-export function TopBar({ title, subtitle, onMenuClick }: TopBarProps) {
+export function TopBar({ title, subtitle, onMenuClick, phase }: TopBarProps) {
   const [theme, toggleTheme] = useTheme();
+  const [colorScheme, toggleColorScheme] = useColorScheme();
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 px-4 backdrop-blur sm:px-8">
+    <header
+      className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 px-4 backdrop-blur sm:px-8"
+      style={phase ? { borderTop: `3px solid ${PHASE_GROUP_VAR[phase]}` } : undefined}
+    >
       <div className="flex items-center gap-3">
         {onMenuClick ? (
           <button
@@ -37,6 +49,15 @@ export function TopBar({ title, subtitle, onMenuClick }: TopBarProps) {
           className="flex cursor-pointer items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
         >
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
+        <button
+          type="button"
+          onClick={toggleColorScheme}
+          aria-label={colorScheme === "kaustify" ? "Switch to Default color theme" : "Switch to KAUSTify color theme"}
+          title={colorScheme === "kaustify" ? "Color theme: KAUSTify (click for Default)" : "Color theme: Default (click for KAUSTify)"}
+          className="flex cursor-pointer items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+        >
+          <Palette className="h-4 w-4" style={colorScheme === "kaustify" ? { color: "var(--color-brand)" } : undefined} />
         </button>
         <div className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5">
           <Activity className="h-3.5 w-3.5 text-[var(--color-pass)]" strokeWidth={2.5} />

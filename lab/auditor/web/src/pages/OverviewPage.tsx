@@ -21,6 +21,8 @@ import { DeviceActivityBar } from "@/components/charts/DeviceActivityBar";
 import { ComplianceGauge } from "@/components/charts/ComplianceGauge";
 import { useFetch } from "@/lib/useFetch";
 import { api } from "@/lib/api";
+import { useColorScheme } from "@/lib/useColorScheme";
+import { PHASE_GROUP_VAR } from "@/lib/phaseTheme";
 import type { ControlRecord, VerdictRecord } from "@/lib/types";
 
 function controlTitle(controls: ControlRecord[] | null, controlId: string): string {
@@ -37,6 +39,16 @@ const SEVERITY_WEIGHT: Record<VerdictRecord["severity"], number> = {
 export function OverviewPage() {
   const navigate = useNavigate();
   const [showAutomatedRunDialog, setShowAutomatedRunDialog] = useState(false);
+  // Only used to tint this page with the 4 KAUSTify phase colors "in
+  // different manners" (3 stat tiles + one card accent) - every other page
+  // just reads the CSS vars directly and needs no JS branching, since
+  // those vars already resolve to the single brand color under Default.
+  // This page needs the flag because 3 of its 4 stat tiles must fall back
+  // to their original brand/neutral look under Default (not the phase var,
+  // which also resolves to brand but would visually change the 2 tiles
+  // that are "neutral" gray today).
+  const [colorScheme] = useColorScheme();
+  const kaustify = colorScheme === "kaustify";
   const summary = useFetch(api.summary, []);
   const devices = useFetch(api.devices, []);
   const verdicts = useFetch(api.verdicts, []);
@@ -120,6 +132,7 @@ export function OverviewPage() {
                   value={summary.data.total_evidence}
                   icon={FileSearch}
                   accent="brand"
+                  accentColorVar={kaustify ? PHASE_GROUP_VAR.discovery : undefined}
                   hint="manual + automated tests"
                 />
                 <StatTile
@@ -127,6 +140,7 @@ export function OverviewPage() {
                   value={summary.data.total_verdicts}
                   icon={Gavel}
                   accent="neutral"
+                  accentColorVar={kaustify ? PHASE_GROUP_VAR.compliance : undefined}
                   hint="NCA CGIoT-1:2024 controls"
                 />
                 <StatTile
@@ -134,6 +148,7 @@ export function OverviewPage() {
                   value={devices.data?.length ?? 0}
                   icon={HardDrive}
                   accent="neutral"
+                  accentColorVar={kaustify ? PHASE_GROUP_VAR.intelligence : undefined}
                   hint="cameras + brokers"
                 />
                 <StatTile
@@ -342,7 +357,7 @@ export function OverviewPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card style={kaustify ? { borderTopWidth: "3px", borderTopColor: PHASE_GROUP_VAR.solution } : undefined}>
             <CardHeader>
               <CardTitle>Highest-priority failures</CardTitle>
             </CardHeader>

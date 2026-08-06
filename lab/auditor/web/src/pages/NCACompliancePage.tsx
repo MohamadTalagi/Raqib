@@ -142,6 +142,7 @@ export function NCACompliancePage() {
     <Shell
       title="NCA Compliance"
       subtitle="Alignment with NCA CGIoT-1:2024 guidance across registered devices"
+      phase="compliance"
     >
       {error ? (
         <ErrorState message={error} />

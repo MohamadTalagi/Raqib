@@ -170,6 +170,7 @@ export function ExecutiveSummaryPage() {
     <Shell
       title="Executive Summary"
       subtitle="Fleet-wide security posture: risk, compliance, evidence, and remediation in one view"
+      phase="solution"
     >
       {summary.error ? (
         <ErrorState message={summary.error} />

@@ -61,6 +61,7 @@ export function SAIOTCompliancePage() {
     <Shell
       title="SA-IOT Compliance"
       subtitle="The original 5-control pilot assessment (default creds, insecure services, TLS, firmware misconfiguration)"
+      phase="compliance"
     >
       {error ? (
         <ErrorState message={error} />

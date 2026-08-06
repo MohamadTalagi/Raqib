@@ -45,7 +45,11 @@ export function FingerprintingPage() {
   const fingerprintingTests = (scanTests.data ?? []).filter((t) => t.pipeline_phase === "fingerprinting");
 
   return (
-    <Shell title="Fingerprinting" subtitle="Identify what a device is - reachability, open ports, exposed services">
+    <Shell
+      title="Fingerprinting"
+      subtitle="Identify what a device is - reachability, open ports, exposed services"
+      phase="discovery"
+    >
       {error ? (
         <ErrorState message={error} />
       ) : loading ? (

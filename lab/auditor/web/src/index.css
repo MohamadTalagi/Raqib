@@ -34,6 +34,16 @@
   --color-low: #38bdf8;
   --color-pass: #34d399;
   --color-inconclusive: #8b93a1;
+
+  /* Pipeline phase-group accents — default to the single brand color, so
+     the "Default" color scheme is visually unchanged (one consistent
+     accent everywhere, exactly as today). Only the "kaustify" color
+     scheme below gives these 4 distinct real values. See lib/phaseTheme.ts
+     for which pipeline pages belong to which group. */
+  --color-phase-discovery: var(--color-brand);
+  --color-phase-compliance: var(--color-brand);
+  --color-phase-intelligence: var(--color-brand);
+  --color-phase-solution: var(--color-brand);
 }
 
 /* Light theme — opt-in via [data-theme="light"] on <html>, toggled by
@@ -63,6 +73,25 @@
   --color-inconclusive: #6b7280;
 }
 
+/* KAUSTify color scheme — opt-in via [data-color-scheme="kaustify"] on
+   <html>, toggled by useColorScheme.ts and applied pre-paint by the inline
+   script in index.html. Independent of (and layers on top of) the
+   dark/light theme above: only --color-brand and the 4 --color-phase-*
+   accents change, so every neutral/severity color still comes from
+   whichever theme (dark/light) is active. The 4 phase colors are KAUST's
+   own brand palette, one per pipeline group (see lib/phaseTheme.ts):
+   Discovery (teal), Compliance (yellow-green), Intelligence (gold),
+   Solution (orange). Used only as translucent-chip borders/icons/text via
+   color-mix(), never as large solid fills, so contrast holds in both
+   dark and light mode. */
+:root[data-color-scheme="kaustify"] {
+  --color-brand: #00a5aa;
+  --color-phase-discovery: #00a5aa;
+  --color-phase-compliance: #cccc42;
+  --color-phase-intelligence: #f4b636;
+  --color-phase-solution: #f89131;
+}
+
 @layer base {
   html {
     color-scheme: dark;
@@ -80,7 +109,7 @@
     text-rendering: optimizeLegibility;
     margin: 0;
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(242, 169, 59, 0.06), transparent),
+      radial-gradient(ellipse 80% 50% at 50% -20%, color-mix(in oklab, var(--color-brand) 6%, transparent), transparent),
       repeating-linear-gradient(
         0deg,
         rgba(255, 255, 255, 0.012) 0px,
@@ -92,11 +121,11 @@
 
   html[data-theme="light"] body {
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(242, 169, 59, 0.08), transparent);
+      radial-gradient(ellipse 80% 50% at 50% -20%, color-mix(in oklab, var(--color-brand) 8%, transparent), transparent);
   }
 
   ::selection {
-    background-color: rgba(242, 169, 59, 0.3);
+    background-color: color-mix(in oklab, var(--color-brand) 30%, transparent);
   }
 
   ::-webkit-scrollbar {

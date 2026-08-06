@@ -26,6 +26,7 @@ export function PostQuantumReadinessPage() {
     <Shell
       title="Post-Quantum Readiness"
       subtitle="TLS key exchange, certificate signature, and firmware crypto library currency - informational only, never affects risk scoring or compliance"
+      phase="intelligence"
     >
       {error ? (
         <ErrorState message={error} />

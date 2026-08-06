@@ -6,6 +6,11 @@ interface StatTileProps {
   value: string | number;
   icon: LucideIcon;
   accent?: "brand" | "pass" | "critical" | "neutral";
+  /** Overrides `accent` with an arbitrary CSS color (e.g. a
+   * lib/phaseTheme.ts var() reference) - used by OverviewPage to tint
+   * tiles with the 4 KAUSTify phase colors. Ignored under the Default
+   * color scheme since those vars resolve to the same brand color. */
+  accentColorVar?: string;
   hint?: string;
 }
 
@@ -16,12 +21,19 @@ const ACCENT_STYLES: Record<NonNullable<StatTileProps["accent"]>, string> = {
   neutral: "text-[var(--color-text-secondary)] bg-[var(--color-surface-hover)]",
 };
 
-export function StatTile({ label, value, icon: Icon, accent = "neutral", hint }: StatTileProps) {
+export function StatTile({ label, value, icon: Icon, accent = "neutral", accentColorVar, hint }: StatTileProps) {
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
       <div className="flex items-start justify-between">
         <p className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">{label}</p>
-        <div className={cn("flex h-8 w-8 items-center justify-center rounded-md", ACCENT_STYLES[accent])}>
+        <div
+          className={cn("flex h-8 w-8 items-center justify-center rounded-md", !accentColorVar && ACCENT_STYLES[accent])}
+          style={
+            accentColorVar
+              ? { color: accentColorVar, backgroundColor: `color-mix(in oklab, ${accentColorVar} 14%, transparent)` }
+              : undefined
+          }
+        >
           <Icon className="h-4 w-4" strokeWidth={2} />
         </div>
       </div>
