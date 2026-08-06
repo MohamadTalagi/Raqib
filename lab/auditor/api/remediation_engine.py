@@ -112,6 +112,24 @@ def _parse_response(data: dict) -> dict | None:
     return parsed
 
 
+def is_configured() -> bool:
+    """Whether a Gemini API key is present at all.
+
+    Deliberately separate from call_gemini()'s own missing-key check rather
+    than replacing it: that check stays as the module's last line of defence
+    (it must never make a keyless request), while this one lets a caller tell
+    the two genuinely different failures apart BEFORE trying.
+
+    "No key is configured" is a deployment/config problem the operator can fix
+    in seconds; "the model was called and something went wrong" is a quota,
+    network or response problem they cannot. Reporting both as one message
+    sends people to check a quota that was never consumed - which is exactly
+    what happened here, where 12 generate attempts produced 12 identical
+    "check GEMINI_API_KEY/quota" errors without a single request ever
+    reaching Google."""
+    return bool(os.environ.get("GEMINI_API_KEY"))
+
+
 def call_gemini(prompt_body: dict) -> dict | None:
     """Never raises - a missing key, a rate limit, a network failure, or a
     malformed/incomplete response all return None so the caller reports an

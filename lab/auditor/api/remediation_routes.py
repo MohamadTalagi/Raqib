@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException
 
 from db import get_connection
 from id_generation import next_sequential_id
-from remediation_engine import generate_remediation_blueprint
+from remediation_engine import generate_remediation_blueprint, is_configured as gemini_is_configured
 
 router = APIRouter(prefix="/remediation", tags=["remediation"])
 
@@ -157,11 +157,30 @@ def generate_remediation(payload: dict):
                 ),
             )
 
+        # Two genuinely different failures, reported differently. Checking
+        # configuration first means a missing key never presents as a model
+        # or quota problem - it isn't one, and no request is even sent.
+        if not gemini_is_configured():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "AI remediation is not configured: no GEMINI_API_KEY is set on auditor-api, "
+                    "so no request was sent to Gemini (nothing was charged against any quota). "
+                    "Set GEMINI_API_KEY in lab/.env and restart auditor-api. Every other part of "
+                    "this assessment is deterministic and unaffected."
+                ),
+            )
+
         blueprint = generate_remediation_blueprint(finding)
         if blueprint is None:
             raise HTTPException(
                 status_code=502,
-                detail="Gemini did not return a usable response - check GEMINI_API_KEY/quota and try again",
+                detail=(
+                    "Gemini was called but did not return a usable response. The key is set, so "
+                    "this is most likely a rate limit/quota exhaustion, a network failure, or a "
+                    "malformed reply - none of which produce a fabricated blueprint. Try again in "
+                    "a moment; if it persists, check the key's quota in Google AI Studio."
+                ),
             )
 
         new_id = _next_id(conn)

@@ -228,3 +228,66 @@ def test_review_requires_reviewed_by(client, conn):
 def test_review_404_for_unknown_blueprint(client):
     response = client.post("/remediation/blueprints/RB-does-not-exist/review", json={"reviewed_by": "x"})
     assert response.status_code == 404
+
+
+# -- Distinguishing "not configured" from "the model call failed" -----------
+# These are different problems with different fixes: a missing key is a
+# deployment issue an operator resolves in seconds, a failed call is a quota/
+# network/response issue they cannot. Reporting both identically sent a real
+# user to check a quota that had never been consumed, because no request was
+# ever sent.
+
+
+def test_generate_503s_with_a_config_message_when_no_api_key_is_set(client, conn, monkeypatch):
+    _register_device(conn)
+    _seed_verdict(conn)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    with patch("remediation_routes.generate_remediation_blueprint") as mock_generate:
+        response = client.post(
+            "/remediation/generate",
+            json={"finding_type": "sa_iot_verdict", "finding_id": "VD-2026-08-02-0001"},
+        )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert "no GEMINI_API_KEY is set" in detail
+    assert "no request was sent" in detail
+    # The whole point: don't send anyone to check a quota that was never used.
+    assert "quota" not in detail.split("nothing was charged against any quota")[1]
+    # And never call the model at all when it cannot possibly work.
+    mock_generate.assert_not_called()
+
+
+def test_generate_502s_with_a_quota_message_when_the_call_itself_fails(client, conn):
+    _register_device(conn)
+    _seed_verdict(conn)
+
+    # Key IS set (the client fixture sets one) but generation returned None.
+    with patch("remediation_routes.generate_remediation_blueprint", return_value=None):
+        response = client.post(
+            "/remediation/generate",
+            json={"finding_type": "sa_iot_verdict", "finding_id": "VD-2026-08-02-0001"},
+        )
+
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert "was called" in detail
+    assert "quota" in detail
+    # Must never imply a blueprint was invented in place of the failed call.
+    assert "fabricated" in detail
+
+
+def test_no_blueprint_row_is_written_when_generation_is_unavailable(client, conn, monkeypatch):
+    # An honest failure must leave no trace in the append-only blueprint
+    # history - a half-written record would be worse than no record.
+    _register_device(conn)
+    _seed_verdict(conn)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    client.post(
+        "/remediation/generate",
+        json={"finding_type": "sa_iot_verdict", "finding_id": "VD-2026-08-02-0001"},
+    )
+
+    assert client.get("/remediation/blueprints").json() == []
