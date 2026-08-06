@@ -1832,6 +1832,143 @@ def _suggest_confidence_device_id(observations: dict) -> str:
     return "high" if observations.get("device_identified") else "medium"
 
 
+MAC_VENDOR_CHECK_SCRIPT = "/work/lab/auditor/worker/scan_scripts/mac_vendor_check.py"
+
+# Vendor names never match between a device's own marketing string and an IEEE
+# OUI registration - "Hikvision" vs "Hangzhou Hikvision Digital Technology
+# Co.,Ltd.", "Yale" vs "Assa Abloy AB - Yale", "Axis Communications" vs "Axis
+# Communications AB". Comparing them needs a real rule, not equality.
+#
+# The rule: strip corporate suffixes and punctuation from both sides, then ask
+# whether either normalized name contains the other as a whole-word run. That
+# is deliberately conservative in one direction - it can report "no match" for
+# a genuine pair whose names share no common token (a rebrand, or an ODM
+# manufacturing under another name) - because the alternative, fuzzy scoring,
+# would produce a confident-looking number this project has no way to justify.
+# An unmatched pair is therefore reported as "review", never as "spoofed".
+_CORPORATE_SUFFIXES = (
+    "co", "ltd", "limited", "inc", "incorporated", "corp", "corporation",
+    "company", "gmbh", "ag", "ab", "sa", "srl", "bv", "nv", "plc", "llc",
+    "technology", "technologies", "digital", "electronics", "electric",
+    "international", "group", "holdings", "systems", "networks",
+)
+
+
+def _normalize_vendor_name(name: str) -> list[str]:
+    """A vendor name reduced to its meaningful tokens, lowercased, with
+    punctuation and corporate suffixes dropped."""
+    cleaned = re.sub(r"[^a-z0-9]+", " ", (name or "").lower())
+    return [token for token in cleaned.split() if token and token not in _CORPORATE_SUFFIXES]
+
+
+def vendor_names_agree(claimed: str | None, registered: str | None) -> bool | None:
+    """True/False when both names are present and comparable, None when the
+    comparison cannot be made at all (either side missing, or one reduces to
+    no meaningful tokens once suffixes are stripped). None is a real third
+    answer, not a soft False - "we could not check" must never render as
+    "these disagree"."""
+    if not claimed or not registered:
+        return None
+    claimed_tokens = _normalize_vendor_name(claimed)
+    registered_tokens = _normalize_vendor_name(registered)
+    if not claimed_tokens or not registered_tokens:
+        return None
+    claimed_text = " ".join(claimed_tokens)
+    registered_text = " ".join(registered_tokens)
+    return claimed_text in registered_text or registered_text in claimed_text
+
+
+def _mac_vendor_command(target: dict) -> list[str]:
+    scheme = _scheme_for(target)
+    authority = _authority_for(target, scheme)
+    return ["python3", MAC_VENDOR_CHECK_SCRIPT, f"{scheme}://{authority}"]
+
+
+def _parse_mac_vendor_observations(target: dict, output: str) -> dict:
+    """Four genuinely different outcomes, each reported as itself:
+      - no MAC disclosed          -> nothing to look up
+      - MAC disclosed, unresolved -> OUI not registered, or lookup failed
+      - resolved, names agree     -> corroborated identity
+      - resolved, names disagree  -> worth a human's attention
+    """
+    def _line(name: str) -> str | None:
+        match = re.search(rf"^{name}=(.*)$", output, re.MULTILINE)
+        return match.group(1) if match and match.group(1) else None
+
+    mac = _line("mac")
+    claimed_vendor = _line("claimed_vendor")
+    oui = _line("oui")
+    oui_vendor = _line("oui_vendor")
+    oui_source = _line("oui_source")
+    lookup_error = _line("lookup_error")
+    mac_disclosed = "mac_disclosed=True" in output
+
+    vendor_match = vendor_names_agree(claimed_vendor, oui_vendor)
+
+    notes: list[str] = []
+    if not mac_disclosed:
+        notes.append(
+            "This device's info endpoint disclosed no MAC address, so no OUI "
+            "vendor lookup was possible. Asset inventory can still identify it "
+            "by vendor/model, but the hardware-level cross-check is "
+            "unavailable.",
+        )
+    elif lookup_error:
+        notes.append(
+            f"The MAC was extracted ({mac}) but the vendor lookup could not be "
+            f"completed: {lookup_error}. This is missing data, not evidence "
+            "that the OUI is unregistered - re-run once connectivity is "
+            "restored.",
+        )
+    elif not oui_vendor:
+        notes.append(
+            f"The OUI {oui} is not registered to any organization in the IEEE "
+            "registry or macvendors.com. That is the expected, correct result "
+            "for a locally-administered or randomized MAC (including every "
+            "Docker-assigned container MAC), and is not by itself suspicious.",
+        )
+    elif vendor_match is True:
+        notes.append(
+            f"The MAC prefix {oui} is registered to \"{oui_vendor}\", which "
+            f"corroborates this device's own claim to be a {claimed_vendor} "
+            "product. Hardware identity and self-reported identity agree.",
+        )
+    elif vendor_match is False:
+        notes.append(
+            f"MISMATCH: this device reports itself as \"{claimed_vendor}\", but "
+            f"its MAC prefix {oui} is registered to \"{oui_vendor}\". Treat as "
+            "a finding to investigate, not a conclusion - the honest readings "
+            "range from a relabelled/ODM-manufactured device or a reused NIC "
+            "through to a deliberately spoofed identity. Confirm against the "
+            "physical asset before recording it as either.",
+        )
+    else:
+        notes.append(
+            f"The MAC prefix {oui} resolves to \"{oui_vendor}\", but that name "
+            "could not be compared against this device's own claim "
+            f"(\"{claimed_vendor or 'none reported'}\") - review the two by eye.",
+        )
+
+    return {
+        "mac": mac,
+        "mac_disclosed": mac_disclosed,
+        "oui": oui,
+        "claimed_vendor": claimed_vendor,
+        "oui_vendor": oui_vendor,
+        "oui_source": oui_source,
+        "vendor_match": vendor_match,
+        "lookup_error": lookup_error,
+        "notes": notes,
+    }
+
+
+def _suggest_confidence_mac_vendor(observations: dict) -> str:
+    # A resolved OUI is a hard, registry-backed fact. Anything else - no MAC,
+    # a failed lookup, or an unregistered OUI - is a weaker observation an
+    # auditor should read before it becomes evidence.
+    return "high" if observations.get("oui_vendor") else "medium"
+
+
 DEVICE_CVE_LOOKUP_SCRIPT = "/work/lab/auditor/worker/scan_scripts/device_cve_lookup.py"
 
 
@@ -2028,6 +2165,17 @@ SCAN_CATALOG = {
         "build_command": _device_id_command,
         "parse_observations": _parse_device_id_observations,
         "suggest_confidence": _suggest_confidence_device_id,
+        "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
+    },
+    "TEST-DEVICE-MAC-VENDOR": {
+        "label": "MAC address vendor lookup",
+        "tool": "python3",
+        "tool_version_command": ["python3", "--version"],
+        "category": CATEGORY_NETWORK_PROTOCOL,
+        "applicable_service_types": HTTP_SERVICE_TYPES,
+        "build_command": _mac_vendor_command,
+        "parse_observations": _parse_mac_vendor_observations,
+        "suggest_confidence": _suggest_confidence_mac_vendor,
         "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
     },
     "TEST-AUTH-DEFAULT-CREDS": {

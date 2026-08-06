@@ -1532,6 +1532,7 @@ def test_every_test_id_has_the_expected_pipeline_phase():
         "TEST-UPNP-PROBE": PIPELINE_PHASE_FINGERPRINTING,
         "TEST-MDNS-PROBE": PIPELINE_PHASE_FINGERPRINTING,
         "TEST-DEVICE-ID": PIPELINE_PHASE_FINGERPRINTING,
+        "TEST-DEVICE-MAC-VENDOR": PIPELINE_PHASE_FINGERPRINTING,
         "TEST-PHYSICAL-TAMPER-STATUS": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         "TEST-TLS-CLIENT-AUTH": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
         "TEST-SECURITY-LOG-ENDPOINT": PIPELINE_PHASE_SA_IOT_COMPLIANCE,
@@ -2185,3 +2186,144 @@ def test_device_cpe_overrides_are_well_formed_and_cover_the_real_fixtures():
     assert lookup_device_cpe("Dahua", "NVR4108-8P") is None
     assert lookup_device_cpe(None, "R7000") is None
     assert lookup_device_cpe("Netgear", None) is None
+
+
+# -- TEST-DEVICE-MAC-VENDOR (auto MAC extraction + OUI vendor lookup) -------
+# The comparison is the point, not the lookup: a device's own vendor string
+# and its MAC's registered organization never match literally, so
+# vendor_names_agree() has to do real work. Its three-valued return (True /
+# False / None-for-uncomparable) is the part to be careful with - "we could
+# not check" must never render as "these disagree".
+
+
+def test_mac_vendor_command_targets_the_device_base_url():
+    from policies.catalog.scan_tests import MAC_VENDOR_CHECK_SCRIPT, _mac_vendor_command
+
+    assert _mac_vendor_command(HTTP_TARGET) == [
+        "python3", MAC_VENDOR_CHECK_SCRIPT, "http://device-insecure",
+    ]
+    assert _mac_vendor_command(HTTPS_TARGET)[-1] == "https://device-hardened"
+
+
+def test_vendor_names_agree_on_the_real_fixture_pairs():
+    # Every one of these is a REAL pair: the left side is what the fixture
+    # reports over HTTP, the right is what macvendors.com returned live for
+    # that fixture's actual MAC prefix on 2026-08-06.
+    from policies.catalog.scan_tests import vendor_names_agree
+
+    assert vendor_names_agree("Hikvision", "Hangzhou Hikvision Digital Technology Co.,Ltd.") is True
+    assert vendor_names_agree("Axis Communications", "Axis Communications AB") is True
+    assert vendor_names_agree("Yale", "Assa Abloy AB - Yale") is True
+    assert vendor_names_agree("Schneider Electric", "Schneider Electric") is True
+    assert vendor_names_agree("Netgear", "NETGEAR") is True
+    assert vendor_names_agree("Dahua", "Zhejiang Dahua Technology Co., Ltd.") is True
+    assert vendor_names_agree("Sonos", "Sonos, Inc.") is True
+
+
+def test_vendor_names_agree_detects_a_real_disagreement():
+    from policies.catalog.scan_tests import vendor_names_agree
+
+    assert vendor_names_agree("Hikvision", "NETGEAR") is False
+    assert vendor_names_agree("Sonos", "Axis Communications AB") is False
+
+
+def test_vendor_names_agree_returns_none_when_it_cannot_compare():
+    from policies.catalog.scan_tests import vendor_names_agree
+
+    assert vendor_names_agree(None, "NETGEAR") is None
+    assert vendor_names_agree("Netgear", None) is None
+    assert vendor_names_agree("", "NETGEAR") is None
+    # Reduces to no meaningful tokens once corporate suffixes are stripped.
+    assert vendor_names_agree("Ltd.", "NETGEAR") is None
+
+
+def test_mac_vendor_parses_a_corroborated_identity():
+    from policies.catalog.scan_tests import _parse_mac_vendor_observations
+
+    output = (
+        "mac=A4:14:37:00:11:22\nclaimed_vendor=Hikvision\nmac_disclosed=True\n"
+        "oui=A41437\noui_vendor=Hangzhou Hikvision Digital Technology Co.,Ltd.\n"
+        "oui_source=macvendors\nlookup_error=\n"
+    )
+    observations = _parse_mac_vendor_observations(HTTP_TARGET, output)
+
+    assert observations["mac"] == "A4:14:37:00:11:22"
+    assert observations["oui"] == "A41437"
+    assert observations["oui_vendor"] == "Hangzhou Hikvision Digital Technology Co.,Ltd."
+    assert observations["oui_source"] == "macvendors"
+    assert observations["vendor_match"] is True
+    assert "corroborates" in observations["notes"][0]
+
+
+def test_mac_vendor_flags_a_mismatch_without_calling_it_spoofing():
+    from policies.catalog.scan_tests import _parse_mac_vendor_observations
+
+    output = (
+        "mac=E0:46:EE:00:22:03\nclaimed_vendor=Hikvision\nmac_disclosed=True\n"
+        "oui=E046EE\noui_vendor=NETGEAR\noui_source=macvendors\nlookup_error=\n"
+    )
+    observations = _parse_mac_vendor_observations(HTTP_TARGET, output)
+
+    assert observations["vendor_match"] is False
+    note = observations["notes"][0]
+    assert note.startswith("MISMATCH")
+    # Must offer the innocent readings too - a mismatch is a finding to
+    # investigate, never a conclusion the collector is entitled to draw.
+    assert "not a conclusion" in note
+    assert "ODM" in note or "relabelled" in note
+
+
+def test_mac_vendor_reports_an_unregistered_oui_as_expected_not_suspicious():
+    # A real Docker container MAC, from this project's own committed evidence.
+    from policies.catalog.scan_tests import _parse_mac_vendor_observations
+
+    output = (
+        "mac=E6:4D:1A:E6:45:D7\nclaimed_vendor=Hikvision\nmac_disclosed=True\n"
+        "oui=E64D1A\noui_vendor=\noui_source=\nlookup_error=\n"
+    )
+    observations = _parse_mac_vendor_observations(HTTP_TARGET, output)
+
+    assert observations["oui_vendor"] is None
+    assert observations["vendor_match"] is None
+    assert "not by itself suspicious" in observations["notes"][0]
+
+
+def test_mac_vendor_separates_a_failed_lookup_from_an_unregistered_oui():
+    from policies.catalog.scan_tests import _parse_mac_vendor_observations
+
+    output = (
+        "mac=A4:14:37:00:11:22\nclaimed_vendor=Hikvision\nmac_disclosed=True\n"
+        "oui=A41437\noui_vendor=\noui_source=\n"
+        "lookup_error=macvendors.com returned HTTP 429\n"
+    )
+    observations = _parse_mac_vendor_observations(HTTP_TARGET, output)
+
+    note = observations["notes"][0]
+    assert "missing data" in note
+    assert "not evidence" in note
+
+
+def test_mac_vendor_reports_a_device_that_discloses_no_mac():
+    from policies.catalog.scan_tests import _parse_mac_vendor_observations
+
+    output = "mac=\nclaimed_vendor=Hikvision\nmac_disclosed=False\n"
+    observations = _parse_mac_vendor_observations(HTTP_TARGET, output)
+
+    assert observations["mac_disclosed"] is False
+    assert observations["mac"] is None
+    assert observations["vendor_match"] is None
+    assert "disclosed no MAC" in observations["notes"][0]
+
+
+def test_mac_vendor_is_a_fingerprinting_test_applicable_to_http_services():
+    assert SCAN_CATALOG["TEST-DEVICE-MAC-VENDOR"]["pipeline_phase"] == PIPELINE_PHASE_FINGERPRINTING
+    assert is_applicable(HTTP_TARGET, "TEST-DEVICE-MAC-VENDOR")
+    assert is_applicable(HTTPS_TARGET, "TEST-DEVICE-MAC-VENDOR")
+    assert not is_applicable(MQTT_TARGET, "TEST-DEVICE-MAC-VENDOR")
+
+
+def test_mac_vendor_suggests_high_confidence_only_on_a_resolved_oui():
+    from policies.catalog.scan_tests import _suggest_confidence_mac_vendor
+
+    assert _suggest_confidence_mac_vendor({"oui_vendor": "NETGEAR"}) == "high"
+    assert _suggest_confidence_mac_vendor({"oui_vendor": None}) == "medium"
