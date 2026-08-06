@@ -51,8 +51,8 @@ export default function App() {
             <Route path="/nca-compliance/devices/:deviceId" element={<DeviceAssessmentPage />} />
             <Route path="/vulnerability-intelligence" element={<VulnerabilityIntelligencePage />} />
             <Route path="/risk" element={<RiskAssessmentPage />} />
-            <Route path="/remediation" element={<RemediationPage />} />
             <Route path="/pqc-readiness" element={<PostQuantumReadinessPage />} />
+            <Route path="/remediation" element={<RemediationPage />} />
             <Route path="/executive-summary" element={<ExecutiveSummaryPage />} />
             <Route path="/automated-run/:runId" element={<AutomatedRunProgressPage />} />
 

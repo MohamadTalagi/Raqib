@@ -51,10 +51,13 @@ describe("App", () => {
     const linkNames = screen.getAllByRole("link").map((link) => link.textContent);
     // Pipeline order must read top to bottom exactly as lib/pipeline.ts's
     // PIPELINE_PHASES - Discovery sits just above it (pre-registration, no
-    // per-device status of its own).
+    // per-device status of its own). Post-Quantum Readiness sits before
+    // Remediation (informational readiness check ahead of acting on
+    // findings), not after it.
     const pipelineOrder = [
       "Discovery", "Devices", "Fingerprinting", "SA-IOT Compliance",
-      "NCA Compliance", "Vulnerability Intelligence", "Risk Assessment", "Remediation",
+      "NCA Compliance", "Vulnerability Intelligence", "Risk Assessment",
+      "Post-Quantum Readiness", "Remediation", "Executive Summary",
     ];
     const indices = pipelineOrder.map((name) => linkNames.indexOf(name));
     expect(indices).toEqual([...indices].sort((a, b) => a - b));
