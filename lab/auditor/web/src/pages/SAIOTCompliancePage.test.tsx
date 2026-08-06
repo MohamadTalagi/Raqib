@@ -24,6 +24,8 @@ const DEVICE_NO_FIRMWARE: Device = {
   firmware_filename: null,
   firmware_sha256: null,
   firmware_uploaded_at: null,
+  firmware_version: null,
+  identity_source: "manual",
   criticality: "medium",
   exposure: "internal_only",
   registered: true,
@@ -39,6 +41,8 @@ const DEVICE_WITH_FIRMWARE: Device = {
   firmware_filename: "cam-fw-1.2.0.tar.gz",
   firmware_sha256: "b".repeat(64),
   firmware_uploaded_at: "2026-07-21T12:00:00+00:00",
+  firmware_version: null,
+  identity_source: "manual",
 };
 
 const SCAN_TESTS: ScanTestSpec[] = [

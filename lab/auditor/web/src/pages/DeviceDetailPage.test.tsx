@@ -106,6 +106,8 @@ const DETAIL: DeviceDetail = {
     firmware_filename: null,
     firmware_sha256: null,
     firmware_uploaded_at: null,
+    firmware_version: null,
+    identity_source: "manual",
     criticality: "medium",
     exposure: "internal_only",
   },
@@ -171,6 +173,47 @@ describe("DeviceDetailPage", () => {
     await user.click(screen.getByRole("tab", { name: "NCA Compliance" }));
 
     expect(screen.queryByText(/Automated scan coverage:/)).not.toBeInTheDocument();
+  });
+
+  it("shows the firmware version the device reports about itself in the Inventory card", async () => {
+    vi.spyOn(api, "device").mockResolvedValue({
+      ...DETAIL,
+      device: { ...DETAIL.device, firmware_version: "V5.3.0 build 160530" },
+    });
+    renderPage();
+
+    expect(await screen.findByText("Firmware version")).toBeInTheDocument();
+    expect(screen.getByText("V5.3.0 build 160530")).toBeInTheDocument();
+  });
+
+  it("badges auto-detected identity fields, and only when the row really is auto-detected", async () => {
+    vi.spyOn(api, "device").mockResolvedValue({
+      ...DETAIL,
+      device: {
+        ...DETAIL.device,
+        vendor: "Hikvision", model: "DS-2CD2143G2-I",
+        firmware_version: "V5.3.0 build 160530", identity_source: "auto_detected",
+      },
+    });
+    const { unmount } = renderPage();
+
+    // One badge each on Vendor, Model and Firmware version - the flag
+    // describes the three as a set, so it is all or nothing.
+    expect(await screen.findAllByText("auto-detected")).toHaveLength(3);
+    unmount();
+
+    vi.spyOn(api, "device").mockResolvedValue({
+      ...DETAIL,
+      device: {
+        ...DETAIL.device,
+        vendor: "Typed By Auditor", model: "M", firmware_version: "1.0",
+        identity_source: "manual",
+      },
+    });
+    renderPage();
+
+    await screen.findByText("Typed By Auditor");
+    expect(screen.queryByText("auto-detected")).not.toBeInTheDocument();
   });
 
   it("shows 'not assessed' when no controls have been tested for this device", async () => {

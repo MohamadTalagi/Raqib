@@ -142,12 +142,13 @@ export function AutomatedRunProgressPage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-7">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-8">
             <StatTile label="Hosts discovered" value={summary.hosts_discovered ?? 0} icon={Radar} accent="neutral" />
             <StatTile label="Devices registered" value={summary.devices_registered ?? 0} icon={HardDrive} accent="brand" />
             <StatTile label="Tests run" value={summary.tests_run ?? 0} icon={Fingerprint} accent="neutral" />
             <StatTile label="Evidence recorded" value={summary.evidence_recorded ?? 0} icon={Fingerprint} accent="neutral" />
-            <StatTile label="Vuln intel scans" value={summary.vuln_intel_devices_scanned ?? 0} icon={Bug} accent="neutral" />
+            <StatTile label="Firmware CVE scans" value={summary.vuln_intel_devices_scanned ?? 0} icon={Bug} accent="neutral" />
+            <StatTile label="Device CVE lookups" value={summary.device_cve_devices_scanned ?? 0} icon={Bug} accent="neutral" />
             <StatTile label="Post-quantum checks" value={summary.pqc_devices_scanned ?? 0} icon={ShieldCheck} accent="neutral" />
             <StatTile
               label="NCA assessments auto-recorded"

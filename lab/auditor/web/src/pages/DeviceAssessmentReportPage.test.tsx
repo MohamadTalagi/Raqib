@@ -17,6 +17,14 @@ const NO_VULN_DATA: VulnDeviceSummary = {
   total_cves: 0,
   kev_listed_cves: 0,
   highest_cvss: null,
+  has_device_cve_data: false,
+  device_cve_evidence_id: null,
+  device_cve_observed_at: null,
+  device_identity: null,
+  device_cves: [],
+  total_device_cves: 0,
+  kev_listed_device_cves: 0,
+  highest_device_cvss: null,
 };
 
 afterEach(() => vi.restoreAllMocks());
@@ -37,6 +45,8 @@ const DETAIL: DeviceDetail = {
     firmware_filename: "fw.zip",
     firmware_sha256: "abcdef1234567890abcdef1234567890abcdef1234567890",
     firmware_uploaded_at: "2026-07-27T00:00:00Z",
+    firmware_version: null,
+    identity_source: "manual",
     criticality: "medium",
     exposure: "internal_only",
   },

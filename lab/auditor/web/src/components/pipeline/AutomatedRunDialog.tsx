@@ -49,7 +49,11 @@ export function AutomatedRunDialog({ open, onCancel, onStarted }: AutomatedRunDi
             <li>Runs every applicable Fingerprinting and SA-IOT Compliance test on every device.</li>
             <li>Auto-submits each test&apos;s deterministic suggested finding - no human review.</li>
             <li>Recomputes SA-IOT verdicts.</li>
-            <li>Runs Vulnerability Intelligence on any device that already has firmware uploaded.</li>
+            <li>
+              Runs package-level Vulnerability Intelligence on any device that already has firmware uploaded, and
+              device-level CVE lookup (real NVD data matched on vendor/model - no firmware needed) on any device
+              whose vendor and model are known.
+            </li>
             <li>
               Checks Post-Quantum Readiness (TLS key exchange, certificate signature, firmware crypto library) -
               informational only, never affects risk scoring or compliance verdicts.
@@ -61,8 +65,9 @@ export function AutomatedRunDialog({ open, onCancel, onStarted }: AutomatedRunDi
           </ol>
           <p className="text-xs text-[var(--color-text-muted)]">
             Never automated: the ~60 organizational/mobile/supplier/cloud NCA guidelines (they need a human&apos;s
-            checklist answers), Vulnerability Intelligence for a device with no firmware uploaded yet, and AI
-            Remediation (always a manual, on-demand step) - none of these is invented or skipped silently.
+            checklist answers), package-level Vulnerability Intelligence for a device with no firmware uploaded yet,
+            device-level CVE lookup for a device whose vendor/model are still unknown, and AI Remediation (always a
+            manual, on-demand step) - none of these is invented or skipped silently.
           </p>
           {error ? <p className="text-[var(--color-critical)]">{error}</p> : null}
         </div>

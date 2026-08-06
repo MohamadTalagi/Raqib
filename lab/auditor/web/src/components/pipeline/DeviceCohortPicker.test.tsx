@@ -9,6 +9,7 @@ function makeDevice(deviceId: string, displayName: string): Device {
     device_id: deviceId, display_name: displayName, description: "", tier: "unknown",
     host: deviceId, vendor: null, model: null, location: null, owner: null, notes: null,
     source: "manual", firmware_filename: null, firmware_sha256: null, firmware_uploaded_at: null,
+    firmware_version: null, identity_source: "manual",
     criticality: "medium", exposure: "internal_only", registered: true,
     evidence_count: 0, verdict_count: 0, services: [],
   };

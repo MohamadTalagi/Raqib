@@ -1,5 +1,5 @@
 import { ClipboardCheck, FileDown, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Shell } from "@/components/layout/Shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import {
   AssessmentStatusBadge,
+  AutoDetectedIdentityBadge,
   BlockingBadge,
   ComplianceBadge,
   ConfidenceLabel,
@@ -46,12 +47,17 @@ function isConfidence(value: string): value is Confidence {
 interface MetaFieldProps {
   label: string;
   value: string | null;
+  /** Rendered next to the label - used for the auto-detected identity badge. */
+  badge?: ReactNode;
 }
 
-function MetaField({ label, value }: MetaFieldProps) {
+function MetaField({ label, value, badge }: MetaFieldProps) {
   return (
     <div>
-      <p className="text-[10px] font-medium tracking-wide text-[var(--color-text-muted)] uppercase">{label}</p>
+      <div className="flex items-center gap-1.5">
+        <p className="text-[10px] font-medium tracking-wide text-[var(--color-text-muted)] uppercase">{label}</p>
+        {badge}
+      </div>
       <p className="mt-1 text-sm text-[var(--color-text)]">
         {value ?? <span className="text-[var(--color-text-muted)]">Not recorded</span>}
       </p>
@@ -178,6 +184,11 @@ export function DeviceDetailPage() {
   }
 
   const { device, evidence, verdicts, scan_jobs, compliance } = detail.data;
+  // One shared node rather than three: the flag describes vendor/model/
+  // firmware_version as a set (see IDENTITY_DEVICE_FIELDS in main.py), so it
+  // can never be true for one of them and false for another.
+  const identityBadge =
+    device.identity_source === "auto_detected" ? <AutoDetectedIdentityBadge /> : undefined;
 
   return (
     <Shell title={device.display_name} subtitle={device.description}>
@@ -281,8 +292,13 @@ export function DeviceDetailPage() {
                   <CardTitle>Inventory</CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 gap-4 pt-2 sm:grid-cols-3">
-                  <MetaField label="Vendor" value={device.vendor} />
-                  <MetaField label="Model" value={device.model} />
+                  <MetaField label="Vendor" value={device.vendor} badge={identityBadge} />
+                  <MetaField label="Model" value={device.model} badge={identityBadge} />
+                  <MetaField
+                    label="Firmware version"
+                    value={device.firmware_version}
+                    badge={identityBadge}
+                  />
                   <MetaField label="Location" value={device.location} />
                   <MetaField label="Owner" value={device.owner} />
                   <MetaField label="Notes" value={device.notes} />

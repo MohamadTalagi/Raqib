@@ -24,8 +24,12 @@ const NO_VULN: VulnDeviceSummary | null = null;
 const VULN_NO_DATA: VulnDeviceSummary = {
   device_id: "d", has_data: false, evidence_id: null, observed_at: null, packages: [],
   total_packages: 0, outdated_packages: 0, total_cves: 0, kev_listed_cves: 0, highest_cvss: null,
+  has_device_cve_data: false, device_cve_evidence_id: null, device_cve_observed_at: null,
+  device_identity: null, device_cves: [], total_device_cves: 0,
+  kev_listed_device_cves: 0, highest_device_cvss: null,
 };
 const VULN_WITH_DATA: VulnDeviceSummary = { ...VULN_NO_DATA, has_data: true };
+const VULN_WITH_DEVICE_CVES: VulnDeviceSummary = { ...VULN_NO_DATA, has_device_cve_data: true };
 
 const NO_RISK: DeviceRiskDetail | null = null;
 const RISK_UNKNOWN: DeviceRiskDetail = { device_id: "d", known: false };
@@ -140,6 +144,37 @@ describe("devicePipelineStatus", () => {
       nca: NO_NCA, vuln: NO_VULN, risk: RISK_KNOWN,
     });
     expect(status.risk_assessment).toBe(true);
+  });
+});
+
+describe("devicePipelineStatus and device-level CVE data", () => {
+  it("counts device-level CVE data toward vuln_intelligence with no firmware scan at all", () => {
+    // The feature's whole premise - a device with no firmware archive still
+    // reaches Vulnerability Intelligence via TEST-DEVICE-CVE-LOOKUP.
+    const status = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: VULN_WITH_DEVICE_CVES, risk: RISK_KNOWN,
+    });
+    expect(status.vuln_intelligence).toBe(true);
+  });
+
+  it("does NOT let device-level CVE data alone mark risk_assessment reached", () => {
+    // risk_engine.py's CVSS/exploit-availability factors read only
+    // TEST-FW-MANIFEST's observations.packages[], so device-level CVEs do not
+    // move the risk score - claiming the phase was reached would be false.
+    // Same reasoning the file already applies to fingerprinting.
+    const status = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: VULN_WITH_DEVICE_CVES, risk: RISK_KNOWN,
+    });
+    expect(status.risk_assessment).toBe(false);
+
+    // ...whereas package-level data does, since it really is a risk input.
+    const withFirmware = devicePipelineStatus({
+      evidenceTestIds: [], hasSaIotVerdict: false, scanTests: SCAN_TESTS,
+      nca: NO_NCA, vuln: VULN_WITH_DATA, risk: RISK_KNOWN,
+    });
+    expect(withFirmware.risk_assessment).toBe(true);
   });
 });
 

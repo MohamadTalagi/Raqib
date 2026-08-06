@@ -23,6 +23,8 @@ const DEVICE: Device = {
   firmware_filename: null,
   firmware_sha256: null,
   firmware_uploaded_at: null,
+  firmware_version: null,
+  identity_source: "manual",
   criticality: "medium",
   exposure: "internal_only",
   registered: true,

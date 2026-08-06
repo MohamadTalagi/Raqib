@@ -62,6 +62,10 @@ export function devicePipelineStatus(data: DevicePipelineData): PipelinePhaseSta
   const hasFingerprintingEvidence = data.evidenceTestIds.some((id) => fingerprintingTestIds.has(id));
   const hasNcaAssessment = data.nca !== null && data.nca.overall_status !== "not_tested";
   const hasVulnData = data.vuln !== null && data.vuln.has_data;
+  // Device-level CVE data (TEST-DEVICE-CVE-LOOKUP) is real vulnerability
+  // intelligence and needs no firmware image, so it counts toward reaching
+  // that phase. It is deliberately kept out of hasUpstreamPipelineData below.
+  const hasDeviceCveData = data.vuln !== null && data.vuln.has_device_cve_data;
 
   // GET /risk/devices/{id}'s `known` flag is true for any device_id that
   // exists in the devices table - not "a real assessment happened" - because
@@ -79,6 +83,12 @@ export function devicePipelineStatus(data: DevicePipelineData): PipelinePhaseSta
   // (TEST-NET-PORTSCAN etc.). A device with only fingerprinting evidence
   // produces the exact same risk score as one with none, so fingerprinting
   // alone must not count as "reached" risk assessment.
+  //
+  // hasDeviceCveData is excluded for exactly the same reason: risk_engine.py's
+  // CVSS and exploit-availability factors read observations.packages[] from
+  // TEST-FW-MANIFEST only, so device-level CVEs (however real) do not move the
+  // risk score at all. Adding them here would claim a phase was reached when
+  // nothing it computes has changed.
   const hasUpstreamPipelineData = data.hasSaIotVerdict || hasNcaAssessment || hasVulnData;
 
   return {
@@ -86,7 +96,7 @@ export function devicePipelineStatus(data: DevicePipelineData): PipelinePhaseSta
     fingerprinting: hasFingerprintingEvidence,
     sa_iot_compliance: data.hasSaIotVerdict,
     nca_compliance: hasNcaAssessment,
-    vuln_intelligence: hasVulnData,
+    vuln_intelligence: hasVulnData || hasDeviceCveData,
     risk_assessment: data.risk !== null && data.risk.known && hasUpstreamPipelineData,
   };
 }

@@ -88,6 +88,9 @@ export type ScanTestCategory =
   | "web-and-auth"
   | "network-and-protocol"
   | "firmware"
+  // Device-scoped but needs no live host/port AND no uploaded firmware -
+  // only that the device is registered. See scan_tests.is_device_intel_test().
+  | "device-intel"
   | "network-discovery";
 
 // -- Dashboard-overhaul guided pipeline --------------------------------------
@@ -331,6 +334,22 @@ export interface DeviceBase {
   firmware_filename: string | null;
   firmware_sha256: string | null;
   firmware_uploaded_at: string | null;
+  /**
+   * The version the DEVICE reports about itself (via TEST-DEVICE-ID's read of
+   * its /api/device/info endpoint) - not to be confused with the three
+   * firmware_* fields above, which describe an archive an auditor uploaded.
+   */
+  firmware_version: string | null;
+  /**
+   * Provenance for vendor/model/firmware_version as a set. "auto_detected"
+   * means all three were filled in by TEST-DEVICE-ID and no human has edited
+   * any of them since - the basis for AutoDetectedIdentityBadge. Never
+   * settable through PATCH; editing any of the three resets it to "manual"
+   * server-side. `null` only for an orphan device_id that has evidence but no
+   * devices row (GET /devices' UNION half), where there is no provenance to
+   * report.
+   */
+  identity_source: "manual" | "auto_detected" | null;
   criticality: RiskCriticality;
   exposure: RiskExposure;
 }
@@ -752,8 +771,27 @@ export interface VulnFleetSummary {
   total_kev_listed_cves: number;
 }
 
+/**
+ * The device's own identity as TEST-DEVICE-CVE-LOOKUP saw it, plus whether it
+ * resolved to a real NVD CPE. `cpe_matched: false` is an honest gap ("this
+ * product isn't in NVD's CPE dictionary"), never a clean bill of health.
+ */
+export interface VulnDeviceIdentity {
+  vendor: string | null;
+  model: string | null;
+  firmware_version: string | null;
+  /** The matched CPE 2.3 "part:vendor:product" prefix, null when unmatched. */
+  cpe: string | null;
+  cpe_matched: boolean;
+}
+
 export interface VulnDeviceSummary {
   device_id: string;
+  /**
+   * Package-level data only: a TEST-FW-MANIFEST scan has run for this device.
+   * Deliberately NOT widened to cover device-level CVEs - report.py,
+   * risk_routes.py and lib/pipeline.ts all read it with this narrower meaning.
+   */
   has_data: boolean;
   evidence_id: string | null;
   observed_at: string | null;
@@ -763,6 +801,22 @@ export interface VulnDeviceSummary {
   total_cves: number;
   kev_listed_cves: number;
   highest_cvss: number | null;
+
+  // -- Device-level CVE lookup (no firmware image required) ------------------
+  // Independent of everything above: a device may have either source, both, or
+  // neither. Sourced from TEST-DEVICE-CVE-LOOKUP evidence, matched against
+  // real NVD data by vendor/model CPE at scan time.
+  has_device_cve_data: boolean;
+  device_cve_evidence_id: string | null;
+  device_cve_observed_at: string | null;
+  device_identity: VulnDeviceIdentity | null;
+  /** Reuses VulnCVE - a device-level CVE has the same shape as a package one. */
+  device_cves: VulnCVE[];
+  total_device_cves: number;
+  kev_listed_device_cves: number;
+  highest_device_cvss: number | null;
+  /** The collector's own deterministic explanation of what it did or couldn't do. */
+  notes?: string[];
 }
 
 // -- Dynamic Risk Assessment (IoTGuard Stage 06) -----------------------------
@@ -825,7 +879,10 @@ export interface AutomatedRunSummary {
   tests_run?: number;
   evidence_recorded?: number;
   verdicts_computed?: number;
+  /** Package-level (TEST-FW-MANIFEST) - only devices with firmware uploaded. */
   vuln_intel_devices_scanned?: number;
+  /** Device-level (TEST-DEVICE-CVE-LOOKUP) - any device with a known vendor+model. */
+  device_cve_devices_scanned?: number;
   pqc_devices_scanned?: number;
   nca_assessments_recorded?: number;
   errors?: string[];

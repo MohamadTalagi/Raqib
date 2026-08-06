@@ -1,4 +1,4 @@
-import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert, ShieldCheck, AlertOctagon, Loader2, Bot, Sparkles } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, CircleDashed, Eye, Ban, ShieldAlert, ShieldCheck, AlertOctagon, Loader2, Bot, Sparkles, ScanSearch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Severity, VerdictStatus, Confidence, NCAStatus, NCAReadinessClassification, RiskCategory, AssessmentStatus, PqcCriterionStatus } from "@/lib/types";
@@ -301,6 +301,37 @@ export function AutoRecordedBadge({ size = "sm" }: { size?: "xs" | "sm" }) {
       >
         <Bot className={BLOCKING_ICON_SIZE[size]} strokeWidth={2} />
         auto-recorded
+      </span>
+    </Tooltip>
+  );
+}
+
+export const AUTO_DETECTED_IDENTITY_EXPLANATION =
+  "Vendor, model and firmware version were read automatically from this device's own unauthenticated " +
+  "/api/device/info endpoint (TEST-DEVICE-ID) - they are what the device claims about itself, not values " +
+  "an auditor verified. Editing any of them marks this inventory record manual.";
+
+/**
+ * Marks a devices row with identity_source='auto_detected' - the same
+ * "don't trust this at face value yet" role AutoRecordedBadge plays for
+ * auto-recorded NCA assessments, for self-reported device identity. The
+ * distinction is real: SA-IOT-001's own `limitations` field says this check
+ * "does not verify the values are accurate", and a device is free to lie
+ * about its own vendor/model/firmware.
+ */
+export function AutoDetectedIdentityBadge({ size = "xs" }: { size?: "xs" | "sm" }) {
+  return (
+    <Tooltip content={AUTO_DETECTED_IDENTITY_EXPLANATION}>
+      <span
+        tabIndex={0}
+        className={cn(
+          "inline-flex items-center rounded-md font-mono font-medium uppercase tracking-wide",
+          "bg-[color-mix(in_oklab,var(--color-low)_16%,transparent)] text-[var(--color-low)]",
+          BLOCKING_SIZE_STYLES[size],
+        )}
+      >
+        <ScanSearch className={BLOCKING_ICON_SIZE[size]} strokeWidth={2} />
+        auto-detected
       </span>
     </Tooltip>
   );
