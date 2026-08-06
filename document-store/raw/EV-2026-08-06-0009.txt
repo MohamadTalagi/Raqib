@@ -1,0 +1,1 @@
+{"device_id":"device-speaker","vendor":"Sonos","model":"One (Gen 2)","mac":"38:42:0B:00:22:05","device_type":"smart-speaker","firmware_version":"15.9"}

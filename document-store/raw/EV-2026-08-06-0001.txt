@@ -1,0 +1,1 @@
+{"device_id":"device-insecure","vendor":"Hikvision","model":"DS-2CD2143G2-I","mac":"A4:14:37:00:11:22","device_type":"smart-camera","firmware_version":"V5.3.0 build 160530"}
