@@ -1,0 +1,7 @@
+mac=9C:0E:51:00:22:02
+claimed_vendor=Schneider Electric
+mac_disclosed=True
+oui=9C0E51
+oui_vendor=Schneider Electric
+oui_source=ieee-registry
+lookup_error=
