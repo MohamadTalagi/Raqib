@@ -4,12 +4,13 @@ import { RefreshCw, Loader2 } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { ErrorState, EmptyState } from "@/components/ui/state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge, SeverityBadge } from "@/components/ui/severity-badge";
 import { DeviceCohortPicker } from "@/components/pipeline/DeviceCohortPicker";
 import { PhaseRunnerCard } from "@/components/pipeline/PhaseRunnerCard";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/lib/useToast";
-import type { ServiceType, VerdictRecord } from "@/lib/types";
+import type { ControlRecord, ServiceType, VerdictRecord } from "@/lib/types";
 
 function verdictCounts(deviceVerdicts: VerdictRecord[]) {
   return {
@@ -17,6 +18,54 @@ function verdictCounts(deviceVerdicts: VerdictRecord[]) {
     fail: deviceVerdicts.filter((v) => v.status === "FAIL").length,
     other: deviceVerdicts.filter((v) => v.status !== "PASS" && v.status !== "FAIL").length,
   };
+}
+
+/** The most recent verdict per control_id - a control can be re-tested and
+ * would otherwise double-count / show a stale result, same dedup rule this
+ * codebase already applies to every other verdict rollup (e.g. the
+ * device-compliance percentage on Overview). */
+function latestVerdictByControl(deviceVerdicts: VerdictRecord[]): Map<string, VerdictRecord> {
+  const latest = new Map<string, VerdictRecord>();
+  for (const v of deviceVerdicts) {
+    const existing = latest.get(v.control_id);
+    if (!existing || v.timestamp > existing.timestamp) {
+      latest.set(v.control_id, v);
+    }
+  }
+  return latest;
+}
+
+/** Per-clause breakdown for one device - the individual pass/fail/finding
+ * for each of the 5 SA-IOT-* controls, not just the aggregate count. */
+function ControlResultsList({ controls, latestByControl }: { controls: ControlRecord[]; latestByControl: Map<string, VerdictRecord> }) {
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <ul className="divide-y divide-[var(--color-border)]">
+        {controls.map((control) => {
+          const v = latestByControl.get(control.control_id);
+          return (
+            <li key={control.control_id} className="p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {v ? (
+                  <StatusBadge status={v.status} />
+                ) : (
+                  <span className="inline-flex items-center rounded-md bg-[var(--color-surface-hover)] px-2 py-0.5 text-xs font-semibold tracking-wide text-[var(--color-text-muted)]">
+                    NOT TESTED
+                  </span>
+                )}
+                {v ? <SeverityBadge severity={v.severity} /> : null}
+                <span className="font-mono text-xs text-[var(--color-text-muted)]">{control.control_id}</span>
+                <span className="text-sm text-[var(--color-text)]">{control.title}</span>
+              </div>
+              <p className="mt-1.5 text-xs text-[var(--color-text-secondary)]">
+                {v ? v.reason : "No verdict recorded yet for this control - run its test(s) below, or recompute."}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }
 
 /**
@@ -29,16 +78,18 @@ function verdictCounts(deviceVerdicts: VerdictRecord[]) {
 export function SAIOTCompliancePage() {
   const devices = useFetch(api.devices, []);
   const scanTests = useFetch(api.scanTests, []);
+  const controls = useFetch(api.controls, []);
   const [refreshKey, setRefreshKey] = useState(0);
   const verdicts = useFetch(api.verdicts, [refreshKey]);
   const { showToast } = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [recomputing, setRecomputing] = useState(false);
 
-  const loading = devices.loading || scanTests.loading || verdicts.loading;
-  const error = devices.error ?? scanTests.error ?? verdicts.error;
+  const loading = devices.loading || scanTests.loading || verdicts.loading || controls.loading;
+  const error = devices.error ?? scanTests.error ?? verdicts.error ?? controls.error;
   const registeredDevices = (devices.data ?? []).filter((d) => d.registered);
   const complianceTests = (scanTests.data ?? []).filter((t) => t.pipeline_phase === "sa_iot_compliance");
+  const pilotControls = controls.data ?? [];
 
   async function handleRecompute() {
     setRecomputing(true);
@@ -107,7 +158,9 @@ export function SAIOTCompliancePage() {
             const firmwareTests = complianceTests.filter((t) => t.applicable_service_types.length === 0);
             const testsForDevice = hasFirmware ? [...serviceTests, ...firmwareTests] : serviceTests;
 
-            const counts = verdictCounts((verdicts.data ?? []).filter((v) => v.device_id === deviceId));
+            const deviceVerdicts = (verdicts.data ?? []).filter((v) => v.device_id === deviceId);
+            const counts = verdictCounts(deviceVerdicts);
+            const latestByControl = latestVerdictByControl(deviceVerdicts);
 
             return (
               <div key={deviceId} className="space-y-2">
@@ -117,6 +170,7 @@ export function SAIOTCompliancePage() {
                   <span className="text-[var(--color-critical)]">{counts.fail} fail</span>
                   {counts.other > 0 && <> · {counts.other} other</>}
                 </p>
+                <ControlResultsList controls={pilotControls} latestByControl={latestByControl} />
                 <PhaseRunnerCard
                   device={device}
                   tests={testsForDevice}

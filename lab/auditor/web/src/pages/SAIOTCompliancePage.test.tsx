@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAIOTCompliancePage } from "./SAIOTCompliancePage";
 import { ToastProvider } from "@/lib/useToast";
 import { api } from "@/lib/api";
-import type { Device, ScanTestSpec, VerdictRecord } from "@/lib/types";
+import type { ControlRecord, Device, ScanTestSpec, VerdictRecord } from "@/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -74,7 +74,7 @@ const VERDICTS: VerdictRecord[] = [
     severity: "critical",
     evidence_ids: [],
     matched: "fail",
-    reason: "...",
+    reason: "Default credentials admin:admin were accepted.",
     saudi_source: "CGIoT-1:2024 §2-4-1",
     remediation: "...",
     timestamp: "2026-07-08T08:58:42Z",
@@ -85,11 +85,37 @@ const VERDICTS: VerdictRecord[] = [
   },
 ];
 
+const CONTROLS: ControlRecord[] = [
+  {
+    control_id: "SA-IOT-001",
+    title: "Device identification",
+    saudi_source: [{ framework: "CGIoT-1:2024", reference: "2-2-1", clause: "..." }],
+    applicability: { device_type: [] },
+    required_evidence: [{ test_id: "TEST-DEVICE-ID" }],
+    automated_test_ids: [],
+    severity: "low",
+    conditions: {},
+    remediation: "...",
+  },
+  {
+    control_id: "SA-IOT-002",
+    title: "No default or hard-coded credentials",
+    saudi_source: [{ framework: "CGIoT-1:2024", reference: "2-4-1", clause: "..." }],
+    applicability: { device_type: [] },
+    required_evidence: [{ test_id: "TEST-AUTH-DEFAULT-CREDS" }],
+    automated_test_ids: ["TEST-AUTH-DEFAULT-CREDS"],
+    severity: "high",
+    conditions: {},
+    remediation: "...",
+  },
+];
+
 describe("SAIOTCompliancePage", () => {
   beforeEach(() => {
     vi.spyOn(api, "devices").mockResolvedValue([DEVICE_NO_FIRMWARE, DEVICE_WITH_FIRMWARE]);
     vi.spyOn(api, "scanTests").mockResolvedValue(SCAN_TESTS);
     vi.spyOn(api, "verdicts").mockResolvedValue(VERDICTS);
+    vi.spyOn(api, "controls").mockResolvedValue(CONTROLS);
   });
 
   it("scopes each device's tests to sa_iot_compliance only, never fingerprinting", async () => {
@@ -141,6 +167,35 @@ describe("SAIOTCompliancePage", () => {
     await user.click(screen.getByRole("checkbox", { name: /select all \(2\)/i }));
 
     expect(screen.getByText("1 fail")).toBeInTheDocument();
+  });
+
+  it("shows each control's own individual result, not just the aggregate pass/fail count", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <ToastProvider>
+          <SAIOTCompliancePage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("device-insecure");
+    await user.click(screen.getByRole("checkbox", { name: /select all \(2\)/i }));
+
+    // SA-IOT-002 has a real FAIL verdict for device-insecure - its own
+    // status, severity, and finding text must all be visible per-clause,
+    // not just folded into the "1 fail" aggregate count.
+    expect(await screen.findAllByText("SA-IOT-002")).not.toHaveLength(0);
+    expect(screen.getAllByText("No default or hard-coded credentials").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Default credentials admin:admin were accepted.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("FAIL").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("critical").length).toBeGreaterThan(0);
+
+    // SA-IOT-001 has never been assessed for either device - it must show
+    // as its own explicit "not tested" row, never silently omitted.
+    expect(screen.getAllByText("SA-IOT-001").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Device identification").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("NOT TESTED").length).toBeGreaterThan(0);
   });
 
   it("recomputes verdicts via the page-level action", async () => {
