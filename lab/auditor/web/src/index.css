@@ -35,15 +35,16 @@
   --color-pass: #34d399;
   --color-inconclusive: #8b93a1;
 
-  /* Pipeline phase-group accents — default to the single brand color, so
-     the "Default" color scheme is visually unchanged (one consistent
-     accent everywhere, exactly as today). Only the "kaustify" color
-     scheme below gives these 4 distinct real values. See lib/phaseTheme.ts
-     for which pipeline pages belong to which group. */
-  --color-phase-discovery: var(--color-brand);
-  --color-phase-compliance: var(--color-brand);
-  --color-phase-intelligence: var(--color-brand);
-  --color-phase-solution: var(--color-brand);
+  /* Pipeline phase-group accents — default to the same literal value as
+     --color-brand (not a var() reference to it - see the KAUSTify block
+     below for why), so the "Default" color scheme is visually unchanged
+     (one consistent accent everywhere, exactly as today). Only the
+     "kaustify" color scheme below gives these 4 distinct real values.
+     See lib/phaseTheme.ts for which pipeline pages belong to which group. */
+  --color-phase-discovery: #f2a93b;
+  --color-phase-compliance: #f2a93b;
+  --color-phase-intelligence: #f2a93b;
+  --color-phase-solution: #f2a93b;
 }
 
 /* Light theme — opt-in via [data-theme="light"] on <html>, toggled by
@@ -83,7 +84,19 @@
    Discovery (teal), Compliance (yellow-green), Intelligence (gold),
    Solution (orange). Used only as translucent-chip borders/icons/text via
    color-mix(), never as large solid fills, so contrast holds in both
-   dark and light mode. */
+   dark and light mode.
+
+   Every --color-phase-* value here (and in the Default block above) is a
+   literal hex, never var(--color-brand) - Shell.tsx locally re-declares
+   --color-brand as var(--color-phase-{group}) on a pipeline page's <main>,
+   so every component in that page's content picks up the phase color
+   through ordinary CSS inheritance with zero per-component changes. If
+   --color-phase-* referenced --color-brand here, that local override would
+   create a genuine custom-property reference cycle on every element inside
+   <main> (--color-brand -> --color-phase-X -> --color-brand), which the
+   CSS spec resolves by making both properties invalid - breaking every
+   button on every pipeline page. Keeping these as plain literals (kept in
+   sync with --color-brand by hand) avoids that. */
 :root[data-color-scheme="kaustify"] {
   --color-brand: #00a5aa;
   --color-phase-discovery: #00a5aa;
