@@ -4,7 +4,7 @@
 > something meaningful changes: a new component is built, a decision is made, a tool is chosen,
 > a task is completed, or a milestone is reached. Treat it as a living document.
 >
-> **Last updated:** 2026-08-04
+> **Last updated:** 2026-08-06
 > **Maintained by:** Team of 4 · KAUST Academy — Cybersecurity Specialization
 > **Timeline:** 3-week project · Tooling: Claude Opus 4.8
 
@@ -12,7 +12,111 @@
 
 ## 0. Current Status — RESUME HERE 👈
 
-**Phase:** **Device vendor realism — all 6 lab device fixtures reskinned
+**Phase:** **Rebrand to "Raqib" + a new KAUSTify color theme + a new
+minimal Home page — COMPLETE** (2026-08-06). The owner asked for four
+related `auditor-web` frontend changes: rename the product from "IoTGuard"
+to "Raqib" everywhere a user sees it; add a Color Theme switcher that keeps
+today's amber theme as "Default" and adds a second option, "KAUSTify,"
+built elegantly from KAUST's own brand colors (`#00A5AA` teal, `#CCCC42`
+yellow-green, `#F4B636` gold, `#F89131` orange) with the main dashboard
+using all four and the 10-stage pipeline visually split into 4 color-coded
+groups, one color per group; a new, minimal Home page (3 buttons — start a
+manual run, start an automated run, view devices — plus one thin optional
+data line) that becomes the new `/` route; and the existing dashboard kept
+as-is, renamed "Overview," moved to `/overview`, one slot below Home in the
+sidebar. Planned via plan mode (one Explore pass mapped every branding
+string, the theme/CSS-variable system, the sidebar/route structure, the
+Overview page, and every pipeline page's file path before writing the plan)
+with 2 rounds of `AskUserQuestion` resolving the pipeline-group-by-phase
+choice, rename scope (UI-facing text only, not internal identifiers/
+filenames/docs), and the 3rd Home button's destination (Devices).
+- **Rebrand is UI-facing text only, exactly as scoped**: sidebar/topbar
+  header, browser tab title, the Scan Console welcome banner, the
+  Remediation subtitle and its `AI_GENERATED_EXPLANATION` tooltip copy, and
+  the Executive Summary PDF/HTML report's title/heading/footer. Confirmed
+  by grep after editing that only code comments (`api.ts`/`types.ts`
+  section headers, JSDoc) still say "IoTGuard" — left untouched per the
+  scope decision, along with `docs/reference/IoTGuard.md`, `CLAUDE.md`,
+  and `package.json`.
+- **Color-scheme is a second, independent toggle from dark/light, not a
+  replacement for it** — new `lib/useColorScheme.ts` is a structural mirror
+  of the existing `lib/useTheme.ts` (its own `localStorage` key,
+  `data-color-scheme="kaustify"` on `<html>`, applied pre-paint by
+  `index.html`'s inline script alongside the existing dark/light logic), so
+  "Default" behaves exactly as before in both dark and light, and
+  "KAUSTify" layers on top. A new `Palette` icon toggle sits in `TopBar.tsx`
+  next to the existing Sun/Moon button.
+- **4 new `--color-phase-*` CSS custom properties** in `index.css`, default
+  to `var(--color-brand)` (today's amber — zero visual change under
+  Default), overridden to the 4 real KAUST hex values only under
+  `:root[data-color-scheme="kaustify"]`. New `lib/phaseTheme.ts` is the one
+  shared module mapping each of the 10 pipeline routes to one of 4 groups
+  — **Discovery** (Discovery, Devices, Fingerprinting; teal), **Compliance**
+  (SA-IOT Compliance, NCA Compliance; yellow-green), **Intelligence**
+  (Vulnerability Intelligence, Risk Assessment, PQC Readiness; gold), and
+  **Solution** (Remediation, Executive Summary; orange) — reused by the
+  Sidebar (a small color dot per pipeline nav item + a phase-tinted active
+  indicator), a new optional `Shell`/`TopBar` `phase` prop (a thin colored
+  top border on the page header, added to all 10 pipeline pages' existing
+  `<Shell>` calls), and Overview. Deliberately scoped to UI chrome only —
+  never recharts series fills (`lib/colors.ts`'s `CHART_COLORS`), which
+  stay on their existing severity/status semantics (pass=green,
+  critical=red must never be overridden by a decorative phase color) —
+  sidestepping a real technical wrinkle: `CHART_COLORS` is a static
+  hex-literal import that can't react live to a scheme toggle without a
+  `getComputedStyle` read, unneeded since no chart fill uses it.
+- **Overview page tints 3 of its 4 stat tiles + one list card with the 4
+  KAUSTify colors**, gated behind reading `useColorScheme()` directly
+  (not just the CSS vars) since 2 of those tiles are `accent="neutral"`
+  today (gray) and would otherwise visibly change under Default too if
+  simply switched to a phase var. The "Failing verdicts" tile correctly
+  keeps its unconditional `accent="critical"` (red) — a severity signal,
+  never phase-tinted. `StatTile` gained an optional `accentColorVar` prop
+  for this (falls back to its existing `accent` styles when unset).
+  `index.css`'s body background wash and `::selection` were also switched
+  from a hardcoded amber `rgba()` to `color-mix(in oklab, var(--color-brand)
+  ...)`, a small correctness improvement so the whole page's subtle tint
+  follows the active color scheme too, not just accent chips.
+- **New `pages/HomePage.tsx`** (route `/`) — 3 large action cards ("Start a
+  manual run" → `/fingerprinting`, the first pipeline stage with a real
+  manual run flow via the existing `PhaseRunnerCard`; "Start an automated
+  run" → opens the existing `AutomatedRunDialog`, same component
+  `OverviewPage` already used; "View devices" → `/devices`) plus one thin
+  fleet-stat line reusing `useFetch(api.summary, [])`/`api.devices` — no
+  gauges/charts, deliberately minimal per the owner's "keep it minimal"
+  instruction. `App.tsx`: `/` now renders `HomePage`, `/overview` renders
+  the unchanged `OverviewPage`. `Sidebar.tsx`'s first group (renamed
+  "Start") now lists Home above Overview; `NotFoundPage.tsx`'s "Back to
+  Overview" link was repointed from `/` to `/overview` to match its own
+  label's intent (the only other `to="/"` in the app, confirmed by a
+  repo-wide grep).
+- **Verified**: `tsc -b --force` clean; `oxlint` clean (same 6 pre-existing
+  warnings, none in any touched/new file); full Vitest suite 332/332
+  passing in an isolated (`--no-file-parallelism`) run — a first parallel
+  run showed 14-16 failures across unrelated files, confirmed pre-existing
+  host parallel-runner flakes (not regressions) by the isolated re-run,
+  matching this project's own established diagnostic pattern; one real bug
+  in this session's own new Sidebar test (two `render()` calls in one test
+  without `unmount()` between them, causing a duplicate-node query error)
+  was caught by that same run and fixed. `npx vite build` succeeds (same
+  pre-existing >500kB chunk-size warning, unrelated). Rebuilt and
+  redeployed the real `auditor-web` Docker image (baked-in code, confirmed
+  via this project's own documented gotcha that it needs an image rebuild,
+  not just a restart) against the live `auditor-database`/`auditor-api`
+  (both were found stopped at session start and brought up as part of
+  this verification). **Confirmed live in a real browser
+  (Claude-in-Chrome)**: the Home page renders with real live fleet data
+  (11 devices monitored · 313 evidence collected · 81 verdicts issued);
+  toggling KAUSTify (confirmed via `getComputedStyle`, not just visually —
+  `--color-brand` genuinely flips to `#00a5aa`) shows all 3 Home cards, all
+  4 Overview stat tiles/cards, the sidebar's phase dots, and a pipeline
+  page's top-border accent (NCA Compliance's yellow-green, confirmed by
+  zoomed screenshot) each in their correct distinct color, with the
+  "Failing verdicts" tile correctly staying red throughout; both
+  dark×KAUSTify and light×KAUSTify combinations hold readable contrast.
+- **Docs**: this entry, plus a new changelog row (§8).
+
+Before that: **Device vendor realism — all 6 lab device fixtures reskinned
 from fictional vendors to real, market-relevant products — COMPLETE**
 (2026-08-04). The owner asked to check the quality/realism of the lab's
 simulated devices and find real-world vendor analogs; research (grounded in
@@ -2519,6 +2623,7 @@ Kaust IoT Project/
 
 | Date | Change |
 |---|---|
+| 2026-08-06 | **Rebrand to "Raqib" + a new KAUSTify color theme + a new minimal Home page** — see §0 for the full breakdown. 4 owner-requested `auditor-web` changes in one pass: (1) renamed the product from "IoTGuard" to "Raqib" in every UI-facing string (sidebar/topbar, browser title, Scan Console banner, Remediation subtitle/tooltip, the Executive Summary PDF/HTML report) - internal identifiers/filenames/docs deliberately left untouched, confirmed by grep. (2) A new, independent Color Theme toggle (`lib/useColorScheme.ts`, mirrors `lib/useTheme.ts`'s own pattern exactly) adds "KAUSTify" alongside today's "Default" scheme - 4 new `--color-phase-*` CSS vars (`index.css`) default to the existing brand amber (zero change under Default) and only resolve to KAUST's real 4 brand colors (`#00A5AA`/`#CCCC42`/`#F4B636`/`#F89131`) under KAUSTify; a new `lib/phaseTheme.ts` splits the 10-stage pipeline into 4 color-coded groups by phase (Discovery/Compliance/Intelligence/Solution), reused by the Sidebar's per-item color dots, a new `Shell`/`TopBar` `phase` prop (colored top border on all 10 pipeline pages), and Overview (3 of 4 stat tiles + one card tinted, with the "Failing verdicts" severity tile correctly staying red always, never phase-tinted). Deliberately scoped to UI chrome, never recharts series colors. (3) New minimal `pages/HomePage.tsx` at `/` - 3 action cards (manual run → Fingerprinting, automated run → the existing `AutomatedRunDialog`, view devices → Devices) plus one thin fleet-stat line, no gauges/charts. (4) The existing dashboard, unchanged, moved to `/overview` and renamed "Overview" in the sidebar's first group (now "Start"), one slot below the new Home item. One real bug caught by this session's own new Sidebar test (two `render()` calls without an `unmount()` between them) during verification, fixed with a regression-safe rewrite. `tsc -b --force`/`oxlint` clean, full Vitest suite 332/332 passing in an isolated run (a first parallel run's 14-16 failures confirmed pre-existing host flakes, not regressions, matching this project's own established diagnostic pattern), `vite build` succeeds. Rebuilt and redeployed the real `auditor-web` Docker image; confirmed live in a real browser (Claude-in-Chrome) against real fleet data - the Home page, all 4 KAUSTify colors across Home/Overview/Sidebar/a pipeline page's top border, and both dark×KAUSTify/light×KAUSTify contrast, all confirmed correct (`--color-brand` verified via `getComputedStyle`, not just visually). |
 | 2026-08-04 | **Device vendor realism — all 6 lab device fixtures reskinned from fictional vendors (AcmeCam/BoltGuard/IndustraLink/NetCore/ViewKeep/VoxHome) to real, market-relevant products** — see §0 for the full breakdown and `docs/device-vendor-realism.md` for per-device CVE citations and the honesty disclaimers. Owner asked to assess the lab's device realism and find real vendor analogs; research grounded 7 real vendors (Hikvision/Axis Communications split across the camera's 3 postures, Yale, Schneider Electric, Netgear, Dahua, Sonos) in real, documented public CVEs. Scope deliberately bounded to identity + protocol-level signal (vendor/model/firmware, Telnet/SSDP/UPnP/mDNS/RTSP banners, a new real Modbus function-code-0x2B device-identification feature, confirmed live via a direct pymodbus client call - an initial claim that this would also close a previously-documented `modbus-discover` "no data" gap was caught wrong by live verification and corrected: nmap's script gates the 0x2B read behind a working function-0x11 response pymodbus's server never provides, so that specific gap remains open) - not a full REST API-shape rewrite, named as a deliberate limitation since `scan_tests.py`'s collectors already parse generically by banner/port/protocol. `device_id`/container names and all classification/compliance logic confirmed vendor-agnostic before any edit. Real IEEE OUI prefixes (verified against the public registry, never invented) given to every device's self-reported MAC, documented as cosmetic since the real network-discovery OUI lookup only ever resolves nmap's ARP-discovered Docker-virtual MAC. Two cross-package "real captured shape" test fixtures (UPnP, mDNS) re-captured live from the rebuilt responders rather than hand-typed. Historical `document-store/raw/*.txt` evidence showing the old fictional vendors is deliberately left untouched (append-only), with a dated cutover note added to the rewritten `docs/architecture/device-inventory.md`. Added a small in-app "simulated device, not affiliated" disclaimer to every device. 56 per-device fixture tests + 300 `policies/catalog`+`policies/nca` tests + 334/337 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 315/315 frontend tests (isolated run) passing, `tsc -b`/`oxlint` clean. Full live verification against a rebuilt 16-container stack: every device's real identity surface (Telnet/SSDP/mDNS/RTSP/Modbus, plus the real `broadcast-upnp-info` NSE script byte-matching the updated fixture) directly probed and confirmed; a real network-discovery sweep and two real scan jobs recorded genuine fresh evidence (`EV-2026-08-04-0001`/`-0002`) carrying the new identity end to end; caught and fixed a real live-only-visible gap (every device's DB-stored `display_name`/inventory `vendor`/`model` still showed the old names or null) via real `PATCH /devices/{id}` calls, confirmed in an actual browser afterward. |
 | 2026-08-03 | **Network Discovery precision & scale hardening — all 4 tasks COMPLETE**, each its own independently-live-verified commit (`e0f58b0`, `a1c3be4`, `4702d78`, `2fc8283`). See §0 for the full per-task breakdown and `docs/superpowers/plans/2026-08-03-network-discovery-precision-and-scale.md` (every checklist item now checked off with its real outcome). Origin: a code-review pass on `TEST-NET-DISCOVERY` flagged a Telnet/SSH classification-confidence conflation, a hardcoded 90s timeout that can't survive the /16-sized subnets the platform's own just-shipped "adjustable subnets" feature (`984864f`) allows, and three named gaps. (1) Telnet-open now gets `confidence: "medium"`, SSH-only stays `"low"`. (2) MAC address + a maintained IEEE OUI-registry lookup (`oui_lookup.py`, mirrors `cisa_kev.py`) - a real live-caught finding: the registry's front-end 418s on the default `requests` User-Agent (a WAF bot-block), fixed with a browser-shaped header; also caught and fixed a real pre-existing test gap (`NetworkDiscoveryPanel.test.tsx` never wrapped the panel in a Router, masked until this session's live stack made its unmocked fetch start succeeding). (3) `broadcast-upnp-info`/`broadcast-dns-service-discovery` folded into the sweep for UDP-only devices - live-first verification surfaced two real, unplanned fixture bugs: neither `device-router-gw`'s SSDP responder nor `device-speaker`'s mDNS responder ever joined its multicast group (zero response to a real broadcast query despite unicast probes already working), and `device-router-gw`'s SSDP `LOCATION` header echoed the requester's address instead of its own with no `/description.xml` endpoint to serve anyway - both fixed, the real UPnP discovery flow now works end to end; mDNS/DNS-SD enumeration honestly documented as not live-verifiable against this lab's intentionally minimal mDNS fixture. (4) Two-phase discovery (Stage A fast `-sn` sweep finds live hosts, Stage B `-sV` scan targets only those) makes the /16 scope ceiling practical - **a live large-scope verification attempt surfaced a real, only partially understood anomaly** (`docs/errors/033`): an unrouted RFC1918 proxy range caused a real Stage A job timeout against the first-draft estimate, and a smaller isolated check of the same range showed every address falsely "up" (likely a Docker Desktop host-networking artifact, not conclusively root-caused) - responded by substantially raising the timeout constants from this real data rather than a confident recalculation, then re-verified the real audit-network `/24` case still reproduces the pre-Task-4 sweep exactly; what remains genuinely unverified is stated plainly rather than implied as settled. 414 `policies` + 333 `lab/auditor/worker`-in-container + 334 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 315 frontend tests passing, `tsc -b`/`oxlint` clean. |
 | 2026-08-03 | **Post-Quantum Readiness — a bonus pipeline stage between AI Remediation and the AI Executive Summary** — see §0 and `docs/pqc-readiness.md` for the full breakdown. Owner's idea, raised first as an exploratory question, then a full implementation request with an explicit "ask, don't hallucinate" instruction - honored by verifying every technical claim live against the real `auditor-worker` OpenSSL 3.5.6 image before designing anything. 3 named technical criteria (TLS Key Exchange, Certificate Signature Algorithm, Firmware Crypto Library Currency) grounded in real NIST FIPS 203/204/205 standards, not a fabricated regulation - explicitly informational only, never touches `risk_engine.py` or any compliance verdict. New `pqc_crypto_reference.py` (static tips, per the owner's own choice over AI-generated ones) + `pqc_readiness_check.py` (mirrors `tls_cert_check.py`'s two-handshake shape) + read-only `pqc_routes.py` (computed live from evidence, no new table). Wired into the Fully Automated Run (the owner's own choice, more aggressive than the default recommendation) via a new `pqc_readiness` stage in `automated_run_runner.py`. New `/pqc-readiness` dashboard page in the sidebar's Pipeline group at the requested position, plus a new fleet-wide + per-device section on the AI Executive Summary. **A real bug caught by the first live scan, not by unit tests alone**: the original PQC group list included an invented, non-existent OpenSSL group name (`X448MLKEM1024`), which made `-groups` reject its entire argument and made every TLS-capable device report `connection_error` - fixed by removing it once `openssl list -tls1_3 -tls-groups`'s real output was checked, then re-verified live that `device-hardened` correctly negotiates a real hybrid PQC key exchange (pass) with a classical certificate signature (fail), a real scoped Fully Automated Run reported `pqc_devices_scanned: 1`, and both the Executive Summary page and the new route rendered the real post-fix data live in a browser. 387 `policies` (+17) + 310 `lab/auditor/api` (3 pre-existing WeasyPrint failures) + 113 `lab/auditor/worker` (in-container) + 307 frontend tests (+22) passing, `tsc -b`/`oxlint` clean. |
