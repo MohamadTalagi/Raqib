@@ -1,267 +1,1185 @@
-HANDOFF — Dashboard overhaul Phase 13 live-verification complete + 3 bugs
-found/fixed. Written 2026-08-01 at the user's request, terminating this
-session cleanly (no crash, no interruption — just a normal handoff).
+HANDOFF — Device-Fingerprint CVE Lookup: full design complete, ZERO code
+written yet. This entire session was research + planning (3 parallel Explore
+agents + 1 Plan agent + live verification against the real NVD API), by the
+owner's own request mid-flow ("write the reason/methodology/full plan to
+handoff.txt, completely rewrite the current file, include everything needed
+for another Claude Code session to pick this up and complete it in the best
+way possible"). Written 2026-08-06.
 
 ================================================================================
 1. WHAT THIS PROJECT IS
 ================================================================================
-IoT-Auditor / IoTGuard — KAUST Academy cybersecurity capstone. A Saudi
-NCA-CGIoT-1:2024-aligned IoT security audit platform: FastAPI backend
-(lab/auditor/api), a Postgres-backed worker that runs real whitelisted scan
-tools against a simulated Docker Compose "lab" of vulnerable IoT devices
-(lab/auditor/worker + lab/devices/...), and a React+TS+Vite dashboard
-(lab/auditor/web). Full project history, architecture, and every past
-decision live in CLAUDE.md at the repo root — that file is the canonical
-source of truth and is kept current after every meaningful change. Read
-CLAUDE.md's §0 "Current Status" section first; this handoff is a supplement
-for continuity across the session boundary, not a replacement for it.
+IoT-Auditor / "Raqib" (formerly "IoTGuard") — KAUST Academy cybersecurity
+capstone. A Saudi NCA-CGIoT-1:2024-aligned IoT security audit platform:
+FastAPI backend (lab/auditor/api), a Postgres-backed worker that runs real
+whitelisted scan tools against a simulated Docker Compose "lab" of
+vulnerable IoT devices (lab/auditor/worker + lab/devices/...), and a
+React+TS+Vite dashboard (lab/auditor/web). Full project history,
+architecture, and every past decision live in CLAUDE.md at the repo root —
+that file is the canonical source of truth and is kept current after every
+meaningful change. Read CLAUDE.md's §0 "Current Status" section first; this
+handoff is a supplement for continuity across the session boundary, not a
+replacement for it.
 
-Repo: https://github.com/MohamadTalagi/KAUST-IoT.git, branch main.
 Working directory: C:\development\projects\IoT-Auditor
+There is also a plan file (read-only reference, may or may not still exist
+next session — its content is fully reproduced and expanded below, so don't
+depend on it): C:\Users\Mohamad\.claude\plans\polymorphic-prancing-lantern.md
 
 ================================================================================
-2. WHAT THIS SESSION DID (all of it — nothing left mid-flight)
+2. THE REQUEST, AND THE REASONING BEHIND THE CHOSEN APPROACH
 ================================================================================
-This session picked up from a previous handoff.txt (now deleted — its content
-is folded into CLAUDE.md's §0, see the 2026-08-01 entry there for the full
-detailed write-up) that described a 13-phase "guided pipeline" dashboard
-overhaul as fully built, committed, and pushed, but blocked on ONE remaining
-task: a real, live, browser-driven proof that the pipeline actually works end
-to end against real data — blocked because a Docker Desktop networking bug
-(embedded DNS broken on internal-network) had forced the user to reboot the
-whole machine, and the reboot's outcome hadn't been observed yet when that
-handoff was written.
+The owner's own words: "currently users are expected to upload their own
+firmware for CVE assessment. This is kinda counter intuitive and most
+auditors wont have a firmware file on-hand, can we make it such that it gets
+the firmware and vendors from fingerprinting and it does web-based firmware
+grabbing to fill the database on whether theres CVE vulnerabilities in the
+firmware version or if its out of date. Would you recommend this solution."
 
-This session, in order:
-1. Confirmed Docker Desktop was healthy post-reboot; brought the lab stack up
-   with the dev overlay. Found the DNS bug had SURVIVED the reboot too.
-2. Diagnosed further: raw UDP DNS queries sent directly to 127.0.0.11:53
-   (bypassing getent) showed the embedded resolver was alive but gave
-   INCONSISTENT answers per hostname on internal-network only (one real
-   container name got a clean NXDOMAIN, three others got total silence/
-   timeout) — ruled out host firewall/VPN and stale network adapters, pointed
-   at Docker Desktop engine-internal corruption. Full diagnostic trail:
-   docs/errors/032-docker-desktop-embedded-dns-corruption-survived-reboot.md
-3. User ran Docker Desktop's Troubleshoot -> Clean/Purge data (confirmed
-   first that every object on the machine belonged to this project, current
-   or a stale prior naming iteration, so nothing else was at risk). This
-   fixed the DNS bug immediately.
-4. A purge wipes named volumes too, which surfaced re-setup needs:
-   - Re-ran lab/README.md's documented first-time setup (cert-init, mqtt
-     secure-broker password) against the fresh volumes.
-   - Discovered and fixed a REAL, previously-undocumented gap: the NCA
-     compliance catalog (81 guidelines + ~20 finding mappings) is seeded
-     IMPERATIVELY (python -m policies.nca.seed_catalog /
-     seed_finding_mappings), not via init.sql/migrations at all — a fresh
-     Postgres volume silently shows "0 controls in catalog" with no error
-     until these are run. Ran them (from inside auditor-api, since
-     auditor-worker has no psycopg installed). This gap is noted in
-     docs/errors/032's "how to prevent" section but lab/README.md itself
-     was NOT updated to mention it — see §3 below, this is the clearest
-     concrete next-session task.
-5. Rebuilt all 10 images, brought the full 11-container stack up.
-6. Drove the ENTIRE guided pipeline live through a real browser
-   (Claude-in-Chrome), all real data, nothing mocked:
-   - Discovery: real network scan found all 9 real lab hosts, correctly
-     classified. Used the bulk-select "Register selected (N)" flow for the
-     first time ever against a real backend (previously only unit-tested) —
-     registered device-insecure/-partial/-hardened for real.
-   - Devices: cohort picker + "Advance to Fingerprinting" worked, route state
-     carried the selection through.
-   - Fingerprinting: real `nmap -sV -p-` against device-insecure
-     (172.30.0.5), real evidence recorded (EV-2026-07-31-0001/0002).
-   - SA-IOT Compliance: real 10-credential-pair chained curl attack (found
-     admin:admin genuinely works), real evidence (EV-2026-07-31-0003), real
-     "Recompute verdicts" -> real SA-IOT-002/003 FAIL verdicts from the
-     actual policy engine.
-   - Vulnerability Intelligence: generated real firmware via
-     generate_firmware.py (real OpenSSL 1.0.1e / BusyBox 1.19.4), uploaded
-     it through the page's own upload control (moved off Device Detail in
-     this overhaul's Phase 9), ran TEST-FW-MANIFEST, got back real
-     Grype-scanned CVE data (77 CVEs for openssl, 24 for busybox, Heartbleed
-     correctly KEV-flagged) — evidence EV-2026-07-31-0004.
-   - NCA Compliance: selected device-insecure on the new "Assess a cohort"
-     card, clicked "Assess selected" — confirmed a REAL new browser tab
-     opened via window.open to that device's own assessment workspace
-     (this could only be verified in a real browser, never via curl).
-     Recorded a real assessment on the auto-suggested-FAIL blocking control
-     2-15-2; device's readiness flipped to Failed.
-   - Risk Assessment: device-insecure's live 7-factor breakdown (25 + 20 +
-     20 + 7.5 + 4 + 3 + 2.5) summed exactly to its displayed score (82,
-     Critical).
-   - Remediation: confirmed the stub correctly shows only real, already-
-     recorded static remediation text for currently-failing controls, with
-     a clear "Not built yet" banner — no fake/previewed AI content.
-7. Found and fixed 3 REAL bugs this live pass exposed (none catchable by the
-   existing mocked-fixture unit tests, since each depended on how a *real*
-   backend response looks for a device that exists but has thin history):
-   a. lib/pipeline.ts: `risk_assessment` was trivially "reached" the instant
-      ANY device was registered, because GET /risk/devices/{id}'s `known`
-      flag means "device_id exists," not "assessed" (risk_engine.py always
-      computes a defensible worst-case score even with zero evidence, by
-      design). Fixed to require real signal from an earlier phase too
-      (SA-IOT verdict OR NCA assessment OR vuln data) — DELIBERATELY
-      excluding fingerprinting, since risk_routes.py's 7 real inputs never
-      derive from fingerprinting-class evidence at all (confirmed by
-      reading the actual assembly code, not assumed).
-   b. pages/DevicesPage.tsx: `hasSaIotVerdict` counted a NOT_APPLICABLE
-      placeholder verdict (synthesized fleet-wide by ANY recompute, for
-      every device regardless of whether it was ever tested) as "SA-IOT
-      Compliance reached." Fixed to exclude NOT_APPLICABLE, matching the
-      exact same principle nca_compliance's own check already used one
-      line below it.
-   c. pages/SAIOTCompliancePage.tsx: never refetched verdicts after
-      "Recompute verdicts" succeeded — useFetch(api.verdicts, []) only ever
-      fetched once on mount. The real backend genuinely had new verdicts
-      (confirmed via direct curl) but the page's own counter stayed frozen
-      at 0/0 until a manual reload. Fixed with the same refreshKey-bumped-
-      into-useFetch-deps pattern every other mutating page in this codebase
-      already uses.
-   All three fixed with regression tests. auditor-web rebuilt/redeployed and
-   re-verified live in the browser after EACH fix individually (not
-   batched) before moving to the next.
-8. Verified: tsc -b --force clean, oxlint clean (same 5 pre-existing
-   warnings), full Vitest suite 271/271 passing (was 266 before this
-   session's regression tests). Backend (policies/lab/auditor/api) NOT
-   re-run this session since no backend code changed at all — only frontend
-   was touched.
-9. Updated CLAUDE.md's §0 with the full write-up (both this session's work
-   AND the previously-undocumented 13-phase overhaul itself, since the
-   prior session's own §0 update was interrupted by the reboot and never
-   completed) and added a §8 changelog row. Deleted the old handoff.txt
-   per its own closing instruction.
-10. Committed everything as 9af66fd ("dashboard overhaul: fix 3 live-
-    verification bugs, close out Phase 13") — 14 files, CLAUDE.md +
-    docs/errors/032 (new) + docs/errors/README.md + the 3 code fixes + their
-    tests + 4 real evidence files (EV-2026-07-31-0001..0004, overwritten
-    with new real content since the DB was purged and IDs restarted from
-    0001) + a real uploaded firmware archive
-    (document-store/firmware/device-insecure.archive).
-11. NOT pushed to origin/main — local commit only, 1 ahead of origin. User
-    has not asked for a push.
+**Why the literal "web-based firmware grabbing" idea was rejected, not
+built as asked:**
+1. No uniform source exists. There is no index of "vendor X, model Y,
+   firmware Z -> download URL." Real commercial tools that do this
+   (Finite State, ONEKEY, Eclypsium) rely on licensed firmware corpora and
+   direct vendor relationships built over years — not live scraping per
+   assessment. A DIY scraper would be a vendor-by-vendor, portal-by-portal
+   maintenance burden (login walls, CAPTCHAs, ToS) that breaks constantly.
+2. Real legal/ToS risk in auto-downloading and redistributing real vendor
+   firmware binaries programmatically — a different risk profile than
+   anything else this project has taken on.
+3. **It would not even be meaningful for THIS lab specifically.** This
+   project's device fixtures (lab/devices/*) are small FastAPI apps with
+   hardcoded fake version strings — not the real vendor's actual embedded
+   Linux firmware image. The vendor identities (Hikvision, Axis, Yale,
+   Schneider Electric, Netgear, Dahua, Sonos — see the 2026-08-04
+   "device-vendor-realism" changelog entry in CLAUDE.md) were deliberately
+   scoped to protocol-banner/CVE-citation realism only, NOT a full firmware
+   rewrite. Downloading and Grype-scanning the REAL Hikvision/Netgear/etc.
+   firmware would produce CVE results for code that isn't actually running
+   in this lab at all — worse than the current honest "no data" state,
+   because it would look authoritative while being disconnected from
+   reality.
+4. There's also a prerequisite gap that would block the literal approach
+   even if it were otherwise a good idea: **vendor/model are currently
+   100% self-reported** (a human types them in at device registration or
+   via PATCH) — there is no automated collector today that fingerprints a
+   device's vendor/model/firmware-version into structured fields at all.
+   "Auto-detect vendor+model from fingerprinting" isn't fully built yet
+   either way, so it had to be designed from scratch regardless of which
+   downstream approach was chosen.
+
+**What was recommended and agreed with the owner instead:** skip the binary
+entirely. Match the device's vendor + model + firmware-version (learned
+automatically via a new fingerprinting collector, not typed in by a human)
+against a **real CVE database (NVD)**, the same technique Shodan/Vulners/
+cve-search use — CPE-based version matching, no firmware image needed at
+all. This is strictly better for the platform's actual audience (an
+auditor who has never seen the device's firmware file, only its network
+presence) and it closes a limitation `docs/vulnerability-intelligence.md`
+ALREADY names explicitly as scoped-out: *"Package/component-level only —
+device-level vendor/model CPE matching... is not implemented... explicitly
+scoped out of this pass."* This is not scope creep; it's finishing a
+already-planned-for gap.
+
+**A genuinely nice side effect discovered during design, not planned for
+up front:** `policies/controls/SA-IOT-001.yaml` (control: "Device
+identification and asset inventory") has referenced a test_id called
+`TEST-DEVICE-ID` since Day 3 of this project — but that test_id has **never
+had a `SCAN_CATALOG` collector implemented**, confirmed absent by
+repo-wide grep and independently corroborated by `docs/known-limitations.md`
+and a comment in `lab/auditor/api/main.py:1201-1205`. SA-IOT-001 has
+therefore been "never automatically evaluated in practice" for the entire
+life of this project. Implementing the identity-auto-detection collector
+(Part 1 below) finally builds this exact test_id, closing a long-standing,
+independently-documented gap as a side effect of solving the owner's actual
+request — not a coincidence to be surprised by, a deliberate reuse.
 
 ================================================================================
-3. WHAT'S LEFT / NEXT STEPS, IN ORDER OF LIKELY PRIORITY
+3. METHODOLOGY USED TO DESIGN THIS (so the next session trusts the plan,
+   or knows exactly what to re-verify)
 ================================================================================
-Nothing is broken or mid-flight. The dashboard overhaul is functionally
-complete and live-verified. What remains is either pre-existing, deliberately
-scoped-out work, or small documentation gaps:
+This was NOT designed from memory or general LLM knowledge of "how IoT CVE
+matching usually works." The process:
 
-1. **Push 9af66fd to origin/main** — not done, needs explicit user ask per
-   this project's standing git-safety convention (never push without being
-   asked). Check `git log origin/main..HEAD` first to confirm it's still
-   just this one commit before pushing.
+1. Answered the owner's "would you recommend this" question directly first,
+   with the reasoning in §2 above, and got explicit confirmation to proceed
+   with the version/CPE-based alternative via AskUserQuestion (owner picked
+   "Yes, plan it (Recommended)").
+2. Entered plan mode. Launched **3 parallel Explore subagents** (single
+   message, 3 tool calls) against the real repo, each with a narrow, fully
+   scoped brief:
+   - Agent A: every fingerprinting collector that captures a device's
+     self-reported vendor/model/firmware-version banner/identity string,
+     confirmation that TEST-DEVICE-ID has no collector, confirmation that
+     devices.vendor/model are purely self-reported, the SCAN_CATALOG/
+     pipeline_phase structure, and how evidence-recording flows through
+     job_runner.py.
+   - Agent B: the existing Vulnerability Intelligence (Stage 05) backend
+     end to end — sbom.py/CPE_OVERRIDES, cisa_kev.py's fetch/cache/refresh
+     pattern (the template for a new local CVE mirror), vuln_routes.py's
+     read-only architecture, vuln_reference.py's static-table shape, the
+     frontend upload/display flow, and confirmation that the worker
+     container (not the API container) has real outbound internet access.
+   - Agent C: how device identity currently surfaces in the UI, the
+     Fingerprinting page/pipeline-phase pattern, the ACTUAL disclosed
+     vendor/model/firmware strings per device fixture (read directly from
+     each lab/devices/*/app/config.py and protocol-server source file, not
+     assumed from CLAUDE.md's prose), and the explicitly-documented "known
+     limitation" text in docs/vulnerability-intelligence.md and
+     docs/device-vendor-realism.md that already names this exact gap.
+3. All 3 agents' findings (~280K tokens of raw exploration output) were
+   condensed into a single, dense context block and handed to **1 Plan
+   subagent**, asked to produce a concrete file-by-file implementation plan
+   — not to re-explore, just to design against the already-gathered facts.
+4. The orchestrating session then independently **spot-verified the Plan
+   agent's most load-bearing/uncertain claims by reading the real files
+   directly** (not trusting the sub-agent's summary blindly):
+   - Read `is_firmware_test()` in scan_tests.py directly — confirmed it's
+     a one-line `spec["category"] == CATEGORY_FIRMWARE` check, which
+     simplified the plan (just reuse the category, no new predicate needed).
+   - Read `SA-IOT-001.yaml` directly — confirmed the exact pass/fail field
+     name (`observations.device_identified`) the new collector's output
+     MUST match, and confirmed `applicability.device_type: [smart-camera]`
+     is present in the file but genuinely inert (this codebase's
+     policy_engine.py never reads that field — real applicability comes
+     from applicable_service_types matching a device's registered
+     services, an established fact from this project's own prior sessions,
+     re-confirmed here rather than assumed).
+   - Grepped `lab/devices/plc-gateway/app/main.py` directly — confirmed it
+     IS a FastAPI app with a real `/api/device/info` endpoint (this
+     mattered because plc-gateway is primarily known in this project's
+     history as "a Modbus device," so it was NOT safe to assume it also
+     has the same HTTP identity endpoint every other fixture has).
+   - Checked `lab/auditor/worker/test_job_runner.py` directly — confirmed
+     an existing 4-test-per-refresher pattern already exists for
+     maybe_refresh_grype_db/cisa_kev/oui_registry/network_scope, giving an
+     exact template to mirror for the new refresher's tests.
+5. **Live-verified the external, real-world facts the whole design depends
+   on** — this project's own standing discipline ("verify live, don't
+   guess/hallucinate a fact") — via WebFetch/WebSearch against the real
+   internet, not assumed from training knowledge:
+   - Confirmed NVD's real CVE API 2.0 endpoint:
+     `https://services.nvd.nist.gov/rest/json/cves/2.0`, and that it
+     supports both a `cpeName` (exact-match) and `virtualMatchString`
+     (broader) CPE filter parameter.
+   - Confirmed, via a live NVD CPE-dictionary search, that a real entry
+     `cpe:2.3:o:netgear:r7000_firmware:1.0.9.42:*:*:*:*:*:*:*` genuinely
+     exists — proving the `{vendor}:{product}_firmware` naming convention
+     this plan's CPE-override table depends on is real for at least one of
+     the 7 vendor identities this lab uses, not an invented pattern.
+6. Wrote the final plan to the plan-mode plan file, and — per this
+   specific request — is now writing this fuller handoff document with all
+   of the above folded in, since the plan file alone doesn't carry the
+   "why," the verification trail, or enough raw detail for a cold session
+   to execute without re-deriving context.
 
-2. **lab/README.md doesn't mention the NCA catalog seed step at all** —
-   only the cert-init/mqtt-password step is documented as "first-time
-   setup." A fresh Postgres volume (any purge, any fresh clone's first
-   `docker compose up`) needs `python -m policies.nca.seed_catalog` and
-   `python -m policies.nca.seed_finding_mappings` run inside auditor-api
-   (auditor-worker has no psycopg) or the NCA Compliance page silently
-   shows "0 controls in catalog" with no error at all. This is a real,
-   concrete, small fix — add a 3rd line to the README's setup block. Noted
-   in docs/errors/032 but the README itself was left untouched this
-   session (documentation-only, non-blocking, but worth 5 minutes).
-
-3. **IoTGuard Stages 07/08 (AI-generated remediation blueprint + AI
-   executive summary) are not built.** The Remediation page is an honest
-   "Not built yet" stub by design — the user explicitly deferred the real
-   AI-remediation engine (model choice, prompting, human-review gate) to a
-   separate, later, larger plan before this overhaul even started
-   (confirmed via AskUserQuestion at that time, documented in CLAUDE.md).
-   If asked to build this next, it needs its own scoping conversation, not
-   an assumption of what "AI-assisted" should mean here — this project's
-   whole ethos is "AI-assisted, not AI-decided," so whatever gets built
-   must keep a human-confirmation gate on any generated remediation text.
-
-4. **IoTGuard Stage 10 (Continuous Monitoring / historical trend) is not
-   built at all.** No scheduled re-scanning, no trend charts, no
-   verdict-over-time view. Noted throughout CLAUDE.md history as a natural
-   fit for later, never started.
-
-5. **No authentication/login system anywhere in this application** — a
-   long-standing, deliberately-documented limitation of this training lab
-   (every "reviewer identity" field across NCA assessments/exceptions/
-   overrides is free-text name entry, not real auth). Not something this
-   session touched or was asked to touch; flagging only because "is it
-   ready" naturally raises this question for anything beyond a training
-   lab.
-
-6. **Backend test suites (policies/, lab/auditor/api) were not re-run this
-   session** since no backend code changed — everything this session fixed
-   was frontend-only (lib/pipeline.ts, DevicesPage.tsx,
-   SAIOTCompliancePage.tsx). Before trusting backend behavior on the next
-   session, a quick sanity re-run wouldn't hurt, though there's no reason
-   to expect regressions since nothing backend-side was touched:
-     .venv/Scripts/python.exe -m pytest policies/ -q
-     (from lab/auditor/api, needs the C:\work junction — confirmed it
-      still exists from past sessions)
-     PYTHONPATH="/c/work" ../../../.venv/Scripts/python.exe -m pytest -q \
-       --ignore=test_report_smoke.py
-   Expect the same 2 pre-existing WeasyPrint/libgobject failures on this
-   Windows host (unrelated, documented for many past sessions).
-
-7. **The 2 pre-existing WeasyPrint/libgobject-native-library test failures**
-   on this Windows dev host (PDF report generation tests) are unrelated to
-   anything this or any recent session touched — a known, accepted,
-   Windows-host-only gap, not a real bug. Don't chase this unless asked.
-
-8. **device-partial and device-hardened have generated firmware fixtures
-   sitting in lab/auditor/worker/firmware/output/ that were never uploaded**
-   (only device-insecure's was, during this session's Vulnerability
-   Intelligence verification). Not a gap — just noting it in case a future
-   session wants full-fleet vuln-intel coverage for a demo; the generator
-   script (generate_firmware.py) already produced all 3, only one was used.
-
-Nothing else is outstanding from the 13-phase plan or from this session's
-own verification pass — this really is "the overhaul is done and proven,
-here's what's still out of scope by design."
-
-================================================================================
-4. CURRENT LIVE STATE (as of session end — verify freshness before trusting)
-================================================================================
-- All 11 lab containers up and healthy (docker compose -f docker-compose.yml
-  -f docker-compose.dev.yml up -d, from the lab/ directory).
-- 3 real devices registered: device-insecure (4 evidence, 4 verdicts, real
-  firmware uploaded, real Grype vuln data), device-partial (0 evidence, 1
-  verdict — a NOT_APPLICABLE placeholder only, never actually tested),
-  device-hardened (same as device-partial).
-- Real NCA assessment recorded on device-insecure's control 2-15-2 (FAIL,
-  blocking) — its readiness is Failed with 1/18 controls assessed.
-- GET /summary: 4 evidence, 6 verdicts (2 FAIL, 4 NOT_APPLICABLE, 0 PASS).
-- Working tree clean, HEAD at 9af66fd, 1 commit ahead of origin/main
-  (not pushed).
-
-If a fresh session starts and the containers aren't running (e.g. after
-another reboot/Docker Desktop restart), bring them up with:
-  cd C:\development\projects\IoT-Auditor\lab
-  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-If DNS breaks again (same symptom as docs/errors/032 — psycopg
-"Name or service not known" from auditor-api), don't re-try container/network
-recreation or WSL restart first (already proven ineffective twice across two
-sessions) — go straight to raw-UDP-query diagnosis (see docs/errors/032 for
-the exact script) to confirm it's the same bug, then Docker Desktop
-Troubleshoot -> Clean/Purge data.
+**What this means for the next session**: everything marked "confirmed" or
+"verified live" below can be trusted without re-checking. Everything
+explicitly marked "VERIFY DURING IMPLEMENTATION" in §6/§7 below was
+deliberately left open because it genuinely cannot be nailed down without
+running real code/making a real live NVD call — do not skip those
+verification steps by assuming a plausible-sounding value.
 
 ================================================================================
-5. QUICK-REFERENCE: VERIFICATION COMMANDS
+4. CURRENT STATE — NOTHING IMPLEMENTED YET
 ================================================================================
-Frontend (from lab/auditor/web):
-  npx tsc -b --force              <- NOT bare `tsc --noEmit` (checks nothing
-                                      in this project's tsconfig setup)
-  npx oxlint                      <- expect exactly 5 pre-existing warnings
-                                      (useToast.tsx, useFetch.ts,
-                                      NetworkDiscoveryPanel.tsx,
-                                      NetworkGraph.tsx x2)
-  npx vitest run --no-file-parallelism   <- expect 271/271 passing
+This entire session was planning only. Zero files were created or edited in
+the actual codebase. No migration exists, no new SCAN_CATALOG entries exist,
+no new worker scripts exist. `git status` should show a clean working tree
+with respect to this feature (whatever pre-existing untracked
+document-store/raw/*.txt evidence files are listed in git status are
+unrelated leftover evidence from past live-verification sessions, not
+related to this feature).
 
-Backend (from repo root / lab/auditor/api, see §3.6 above for exact
-commands) — expect the same 2 pre-existing WeasyPrint failures, nothing
-else.
+The very first implementation step for the next session is §6, Part 1,
+step 1 (the migration) below.
 
-Always check for stray test writes after a backend run:
-  git status --short document-store/
-    -> should be empty (a real, historically-recurring gotcha in this repo)
+================================================================================
+5. GROUNDING FACTS (confirmed against real files/real APIs — reuse, don't
+   re-derive)
+================================================================================
+
+## 5.1 Device identity today — 100% self-reported, no automated collector
+
+- `devices.vendor`/`devices.model` columns exist
+  (lab/auditor/db/init.sql:147-171) but are written ONLY by a human, via
+  `POST /devices` (lab/auditor/api/main.py:1421-1481,
+  `_validate_device_payload` at :1381-1382) or `PATCH /devices/{id}`
+  (:1735-1778, `PATCHABLE_DEVICE_FIELDS` at :1546-1550 includes
+  "vendor","model"). Confirmed by grepping the ENTIRE worker/api tree for
+  `UPDATE devices` — the only other writes touch firmware_filename/sha256/
+  uploaded_at (upload metadata for an uploaded archive), never vendor/model.
+- There is **no `devices.firmware_version` column today** — only
+  `firmware_filename`/`firmware_sha256`/`firmware_uploaded_at` (upload
+  metadata, not a self-reported version string). This plan adds
+  `firmware_version` as a new column.
+- `TEST-DEVICE-ID` is referenced in `policies/controls/SA-IOT-001.yaml:11-12`
+  (`automated_test_ids: [TEST-DEVICE-ID]`) but has **no `SCAN_CATALOG`
+  entry anywhere** — confirmed absent by repo-wide grep, corroborated by
+  `docs/known-limitations.md:207-211` and `main.py:1201-1205`'s own comment
+  ("Only some required tests have an automated collector... If none do
+  (e.g. SA-IOT-001's TEST-DEVICE-ID)...").
+- **SA-IOT-001.yaml's exact contract (read directly, full file):**
+  ```yaml
+  control_id: SA-IOT-001
+  title: Device identification and asset inventory
+  version: "1.0.0"
+  saudi_source:
+    - framework: CGIoT-1:2024
+      reference: "2-1-1"
+      clause: "Maintain an accurate inventory of connected IoT devices, including vendor, model, and identifiers."
+  applicability:
+    device_type: [smart-camera]      # <-- CONFIRMED INERT, see below
+  required_evidence:
+    - test_id: TEST-DEVICE-ID
+  automated_test_ids: [TEST-DEVICE-ID]
+  severity: medium
+  conditions:
+    pass: { field: "observations.device_identified", op: "equals", value: true }
+    fail: { field: "observations.device_identified", op: "equals", value: false }
+    partial: null
+    inconclusive: { when: "evidence_missing_or_low_confidence" }
+  remediation: "Expose vendor, model, MAC, and firmware version via an unauthenticated read-only device-info endpoint for asset inventory tooling."
+  limitations: "Only checks whether a device-info endpoint discloses vendor/model/firmware; does not verify the values are accurate, does not check MAC address disclosure, and does not cover devices with no HTTP service at all (evaluates to NOT_APPLICABLE for those)."
+  ```
+  The new collector's `observations` dict MUST use the exact key name
+  `device_identified` (boolean) — this is a hard, pre-existing contract,
+  not a naming choice to make freely. Per the control's own `limitations`
+  text, MAC disclosure is explicitly NOT part of the pass condition — only
+  vendor+model+firmware_version need to be present for `device_identified`
+  to be true.
+- `applicability.device_type: [smart-camera]` in the YAML above is
+  **confirmed inert** — this codebase's `policy_engine.py`/`is_applicable()`
+  never reads that field at all (a fact already established and documented
+  in multiple past CLAUDE.md sessions: "never the unused
+  applicability.device_type YAML field, which corresponds to no column
+  devices actually have"). Real applicability comes from
+  `applicable_service_types` matching a device's registered
+  `device_services` rows. This means implementing TEST-DEVICE-ID correctly
+  makes SA-IOT-001 evaluable for EVERY device with an HTTP/HTTPS service,
+  not just smart-camera-derived ones, despite what the YAML's stale
+  `device_type` field suggests.
+
+## 5.2 Every fixture's real disclosed identity (read directly from source,
+    not from docs)
+
+From `lab/devices/*/app/config.py` (`device_vendor`, `device_model`,
+`firmware_version` settings), cross-checked against `docs/device-vendor-
+realism.md`'s own citations:
+
+| Fixture              | vendor                 | model              | firmware_version              | Real CVE(s) already cited        |
+|-----------------------|-------------------------|---------------------|---------------------------------|------------------------------------|
+| smart-camera (insecure/partial) | Hikvision   | DS-2CD2143G2-I     | V5.3.0 build 160530             | CVE-2017-7921                      |
+| smart-camera (hardened)         | Axis Communications | M3216-LVE  | (in hardened.env)               | — (vendor-culture contrast, not one CVE) |
+| smart-lock             | Yale                    | Conexis L1          | 1.4.2                            | CVE-2023-26941, CVE-2023-26942     |
+| plc-gateway            | Schneider Electric      | Modicon M221        | SV3.8.1                          | CVE-2024-11737                     |
+| router-gateway          | Netgear                 | R7000                | V1.0.11.132_10.2.132             | CVE-2021-34991                     |
+| nvr                    | Dahua                   | NVR4108-8P           | 3.218.0000019.0                  | CVE-2021-33045, CVE-2013-3612      |
+| smart-speaker           | Sonos                   | One (Gen 2)          | 15.9                             | CVE-2018-11316, CVE-2023-50809     |
+
+**Every one of these 7 fixtures exposes `GET /api/device/info`** returning
+clean structured JSON `{"vendor": ..., "model": ..., "firmware_version": ...}`
+(pattern confirmed at `lab/devices/smart-camera/app/main.py:145-153`,
+**independently re-confirmed by direct grep against
+`lab/devices/plc-gateway/app/main.py`**, which showed:
+```
+from fastapi import FastAPI
+app = FastAPI(...)
+@app.get("/api/device/info")
+def device_info():
+```
+This mattered specifically because plc-gateway's primary identity channel
+in this project's history is Modbus (function code 0x2B), not HTTP — it was
+NOT safe to assume the HTTP endpoint also exists there without checking,
+and it does.). This endpoint is currently **never called by any
+`SCAN_CATALOG` test** — only ever fetched manually via
+`DeviceConsolePage.tsx:39`. It is the perfect existing target for the new
+`TEST-DEVICE-ID` collector: clean JSON, already exists on every fixture, no
+fragile free-text banner parsing needed at all.
+
+(Other, messier identity-disclosure channels exist too — Telnet banner,
+SSDP SERVER header, RTSP Server/SDP session, mDNS TXT record, Modbus 0x2B —
+all surveyed during exploration but deliberately NOT used for this feature,
+since `/api/device/info` is strictly cleaner and already uniformly
+available. Full detail on each of those channels' exact format is in the
+Explore agent transcripts if ever needed, but is not required to implement
+this plan.)
+
+## 5.3 Pipeline/catalog architecture (policies/catalog/scan_tests.py)
+
+- `SCAN_CATALOG` dict; each entry has `build_command`, `parse_observations`,
+  `applicable_service_types`, `pipeline_phase`, `category`, `tool`,
+  `tool_version_command`, optional `timeout_seconds`.
+- `pipeline_phase` constants (`:86-93`): `PIPELINE_PHASE_FINGERPRINTING`,
+  `PIPELINE_PHASE_SA_IOT_COMPLIANCE`, `PIPELINE_PHASE_VULN_INTELLIGENCE`,
+  `PIPELINE_PHASE_PQC_READINESS`.
+- `TEST-FW-MANIFEST` (`:1984-1994`, pipeline_phase=VULN_INTELLIGENCE) has
+  `applicable_service_types: ()` — no live host/port needed, only
+  `device_id`. This is the exact pattern the new `TEST-DEVICE-CVE-LOOKUP`
+  test must copy.
+- **`is_firmware_test()` — read directly, confirmed exact implementation:**
+  ```python
+  def is_firmware_test(test_id: str) -> bool:
+      spec = SCAN_CATALOG.get(test_id)
+      return spec is not None and spec["category"] == CATEGORY_FIRMWARE
+
+  def is_network_discovery_test(test_id: str) -> bool:
+      """True for tests that sweep the whole audit-network subnet rather than
+      a registered device's host/port - like firmware tests, these carry
+      applicable_service_types=() and skip live-target validation entirely
+      (see resolve_target() in job_runner.py and _create_scan_job() in
+      main.py)."""
+      spec = SCAN_CATALOG.get(test_id)
+      return spec is not None and spec["category"] == CATEGORY_NETWORK_DISCOVERY
+  ```
+  This is a plain category check. **The cleanest way to give
+  `TEST-DEVICE-CVE-LOOKUP` the same no-live-target treatment as
+  `TEST-FW-MANIFEST` is to assign it `category = CATEGORY_FIRMWARE` too** —
+  zero changes needed to `is_firmware_test()`, `job_runner.py`'s dispatch,
+  or `main.py`'s scan-job creation logic. (This also means it will appear
+  in the dashboard's "Simulated Firmware Analysis" Run-Scan section
+  alongside TEST-FW-MANIFEST — which reads fine given its label "Device CVE
+  lookup (NVD, no firmware required)" makes the distinction obvious inline.)
+- Fingerprinting-phase tests today (7): TEST-NET-REACHABILITY,
+  TEST-NET-PORTSCAN, TEST-MODBUS-PROBE, TEST-RTSP-PROBE, TEST-UPNP-PROBE,
+  TEST-MDNS-PROBE, TEST-NET-HTTP-INSPECT. None produce clean structured
+  vendor/model/firmware fields today (confirmed — raw banners only; nmap
+  version text is explicitly commented in the source as unreliable to
+  auto-match against a small reference table). `TEST-DEVICE-ID` becomes an
+  8th.
+
+## 5.4 The "local mirror + scheduled refresh" pattern to replicate
+
+This exact pattern is already used 3 times in this codebase — copy it
+exactly for the 4th (NVD device-CVE cache), do not invent a new shape:
+
+- `lab/auditor/worker/scan_scripts/cisa_kev.py`:
+  - `KEV_FEED_URL` (:18), `KEV_CACHE_PATH` (:19-21, defaults to
+    `~/.cache/grype/db/cisa-kev.json`, overridable via env var, deliberately
+    colocated with Grype's own DB cache dir so it survives restarts on the
+    same `grype-db-data` Docker volume).
+  - `fetch_and_cache_kev_feed()` (:25-43): plain `requests.get(url,
+    timeout=30)`, validates response shape, then **atomic swap**
+    (`tmp_path.replace(KEV_CACHE_PATH)`). Returns bool, **never raises**.
+  - `load_kev_index()` (:46-62): pure local file read, returns `{}` on any
+    `OSError`/`JSONDecodeError` — honest-empty, never raises.
+  - No User-Agent workaround needed for CISA's feed specifically.
+- `lab/auditor/worker/scan_scripts/oui_lookup.py:12-16,33-34`: **has** a
+  User-Agent-spoofing workaround (`FETCH_HEADERS = {"User-Agent":
+  "Mozilla/5.0 (compatible; IoTGuard-OUI-Lookup/1.0)"}`) because IEEE's OUI
+  registry front-end WAF-blocks the default `python-requests` UA. This is
+  the template to copy IF NVD's API turns out to need the same treatment —
+  verify live during implementation, don't assume either way.
+- `lab/auditor/worker/job_runner.py`:
+  - Constants block (:71-87): per refresher, a
+    `*_CHECK_INTERVAL_SECONDS` (in-process monotonic gate, cheap, checked
+    every poll iteration), a `*_MAX_AGE_SECONDS` (sentinel-file staleness
+    gate, the real "do we actually need to fetch" check), and a
+    `*_REFRESH_SENTINEL` (a touch-file path, distinct from the cache file
+    itself — its mtime alone is the staleness signal).
+  - `maybe_refresh_cisa_kev()` (:455-478) is the exact template: in-process
+    gate -> sentinel-age gate -> fetch -> touch sentinel only on success.
+    `maybe_refresh_grype_db`/`maybe_refresh_oui_registry` are structurally
+    identical.
+  - `main()`'s poll loop (:586-597) calls all of
+    `maybe_refresh_network_scope()`, `poll_once()`,
+    `poll_network_scans_once()`, `poll_automated_runs_once()`, then
+    `maybe_refresh_grype_db()`, `maybe_refresh_cisa_kev()`,
+    `maybe_refresh_oui_registry()`, all wrapped in **one blanket
+    try/except** so a refresh failure never kills the poll loop. **A new
+    `maybe_refresh_device_cve_index()` must be added to this exact list.**
+- **Networking, confirmed from docker-compose.yml**: `auditor-worker` sits
+  on BOTH `audit-network` (non-internal — real outbound internet via Docker
+  NAT) and `internal-network`. `auditor-api` sits ONLY on `internal-network`
+  — **zero outbound internet access**. This is WHY `vuln_routes.py`'s own
+  docstring says the API "has no access" to Grype/KEV data and only ever
+  reads what the worker already wrote into `evidence.observations`. **Any
+  new outbound fetch (to NVD) must happen from the worker container, never
+  from auditor-api.**
+
+## 5.5 How package-level CVE merging works today (the pattern to mirror at
+    the device level)
+
+- The merge happens at **write time**, inside
+  `policies/catalog/scan_tests.py`'s `_parse_fw_manifest_observations`
+  (:1587-1635) — NOT at read time. 3-tier fallback per package: (1) a real
+  Grype match if present, (2) the static `vuln_reference.py` table if it
+  has real data, (3) an honest "no data" shape — **never fabricated**.
+- `lab/auditor/api/vuln_routes.py` is **purely read-only**: it re-reads the
+  already-merged `evidence.observations` JSONB
+  (`SELECT DISTINCT ON (device_id) ... FROM evidence WHERE test_id =
+  'TEST-FW-MANIFEST' ORDER BY device_id, timestamp DESC`) and does only
+  light Python-side aggregation. **Zero CVE/KEV lookup logic lives in this
+  file** — it already happened when the evidence was written. The new
+  device-level CVE feature must follow this exact split: real lookup logic
+  lives in the worker (write time); the API stays a dumb, honest read of
+  whatever the worker already recorded.
+- `evidence` has no FK to `devices` (deliberate — evidence must outlive
+  deregistration). `record_scan_job_evidence`
+  (`lab/auditor/api/main.py:802-867`) is the ONE function that turns a
+  completed `scan_jobs` row + a human-typed finding into a real `evidence`
+  row — this is the only existing hook point for "something happens after
+  evidence is recorded." Nothing writes back to `devices` from it today —
+  that's new in this plan (Part 1).
+- Existing types to mirror, `lab/auditor/web/src/lib/types.ts:707-728`:
+  `VulnCVE {id, cvss, summary, kev_listed, kev_date_added}`,
+  `VulnPackageAdvisory {name, version, outdated, eol, latest_known_version,
+  official_patch_available, patched_version, kev_listed_count, cves, notes}`.
+- `policies/catalog/sbom.py`'s `CPE_OVERRIDES: dict[str, str]` (:20-22,
+  maps lowercased package name -> "vendor:product") is the exact precedent
+  for a small, hand-verified override table where naive name-lowercasing
+  doesn't match a real CPE vendor:product string. Mirror this exactly for
+  device vendor/model -> real NVD CPE vendor:product strings (§6, Part 2).
+- `policies/catalog/vuln_reference.py`: static (name,version)-keyed offline
+  fallback, 6 entries, `ComponentAdvisory`/`CVE` dataclasses,
+  `lookup_component()` always returns the same dict shape whether it hits
+  or misses (never partially fabricated) — same "small, bounded,
+  honest-miss" discipline to follow for any new lookup/override table here.
+
+## 5.6 Frontend pipeline UI pattern
+
+- `VulnerabilityIntelligencePage.tsx` + `DeviceVulnerabilityCard.tsx`:
+  `DeviceCohortPicker` + one `DeviceVulnerabilityCard` per selected device
+  is the established shape. `DeviceVulnerabilityCard.tsx` already shows
+  firmware-upload state, embeds a `PhaseRunnerCard` to trigger
+  `TEST-FW-MANIFEST`, and renders `VulnAdvisoryPanel`/`VulnFreshnessNote`
+  once `vulnSummary.data?.has_data`. The new device-level (no-firmware)
+  panel should be a **second, independent section** in this same card —
+  see §6 Part 2 for why it must NOT be nested inside the existing
+  `firmware.firmware_filename ?` gate.
+- `ScanJobCard.tsx:118-125` renders any test's raw `observations` as a
+  generic `<pre>{JSON.stringify(...)}</pre>` dump — meaning both new tests
+  get SOME visibility for free with zero frontend work, but a dedicated
+  summary render (vendor/model/firmware + CVE list) is much better UX and
+  is part of this plan.
+- `docs/vulnerability-intelligence.md`'s own "Known limitations" section
+  literally states: *"Package/component-level only — device-level
+  vendor/model CPE matching... is not implemented... explicitly scoped out
+  of this pass."* — direct confirmation this feature closes a
+  self-documented, anticipated gap.
+
+## 5.7 Live-verified external facts (NVD)
+
+- Real endpoint: `https://services.nvd.nist.gov/rest/json/cves/2.0`.
+- Supports `cpeName` (exact CPE match, requires part/vendor/product/version
+  to be non-wildcard) and `virtualMatchString` (broader match, wildcards
+  allowed) query parameters. "When both are provided, only cpeName is
+  used."
+- A real, live NVD CPE-dictionary entry confirmed to exist today:
+  `cpe:2.3:o:netgear:r7000_firmware:1.0.9.42:*:*:*:*:*:*:*` — proves the
+  `{vendor}:{product}_firmware` naming convention is real for at least this
+  one of the 7 vendor identities. **The other 6 (Hikvision, Axis, Yale,
+  Schneider Electric, Dahua, Sonos) were NOT individually live-verified
+  this session — this is an explicit, deliberate open item, see §7.**
+- Rate limits and User-Agent requirements were NOT conclusively confirmed
+  from the one page fetched this session (the fetched page didn't surface
+  specific numbers). Publicly, NVD is widely documented elsewhere as
+  ~5 requests/30s unauthenticated, ~50 requests/30s with a free
+  self-service API key — treat this as a reasonable planning assumption,
+  but **confirm live during implementation** (§6 Part 2, §7) rather than
+  hard-coding a rate on faith, since the one page fetched this session
+  didn't state it directly.
+
+================================================================================
+6. THE FULL PLAN
+================================================================================
+
+Two decoupled pieces. Both flow entirely through the EXISTING evidence
+discipline — worker runs a test -> `awaiting_finding` -> a human reads the
+raw output and types a finding -> `record_scan_job_evidence`. Neither
+bypasses that human-review step, and neither touches SA-IOT/NCA verdict
+logic beyond the pre-existing SA-IOT-001 (which was already meant to use
+TEST-DEVICE-ID, per §5.1) — this is informational vuln-intel data, exactly
+like the existing package-level CVEs and PQC readiness.
+
+--------------------------------------------------------------------------------
+PART 1 — TEST-DEVICE-ID (identity auto-detection)
+--------------------------------------------------------------------------------
+
+### 1.1 policies/catalog/scan_tests.py — new catalog entry
+
+No new worker script file needed — a plain curl test, same shape as
+`_tamper_status_command` (:974-978, hits `/api/status`) but targeting
+`/api/device/info`:
+
+```python
+def _device_id_command(target: dict) -> list[str]:
+    scheme = _scheme_for(target)
+    flags = _http_flags(scheme)
+    authority = _authority_for(target, scheme)
+    return ["curl", *flags, f"{scheme}://{authority}/api/device/info"]
+
+
+def _parse_device_id_observations(target: dict, output: str) -> dict:
+    vendor = re.search(r'"vendor"\s*:\s*"([^"]*)"', output)
+    model = re.search(r'"model"\s*:\s*"([^"]*)"', output)
+    firmware_version = re.search(r'"firmware_version"\s*:\s*"([^"]*)"', output)
+    mac = re.search(r'"mac"\s*:\s*"([^"]*)"', output)
+
+    vendor_v = vendor.group(1) if vendor and vendor.group(1) else None
+    model_v = model.group(1) if model and model.group(1) else None
+    firmware_v = firmware_version.group(1) if firmware_version and firmware_version.group(1) else None
+
+    # device_identified is the EXACT field name SA-IOT-001.yaml's pass/fail
+    # condition reads (observations.device_identified) - do not rename.
+    # Per SA-IOT-001's own `limitations` text, MAC disclosure is explicitly
+    # NOT part of the pass condition, only vendor+model+firmware_version.
+    device_identified = bool(vendor_v and model_v and firmware_v)
+
+    notes = (
+        ["This device exposes vendor, model, and firmware version via an "
+         "unauthenticated read-only endpoint - supports asset inventory "
+         "and downstream CVE lookup."]
+        if device_identified
+        else ["No unauthenticated device-info endpoint disclosed vendor, "
+              "model, and firmware version together - asset inventory for "
+              "this device must be entered manually."]
+    )
+    return {
+        "device_identified": device_identified,
+        "vendor": vendor_v,
+        "model": model_v,
+        "firmware_version": firmware_v,
+        "mac": mac.group(1) if mac and mac.group(1) else None,
+        "notes": notes,
+    }
+```
+
+Catalog entry:
+```python
+"TEST-DEVICE-ID": {
+    "label": "Device identification",
+    "tool": "curl",
+    "tool_version_command": ["curl", "--version"],
+    "category": CATEGORY_NETWORK_PROTOCOL,   # fits alongside TEST-NET-HTTP-INSPECT, not web-and-auth
+    "applicable_service_types": HTTP_SERVICE_TYPES,
+    "build_command": _device_id_command,
+    "parse_observations": _parse_device_id_observations,
+    "pipeline_phase": PIPELINE_PHASE_FINGERPRINTING,
+},
+```
+No `job_runner.py` dispatch changes needed for this one — it has a normal
+live host/port target, flows through the generic `process_job()` path
+exactly like `TEST-HTTP-HEADERS`/`TEST-NET-HTTP-INSPECT`.
+
+### 1.2 New migration: lab/auditor/db/migrations/016-device-identity-auto-detect.sql
+
+(Confirm the next free migration number before naming this file — check
+`lab/auditor/db/migrations/` for the highest-numbered file present; 016 is
+this session's best guess based on CLAUDE.md history mentioning up to 014/
+015, verify the actual directory listing before committing to this number.)
+
+```sql
+ALTER TABLE devices
+    ADD COLUMN IF NOT EXISTS firmware_version TEXT;
+
+ALTER TABLE devices
+    ADD COLUMN IF NOT EXISTS identity_source TEXT NOT NULL DEFAULT 'manual'
+        CHECK (identity_source IN ('manual', 'auto_detected'));
+```
+**Also mirror this into `lab/auditor/db/init.sql`'s `devices` table DDL** —
+`init.sql` only runs on a fresh volume; both files must stay in sync, per
+this project's own standing convention (every prior migration does this).
+
+### 1.3 lab/auditor/api/main.py — auto-populate hook + column plumbing
+
+Touch points (all read/write the `devices` row, all need `firmware_version`
+and `identity_source` added):
+- `_validate_device_payload` (:1345-1387): optionally accept
+  `firmware_version` from a human too (symmetric with vendor/model) —
+  decide during implementation whether to also expose this in
+  `RegisterDeviceForm.tsx`, or leave it API-only since auto-fill is the
+  primary path.
+- `create_device` (:1421-1481): INSERT column list + returned dict. New
+  devices get `identity_source='manual'` explicitly (the column's
+  `NOT NULL DEFAULT 'manual'` makes this automatic, but be explicit in the
+  INSERT for clarity).
+- `get_devices` (:1485-1543): add both columns to the SELECT and to each
+  device dict in the response.
+- `_device_row` (:1553-1577): add both columns to the SELECT/keys tuple
+  (used by GET /devices/{id}, PATCH /devices/{id}, and the firmware
+  upload/delete endpoints — all of these must not accidentally drop the
+  new fields from their response shape).
+- `PATCHABLE_DEVICE_FIELDS` (:1546-1550): add `"firmware_version"`.
+  **Do NOT add `"identity_source"`** — it must only ever be system-set via
+  the hook below, never directly PATCHable by a human, or the "not
+  auditor-verified" badge becomes lie-able.
+- `update_device`: when the incoming PATCH payload changes `vendor`,
+  `model`, or `firmware_version`, ALSO set `identity_source = 'manual'` in
+  that same UPDATE statement. Rationale: a human editing an auto-detected
+  value must flip provenance back to manual — otherwise the "auto-detected,
+  not auditor-verified" badge would keep claiming that about data a human
+  just typed in themselves.
+- **New hook inside `record_scan_job_evidence` (main.py:802-867)**: after
+  the evidence row is built but before/around `conn.commit()`, check if
+  `job["test_id"] == "TEST-DEVICE-ID"` and the recorded evidence's
+  `observations.device_identified` is `true`. If so:
+  1. `SELECT vendor, model, firmware_version FROM devices WHERE device_id
+     = %s FOR UPDATE` (row lock to avoid a race with a concurrent PATCH).
+  2. In Python, compute which of `vendor`/`model`/`firmware_version` are
+     currently `NULL` on that row.
+  3. If at least one is `NULL`, `UPDATE devices SET
+     vendor = COALESCE(vendor, %s), model = COALESCE(model, %s),
+     firmware_version = COALESCE(firmware_version, %s),
+     identity_source = 'auto_detected' WHERE device_id = %s` — **but only
+     if `identity_source` is still `'manual'` AND all three fields being
+     written were previously NULL** (i.e., don't flip `identity_source` to
+     `auto_detected` if e.g. vendor was already manually set and only
+     firmware_version happens to be newly filled — the safest, most honest
+     rule is: only ever auto-fill into a row that has NO identity data at
+     all yet, and only then mark it `auto_detected`; if the row already has
+     partial manual data, leave it alone entirely and let a human reconcile
+     it, rather than silently blending manual+auto-detected fields under
+     one ambiguous provenance flag).
+  4. **Never overwrite a non-NULL value.** This must be airtight — write a
+     regression test proving a manually-set `vendor` survives a
+     `TEST-DEVICE-ID` evidence recording untouched.
+  This hook is a side effect of the human-reviewed evidence-recording
+  moment, not a bypass of it — the human still typed the finding text
+  before this fires. Mirrors the honesty discipline already established by
+  the `auto_recorded` flag on `compliance_assessments` (see the "Fully
+  Automated Run" section of CLAUDE.md's history for that precedent).
+
+### 1.4 Frontend
+
+- `lab/auditor/web/src/lib/types.ts`: add `firmware_version: string | null`
+  and `identity_source: "manual" | "auto_detected"` to `DeviceBase`
+  (:319-336).
+- New `AutoDetectedIdentityBadge` in
+  `lab/auditor/web/src/components/ui/severity-badge.tsx` — same
+  file/pattern as the existing `AutoRecordedBadge`/`AiGeneratedBadge`
+  (Tooltip + explanation string + icon), shown wherever device identity is
+  displayed.
+- `lab/auditor/web/src/pages/DeviceDetailPage.tsx` (Inventory card, around
+  :283-289): add a "Firmware version" `MetaField` row, and render the new
+  badge next to Vendor/Model when `device.identity_source ===
+  "auto_detected"`.
+
+--------------------------------------------------------------------------------
+PART 2 — TEST-DEVICE-CVE-LOOKUP (device-level CVE lookup, no binary needed)
+--------------------------------------------------------------------------------
+
+### 2.1 New worker cache module: lab/auditor/worker/scan_scripts/nvd_lookup.py
+
+Mirrors `cisa_kev.py`'s exact shape (atomic-swap cache write, never raises,
+honest-empty on any failure):
+
+```python
+"""Fetch and cache real NVD CVE data for this lab's known device vendor/
+product pairs. Same hybrid model as cisa_kev.py/oui_lookup.py: never
+fetched at scan time, refreshed out of band by job_runner.py on a bounded
+cadence. Scoped to the (vendor, product) pairs actually present in the
+registered fleet (via DEVICE_CPE_OVERRIDES), never a full corpus mirror -
+NVD's API has no bulk "download everything" mode anyway, and querying only
+what's needed respects NVD's public rate limit."""
+
+import json
+import os
+import time
+from pathlib import Path
+
+import requests
+
+NVD_CVE_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+NVD_CACHE_PATH = Path(
+    os.environ.get("NVD_CVE_CACHE_PATH",
+                    os.path.expanduser("~/.cache/grype/db/nvd-device-cves.json")),
+)
+FETCH_TIMEOUT_SECONDS = 30
+# VERIFY LIVE (see §7): NVD documents roughly 5 req/30s unauthenticated,
+# ~50 req/30s with a free API key (NVD_API_KEY env var, sent as the apiKey
+# header) - confirm the real numbers and whether a key is worth adding
+# given this lab's low fetch volume (~7 pairs) before hardcoding a pace.
+REQUEST_INTERVAL_SECONDS = float(os.environ.get("NVD_REQUEST_INTERVAL_SECONDS", "6"))
+
+
+def fetch_and_cache_device_advisories(vendor_product_pairs: list[tuple[str, str]]) -> bool:
+    """One NVD query per distinct (vendor, product) pair via the
+    virtualMatchString-shaped CPE query, paced by REQUEST_INTERVAL_SECONDS
+    between requests. Returns True only if every pair's fetch succeeded
+    (partial success still atomically writes whatever succeeded - a False
+    return means "retry everything next cycle", not "the cache is now
+    invalid"). Cross-references each CVE against cisa_kev.load_kev_index()
+    (pure local read, no new network call) for kev_listed/kev_date_added,
+    same as firmware_check.py already does for package-level CVEs."""
+    # implementation: for each pair, GET NVD_CVE_API_URL with
+    # virtualMatchString=cpe:2.3:o:{vendor}:{product}:*:*:*:*:*:*:*:*,
+    # parse the "vulnerabilities" array, extract id/cvss/summary per CVE,
+    # sleep(REQUEST_INTERVAL_SECONDS) between requests, accumulate into
+    # {f"{vendor}:{product}": [cve_dict, ...]}, then atomic-swap write.
+    ...
+
+
+def load_device_advisories_index() -> dict:
+    """(vendor, product) key (as "vendor:product" string, matching
+    DEVICE_CPE_OVERRIDES' value shape) -> list of {"id", "cvss", "summary",
+    "kev_listed", "kev_date_added"} dicts. Empty dict (never raises) if no
+    cache exists or it's unreadable - honest-miss, same as
+    load_kev_index()/load_oui_index()."""
+    ...
+```
+
+### 2.2 New hand-verified override table: DEVICE_CPE_OVERRIDES
+
+Add to `policies/catalog/scan_tests.py` (or a new sibling module
+`policies/catalog/device_cpe_reference.py` if it grows large enough to
+warrant separation — decide during implementation), mirroring
+`sbom.py`'s `CPE_OVERRIDES` pattern exactly:
+
+```python
+# Hand-verified against the real NVD CPE dictionary (search.nvd.nist.gov's
+# CPE dictionary search, or a live NVD CVE API call) during implementation
+# - never guessed. Keyed by (vendor, model) EXACTLY as stored on
+# devices.vendor/devices.model (case-sensitive, as entered/auto-detected -
+# see §5.2 table for the exact strings this lab's fixtures use), mapped to
+# a real "vendor:product" CPE 2.3 pair (the _firmware-suffixed product,
+# confirmed live for netgear:r7000_firmware - see §5.7 - but NOT assumed
+# uniform for the other 6, confirm each individually).
+DEVICE_CPE_OVERRIDES: dict[tuple[str, str], str] = {
+    ("Hikvision", "DS-2CD2143G2-I"): "hikvision:???",              # VERIFY LIVE - not yet checked
+    ("Axis Communications", "M3216-LVE"): "axis:???",              # VERIFY LIVE - not yet checked
+    ("Yale", "Conexis L1"): "yale:???",                            # VERIFY LIVE - not yet checked
+    ("Schneider Electric", "Modicon M221"): "schneider_electric:???",  # VERIFY LIVE - not yet checked
+    ("Netgear", "R7000"): "netgear:r7000_firmware",                # CONFIRMED LIVE this session - see §5.7
+    ("Dahua", "NVR4108-8P"): "dahua:???",                          # VERIFY LIVE - not yet checked
+    ("Sonos", "One (Gen 2)"): "sonos:???",                         # VERIFY LIVE - not yet checked
+}
+```
+**Only `netgear:r7000_firmware` was actually confirmed against the live NVD
+CPE dictionary this session — every other entry above is a placeholder and
+MUST be individually verified (via NVD's CPE dictionary search at
+https://nvd.nist.gov/products/cpe/search, or by making a real
+`cpeMatchString`/`virtualMatchString` query against the CVE API itself and
+checking a non-empty, sensible result comes back) before being committed as
+real code.** Do not assume the `_firmware` suffix convention holds
+uniformly — some vendors' CPE entries use the bare hardware product name,
+some split hardware/firmware CPEs differently, some smaller IoT vendors may
+have thin or nonexistent CPE coverage entirely (if so, that pair should be
+OMITTED from the table, not guessed — an honest "no CPE mapping available"
+result for that device is correct and expected, matching this whole
+project's "never fabricate" rule).
+
+### 2.3 New worker script: lab/auditor/worker/scan_scripts/device_cve_lookup.py
+
+The test's dispatch script (mirrors `firmware_check.py`'s shape). The
+worker has no direct DB access (confirmed:
+`lab/auditor/worker/job_runner.py:93-95`'s own docstring states this), so
+it calls back to auditor-api's existing `GET /devices/{device_id}` (already
+returns vendor/model/firmware_version per `_device_row` once Part 1 is
+done) — same `AUDITOR_API_URL` env var precedent already used by
+`lab/auditor/worker/scan_scripts/interface_detect.py:30-31,36`:
+
+```python
+"""TEST-DEVICE-CVE-LOOKUP's collector: no live host/port target (like
+TEST-FW-MANIFEST) - reads the device's already-known vendor/model from
+auditor-api (GET /devices/{id}, the same row TEST-DEVICE-ID or a human may
+have populated) and cross-references the worker's local NVD cache
+(nvd_lookup.load_device_advisories_index()). Never makes a live NVD call
+itself - that only happens in job_runner.py's scheduled refresh."""
+
+import json
+import os
+import sys
+
+import requests
+
+from lab.auditor.worker.scan_scripts import nvd_lookup
+from policies.catalog.scan_tests import DEVICE_CPE_OVERRIDES
+
+API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
+
+
+def main() -> None:
+    device_id = sys.argv[1]
+    try:
+        response = requests.get(f"{API_URL}/devices/{device_id}", timeout=10)
+        response.raise_for_status()
+        device = response.json()
+    except requests.RequestException as exc:
+        print(f"error=could not fetch device record: {exc}")
+        sys.exit(1)
+
+    vendor, model = device.get("vendor"), device.get("model")
+    print(f"vendor={vendor or ''}")
+    print(f"model={model or ''}")
+    print(f"firmware_version={device.get('firmware_version') or ''}")
+
+    cpe_key = DEVICE_CPE_OVERRIDES.get((vendor, model)) if vendor and model else None
+    print(f"cpe_matched={cpe_key is not None}")
+    if cpe_key:
+        index = nvd_lookup.load_device_advisories_index()
+        cves = index.get(cpe_key, [])
+        print(f"device_cves={json.dumps(cves)}")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+`_parse_device_cve_lookup_observations` in `scan_tests.py` reads
+`vendor=`/`model=`/`firmware_version=`/`cpe_matched=`/`device_cves=` back
+from stdout (same `re.search(r"^field=(.*)$", output, re.MULTILINE)` idiom
+used throughout this file) and assembles the final observations dict — same
+"merge happens at write time" discipline as `_parse_fw_manifest_observations`.
+An unmatched `(vendor, model)` yields an honest `cpe_matched: false,
+device_cves: []` plus an explanatory note — never a guessed/fabricated
+result, matching `_clean_grype_advisory`'s "no data" shape.
+
+### 2.4 policies/catalog/scan_tests.py — new catalog entry
+
+```python
+"TEST-DEVICE-CVE-LOOKUP": {
+    "label": "Device CVE lookup (NVD, no firmware required)",
+    "tool": "python3",
+    "tool_version_command": ["python3", "--version"],
+    "category": CATEGORY_FIRMWARE,   # reuses is_firmware_test() as-is, zero predicate changes needed - see §5.3
+    "applicable_service_types": (),  # no live target, exactly like TEST-FW-MANIFEST
+    "build_command": lambda target: ["python3", DEVICE_CVE_LOOKUP_SCRIPT, target["device_id"]],
+    "parse_observations": _parse_device_cve_lookup_observations,
+    "pipeline_phase": PIPELINE_PHASE_VULN_INTELLIGENCE,
+},
+```
+
+### 2.5 lab/auditor/worker/job_runner.py — poll-loop refresh
+
+New `maybe_refresh_device_cve_index()`, copy-pasted from
+`maybe_refresh_cisa_kev()`'s exact template (own constants block, own
+sentinel file at `~/.cache/grype/db/.nvd-device-cves-last-refresh`,
+in-process monotonic gate -> sentinel-age gate -> fetch -> touch sentinel):
+
+```python
+NVD_CVE_CHECK_INTERVAL_SECONDS = float(os.environ.get("NVD_CVE_CHECK_INTERVAL_SECONDS", str(6 * 3600)))
+NVD_CVE_MAX_AGE_SECONDS = float(os.environ.get("NVD_CVE_MAX_AGE_SECONDS", str(7 * 24 * 3600)))
+NVD_CVE_REFRESH_SENTINEL = os.environ.get(
+    "NVD_CVE_REFRESH_SENTINEL", os.path.expanduser("~/.cache/grype/db/.nvd-device-cves-last-refresh"),
+)
+_last_nvd_cve_check_monotonic: float | None = None
+
+
+def maybe_refresh_device_cve_index(now: float | None = None) -> None:
+    """Same hybrid model/sentinel pattern as maybe_refresh_cisa_kev, for
+    the NVD device-CVE cache (nvd_lookup.py). Only queries NVD for
+    (vendor, product) pairs actually present in the registered fleet right
+    now - not a full corpus mirror - so this also needs GET /devices to
+    know which pairs matter before fetching."""
+    global _last_nvd_cve_check_monotonic
+    now = time.monotonic() if now is None else now
+    if (
+        _last_nvd_cve_check_monotonic is not None
+        and (now - _last_nvd_cve_check_monotonic) < NVD_CVE_CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_nvd_cve_check_monotonic = now
+
+    sentinel_age = _sentinel_age_seconds(NVD_CVE_REFRESH_SENTINEL)
+    if sentinel_age is not None and sentinel_age < NVD_CVE_MAX_AGE_SECONDS:
+        return
+
+    try:
+        response = requests.get(f"{API_URL}/devices", timeout=10)
+        response.raise_for_status()
+        devices = response.json()
+    except requests.RequestException as exc:
+        print(f"job_runner: device CVE index refresh failed (could not list devices): {exc}", file=sys.stderr, flush=True)
+        return
+
+    pairs = {
+        tuple(DEVICE_CPE_OVERRIDES[(d["vendor"], d["model"])].split(":", 1))
+        for d in devices
+        if d.get("vendor") and d.get("model") and (d["vendor"], d["model"]) in DEVICE_CPE_OVERRIDES
+    }
+    if nvd_lookup.fetch_and_cache_device_advisories(list(pairs)):
+        print("job_runner: NVD device-CVE index refresh completed", flush=True)
+        _touch_sentinel(NVD_CVE_REFRESH_SENTINEL)
+    else:
+        print("job_runner: NVD device-CVE index refresh failed", file=sys.stderr, flush=True)
+```
+Add `nvd_lookup` to the existing
+`from lab.auditor.worker.scan_scripts import cisa_kev, oui_lookup` import
+(job_runner.py:40), add a `DEVICE_CPE_OVERRIDES` import from `scan_tests`,
+and add `maybe_refresh_device_cve_index()` to `main()`'s poll loop
+(:592-594) alongside the other three refreshers, inside the same blanket
+try/except.
+
+**A matching test group belongs in `lab/auditor/worker/test_job_runner.py`**
+— confirmed this file already has an exact 4-test-per-refresher template to
+mirror verbatim (read directly this session):
+```
+test_maybe_refresh_cisa_kev_skips_check_within_the_interval
+test_maybe_refresh_cisa_kev_fetches_when_sentinel_is_stale
+test_maybe_refresh_cisa_kev_skips_fetch_when_sentinel_is_fresh
+test_maybe_refresh_cisa_kev_does_not_touch_sentinel_on_failed_fetch
+```
+(also present for `maybe_refresh_grype_db`, `maybe_refresh_oui_registry`,
+`maybe_refresh_network_scope` — 4 near-identical test groups already exist
+in this file; write a 5th following the identical shape/mocking pattern for
+`maybe_refresh_device_cve_index`.)
+
+### 2.6 lab/auditor/api/vuln_routes.py — extend the read path
+
+Extend `get_device_vuln_summary` (the `GET /vuln-intel/devices/{id}`
+handler, ~:129-174) — **do not add a new route**, since
+`DeviceVulnerabilityCard.tsx` already calls `api.vulnIntelDevice(device_id)`
+once per card and a second network round-trip per card would be wasteful.
+Add a second, independent
+`SELECT DISTINCT ON (device_id) ... WHERE test_id = 'TEST-DEVICE-CVE-LOOKUP'
+ORDER BY device_id, timestamp DESC LIMIT 1` read alongside the existing
+`TEST-FW-MANIFEST` one, each independently `has_data`-gated (a device may
+have one, both, or neither kind of evidence). Add
+`device_identity: {vendor, model, firmware_version, cpe_matched} | null`
+and `device_cves: [...]` fields to the response. Purely read-only, same
+architecture as the rest of this router — no new caching layer at the API
+level, it only ever reads what the worker already wrote into
+`evidence.observations`.
+
+### 2.7 Types
+
+Python (worker-side, inline dict shape or a small dataclass in
+`nvd_lookup.py`, mirroring `vuln_reference.py`'s `CVE`/`ComponentAdvisory`
+dataclasses):
+```python
+@dataclass(frozen=True)
+class DeviceCVE:
+    id: str
+    cvss: float | None
+    summary: str
+    kev_listed: bool
+    kev_date_added: str | None
+```
+TypeScript (`lab/auditor/web/src/lib/types.ts`, adjacent to the existing
+`VulnCVE`/`VulnPackageAdvisory` block at :707-728):
+```typescript
+export interface VulnDeviceIdentity {
+  vendor: string | null;
+  model: string | null;
+  firmware_version: string | null;
+  cpe_matched: boolean;
+}
+
+// VulnCVE's existing shape is already correct for a device-level CVE too -
+// no new interface needed, just reuse it.
+
+// Extend the existing VulnDeviceSummary (types.ts:755-766) with:
+//   device_identity: VulnDeviceIdentity | null;
+//   device_cves: VulnCVE[];
+```
+
+### 2.8 Frontend
+
+- New `lab/auditor/web/src/components/devices/DeviceCveAdvisoryPanel.tsx`
+  (flat CVE list, sibling to the existing `VulnAdvisoryPanel.tsx` but no
+  per-package grouping since this is device-level) — reuse `KevBadge` from
+  `severity-badge.tsx` for KEV-listed entries, matching the existing visual
+  language exactly.
+- `lab/auditor/web/src/components/pipeline/DeviceVulnerabilityCard.tsx`:
+  add a SECOND, INDEPENDENT section below the existing package-level
+  "Vulnerability intelligence" block (~:130-160), following the identical
+  render-or-prompt shape — if `vulnSummary.data?.device_cves?.length` show
+  `DeviceCveAdvisoryPanel`, else show a prompt + `PhaseRunnerCard` for the
+  `TEST-DEVICE-CVE-LOOKUP` test (found via
+  `scanTests.find(t => t.test_id === "TEST-DEVICE-CVE-LOOKUP")`, same
+  pattern as the existing `manifestTest` lookup at :66). **This new section
+  MUST render regardless of firmware-upload state** — unlike the existing
+  package-level section (nested inside `firmware.firmware_filename ?`),
+  since the entire point of this feature is that it works with zero
+  firmware upload. This is the one piece of UI that has to visibly prove
+  the feature's whole premise.
+
+================================================================================
+7. EXPLICIT OPEN VERIFICATION ITEMS — DO NOT GUESS, VERIFY LIVE DURING
+   IMPLEMENTATION
+================================================================================
+These were deliberately left open because they genuinely cannot be nailed
+down without running real code or making a real live call — do not fill
+these in from a plausible-sounding assumption:
+
+1. **6 of 7 `DEVICE_CPE_OVERRIDES` entries are unverified placeholders**
+   (only Netgear R7000 was confirmed live this session). Look each of
+   Hikvision DS-2CD2143G2-I, Axis M3216-LVE, Yale Conexis L1, Schneider
+   Electric Modicon M221, Dahua NVR4108-8P, and Sonos One (Gen 2) up
+   individually against NVD's real CPE dictionary
+   (https://nvd.nist.gov/products/cpe/search) or via a real trial CVE API
+   call before committing the table. If a vendor genuinely has no CPE
+   dictionary coverage for a given product, omit that entry — never invent
+   a plausible-looking CPE string.
+2. **NVD's exact rate limit and whether a User-Agent workaround (like
+   IEEE's OUI registry needed) or an API key is required** — not
+   conclusively confirmed this session (the one page fetched didn't state
+   specific numbers). Make one real, live smoke-test call to the actual
+   NVD CVE API 2.0 before writing `nvd_lookup.py`'s real fetch logic, and
+   adjust `REQUEST_INTERVAL_SECONDS` / add a `NVD_API_KEY` env var handling
+   path based on what actually happens (a 403/429 response, a UA-block,
+   etc.), not assumed in advance.
+3. **Whether every one of the 7 branded fixtures is currently registered
+   in the live dev database with an `http`/`https` `device_service` row**
+   — `TEST-DEVICE-ID`'s `applicable_service_types = HTTP_SERVICE_TYPES`
+   gate means it will never become applicable for a device registered with
+   ONLY a `modbus` service (plc-gateway specifically is at risk of this,
+   since its primary identity in this project's history is Modbus-based —
+   confirmed it DOES also expose an HTTP `/api/device/info` endpoint, but
+   confirm it's actually registered with that service type in the live DB,
+   not just that the code path exists).
+4. **The next free migration number** — this document guesses `016` based
+   on CLAUDE.md history mentioning migrations up to ~014, but check
+   `lab/auditor/db/migrations/`'s actual directory listing before naming
+   the new file, don't trust this guess.
+5. **Whether to expose `firmware_version` in `RegisterDeviceForm.tsx`** for
+   symmetric manual entry alongside vendor/model, or leave it API-only
+   since auto-detection is the primary intended path — a small UX judgment
+   call to make during implementation, not resolved in this plan.
+6. **The exact `category` constant to give `TEST-DEVICE-ID`** — this plan
+   recommends `CATEGORY_NETWORK_PROTOCOL` (fits alongside
+   `TEST-NET-HTTP-INSPECT` in the dashboard's Run Scan picker) but this is
+   a UI-grouping nicety, not a load-bearing decision — sanity-check how it
+   reads in the actual Run Scan page once built, adjust if
+   `CATEGORY_WEB_AUTH` reads better in context.
+
+================================================================================
+8. SUGGESTED IMPLEMENTATION ORDER (each step independently shippable/
+   verifiable, matching this project's "one task, one commit, live-verified"
+   discipline seen throughout CLAUDE.md's history)
+================================================================================
+1. Migration (new firmware_version/identity_source columns) + init.sql
+   sync. Verify: `\d devices` in psql shows both new columns.
+2. `TEST-DEVICE-ID` catalog entry (build/parse functions) + unit tests in
+   `policies/catalog/test_scan_tests.py`. Verify: runnable via the
+   dashboard's Fingerprinting page against a live fixture, inspect the raw
+   JSON in the ScanJobCard, confirm `device_identified: true` for a real
+   fixture's real `/api/device/info` response.
+3. `record_scan_job_evidence` auto-populate hook in main.py + regression
+   tests (only fills NULLs, never overwrites, only fires on
+   `device_identified=true`). Verify LIVE: run TEST-DEVICE-ID against
+   `device-insecure`, record the finding, confirm `devices.vendor/model/
+   firmware_version` update to the real Hikvision values and
+   `identity_source` flips to `auto_detected`; then manually PATCH the
+   vendor and confirm a second TEST-DEVICE-ID run does NOT overwrite it and
+   `identity_source` correctly stays/flips to `manual`.
+4. Frontend identity surfacing (types.ts, AutoDetectedIdentityBadge,
+   DeviceDetailPage.tsx Inventory card). Verify: visually in a real browser
+   (Claude-in-Chrome).
+5. `DEVICE_CPE_OVERRIDES` table, each of the 7 entries hand-verified live
+   against NVD's real CPE dictionary one at a time before committing (see
+   §7 item 1) + a small structural unit test confirming the table is
+   well-formed.
+6. `nvd_lookup.py` (fetch/cache/load) + unit tests mirroring
+   `test_cisa_kev.py`'s exact 6-test shape (mocked HTTP: writes cache on
+   success / never raises on network failure / rejects malformed response /
+   leaves prior cache in place on failure / index builds correctly / empty
+   dict on missing-or-corrupt cache) — plus ONE real live smoke-test call
+   to the actual NVD API during this step (see §7 item 2) to ground the
+   mocks in real response shape before trusting them.
+7. `device_cve_lookup.py` worker script + `TEST-DEVICE-CVE-LOOKUP` catalog
+   entry. Verify LIVE end to end against a device already identified in
+   step 3 — confirm real CVE IDs surface matching
+   `docs/device-vendor-realism.md`'s own citations (CVE-2017-7921 for
+   Hikvision, CVE-2021-34991 for Netgear, CVE-2023-26941/26942 for Yale,
+   CVE-2024-11737 for Schneider Electric, CVE-2021-33045/CVE-2013-3612 for
+   Dahua, CVE-2018-11316/CVE-2023-50809 for Sonos) — this is the whole
+   pipeline's own self-consistency proof.
+8. `maybe_refresh_device_cve_index()` in job_runner.py's poll loop + its
+   `test_job_runner.py` test group (mirror the existing 4-test template for
+   the other 3 refreshers).
+9. `vuln_routes.py` extension + `test_vuln_routes.py` cases (both
+   TEST-FW-MANIFEST and TEST-DEVICE-CVE-LOOKUP evidence present / only one
+   present / neither present).
+10. `DeviceCveAdvisoryPanel.tsx` + `DeviceVulnerabilityCard.tsx` extension
+    — final live browser verification: confirm the new CVE panel renders
+    real data for a device that has NEVER had a firmware file uploaded,
+    proving the feature's core premise end to end.
+
+At each step: run the relevant test suite(s), confirm `tsc -b --force`/
+`oxlint` stay clean if frontend was touched, and update CLAUDE.md's §0/§8
+per this project's own mandatory "update CLAUDE.md every time something
+meaningful changes" rule (see CLAUDE.md's own header) once the whole
+feature (or a meaningfully complete slice of it) is done and live-verified
+— do not wait until the very end to start that write-up if the session runs
+long; incremental §8 changelog rows per completed part are fine and match
+how most past sessions in this project's history have actually worked.
+
+================================================================================
+9. VERIFICATION/TESTING PLAN (full detail, consolidated)
+================================================================================
+
+**Unit tests to add:**
+- `policies/catalog/test_scan_tests.py`: `_parse_device_id_observations`
+  (device_identified true/false, missing fields, malformed JSON) and
+  `_parse_device_cve_lookup_observations` (matched CPE with CVEs, matched
+  CPE with zero CVEs, unmatched vendor/model, device-fetch failure).
+- `lab/auditor/worker/scan_scripts/test_nvd_lookup.py`: mirror
+  `test_cisa_kev.py`'s exact 6-test shape, using a
+  `REAL_SHAPED_NVD_RESPONSE` fixture built from one real, live-fetched NVD
+  API response captured during step 6 above (not fabricated from
+  imagination).
+- `lab/auditor/worker/scan_scripts/test_device_cve_lookup.py`: mock
+  `requests.get` to auditor-api, confirm stdout `field=value` lines match
+  what `parse_observations` expects.
+- `lab/auditor/api/test_vuln_routes.py`: extend `get_device_vuln_summary`
+  test cases for both evidence-present combinations.
+- A new or extended test module in `lab/auditor/api/`: confirm
+  `record_scan_job_evidence`'s auto-populate hook only fills NULL fields,
+  never overwrites, and only fires on `device_identified=true`.
+- A small structural test for `DEVICE_CPE_OVERRIDES` — confirm every key is
+  a 2-tuple, every value contains exactly one `:`.
+- `lab/auditor/worker/test_job_runner.py`: new 4-test group for
+  `maybe_refresh_device_cve_index`, mirroring the existing pattern exactly.
+
+**Live end-to-end verification pass** (per this project's own
+"independently live-verified" discipline running through its entire
+changelog — do not skip this in favor of unit tests alone):
+1. Confirm/register each of the 7 branded fixtures with an `http`/`https`
+   service (verify `plc-gateway` specifically — see §7 item 3).
+2. Run `TEST-DEVICE-ID` against each, record findings, confirm
+   `devices.vendor/model/firmware_version` populate with the exact real
+   values from §5.2's table, and `identity_source` flips to
+   `auto_detected`.
+3. Manually PATCH one device's vendor afterward, confirm `identity_source`
+   flips to `manual` and a second `TEST-DEVICE-ID` run does not overwrite
+   it.
+4. Confirm `SA-IOT-001` now evaluates (not sitting perpetually unassessed)
+   for each device with an HTTP service.
+5. Trigger the NVD refresh (either wait for the poll loop's natural cadence
+   with a shortened interval env var for testing, or call
+   `maybe_refresh_device_cve_index()` directly), confirm
+   `nvd-device-cves.json` populates in the worker's cache dir with real CVE
+   records for however many of the 7 `DEVICE_CPE_OVERRIDES` entries ended
+   up verified/included.
+6. Run `TEST-DEVICE-CVE-LOOKUP` against each identified device; confirm the
+   exact CVE IDs already cited in `docs/device-vendor-realism.md` appear in
+   the returned `device_cves` — this is the whole pipeline's own
+   self-consistency check, and the single most convincing live-verification
+   moment for this feature.
+7. Confirm in a real browser (Claude-in-Chrome) that
+   `DeviceVulnerabilityCard` renders real device-level CVE data for a
+   device with **no firmware ever uploaded** — the literal proof of the
+   owner's original ask.
+8. Full regression: `policies/`, `lab/auditor/api`, `lab/auditor/worker`
+   (in-container), and the full frontend Vitest suite, plus `tsc -b
+   --force`/`oxlint` clean. Rebuild/redeploy whichever of `auditor-api`/
+   `auditor-web`/`auditor-worker` had baked-in-image code changes (per this
+   project's own documented gotcha: `lab/auditor/api/*.py` and
+   `lab/auditor/web/*` are baked into their images at build time and need a
+   real rebuild, not just a restart, to pick up changes — `policies/` and
+   `lab/auditor/worker/*` are bind-mounted and only need a restart).
+
+================================================================================
+10. CRITICAL FILES (for quick reference)
+================================================================================
+- policies/catalog/scan_tests.py            — both new catalog entries, DEVICE_CPE_OVERRIDES
+- lab/auditor/worker/job_runner.py           — new refresh function + poll loop wiring
+- lab/auditor/api/main.py                    — auto-populate hook, device column plumbing
+- lab/auditor/worker/scan_scripts/nvd_lookup.py       (new)
+- lab/auditor/worker/scan_scripts/device_cve_lookup.py (new)
+- lab/auditor/api/vuln_routes.py             — extended GET /vuln-intel/devices/{id}
+- lab/auditor/db/migrations/0NN-device-identity-auto-detect.sql (new — confirm real next number)
+- lab/auditor/db/init.sql                    — mirror the new devices columns
+- lab/auditor/web/src/components/pipeline/DeviceVulnerabilityCard.tsx
+- lab/auditor/web/src/components/devices/DeviceCveAdvisoryPanel.tsx (new)
+- lab/auditor/web/src/components/ui/severity-badge.tsx — new AutoDetectedIdentityBadge
+- lab/auditor/web/src/pages/DeviceDetailPage.tsx
+- lab/auditor/web/src/lib/types.ts
+- policies/controls/SA-IOT-001.yaml          — read-only reference, do not edit; its
+                                                 exact field contract is the hard constraint
+                                                 Part 1's parser must satisfy
 
 ================================================================================
 END OF HANDOFF
