@@ -8,16 +8,30 @@ device_id values here are load-bearing: committed Day-2 evidence references
 them byte-for-byte. This module only ever INSERTs into devices and
 device_services - it never touches evidence or verdicts.
 
-Labels, descriptions and tiers for the first five are lifted verbatim from
-the frontend's former deviceMeta.ts. telnet-sim's metadata is newly authored:
-it never had a device card, but it is a real nmap scan target.
+Tiers for the first five are lifted verbatim from the frontend's former
+deviceMeta.ts. telnet-sim's metadata is newly authored: it never had a device
+card, but it is a real nmap scan target.
+
+The three camera profiles' display names and descriptions were originally
+posture labels ("Smart Camera - Insecure", "Default creds, plain HTTP,
+Telnet, ..."). They are now the real vendor/model each fixture actually
+reports over the wire, with neutral product descriptions, so an assessment
+has to DISCOVER a device's posture from evidence rather than read it off the
+inventory label - which is the whole point of the exercise, and closer to a
+real engagement where nothing is pre-labelled "insecure".
+
+The posture itself is not hidden anywhere it matters: `tier` below is
+unchanged, the device_ids are unchanged (they are load-bearing - committed
+Day-2 evidence, verdicts and raw output files all join on those exact
+strings, and they are the Docker service names), and every scan still reports
+what it really finds.
 """
 
 SEED_DEVICES = [
     {
         "device_id": "device-insecure",
-        "display_name": "Smart Camera — Insecure",
-        "description": "Default creds, plain HTTP, Telnet, unencrypted MQTT, hard-coded API key.",
+        "display_name": "Hikvision DS-2CD2143G2-I",
+        "description": "4 MP fixed dome network camera. Web management interface, MQTT telemetry.",
         "tier": "insecure",
         "host": "device-insecure",
         "services": [
@@ -27,16 +41,16 @@ SEED_DEVICES = [
     },
     {
         "device_id": "device-partial",
-        "display_name": "Smart Camera — Partially Hardened",
-        "description": "Telnet removed, HTTPS with a weak cert, MQTT still unencrypted.",
+        "display_name": "Hikvision DS-2CD2143G2-IU",
+        "description": "4 MP fixed dome network camera with built-in microphone. Web management interface, MQTT telemetry.",
         "tier": "partial",
         "host": "device-partial",
         "services": [{"service_type": "https", "port": 443, "published_port": 8082}],
     },
     {
         "device_id": "device-hardened",
-        "display_name": "Smart Camera — Hardened",
-        "description": "HTTPS only, strong creds, MQTT over TLS, signed firmware.",
+        "display_name": "Axis M3216-LVE",
+        "description": "4 MP outdoor-ready fixed dome network camera. Web management interface, MQTT telemetry.",
         "tier": "hardened",
         "host": "device-hardened",
         "services": [{"service_type": "https", "port": 443, "published_port": 8083}],
