@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HomePage } from "@/pages/HomePage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { DiscoveryPage } from "@/pages/DiscoveryPage";
 import { DevicesPage } from "@/pages/DevicesPage";
@@ -35,7 +36,8 @@ export default function App() {
       <ToastProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<OverviewPage />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/overview" element={<OverviewPage />} />
             <Route path="/settings/network-scope" element={<NetworkScopePage />} />
 
             {/* Pipeline, in order - see lib/pipeline.ts's PIPELINE_PHASES */}

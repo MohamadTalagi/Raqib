@@ -14,7 +14,7 @@ export function NotFoundPage() {
           </p>
         </div>
         <Link
-          to="/"
+          to="/overview"
           className="mt-2 inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)]"
         >
           Back to Overview

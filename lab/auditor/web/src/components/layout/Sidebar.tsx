@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import {
   ShieldHalf,
+  Home as HomeIcon,
   LayoutGrid,
   HardDrive,
   FileSearch,
@@ -23,6 +24,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PIPELINE_ROUTE_PHASE_GROUP, PHASE_GROUP_VAR } from "@/lib/phaseTheme";
 
 interface NavGroup {
   label: string;
@@ -37,8 +39,11 @@ interface NavGroup {
 // that feeds into Devices, but has no per-device pipeline status of its own.
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Home",
-    items: [{ to: "/", label: "Overview", icon: LayoutGrid, end: true }],
+    label: "Start",
+    items: [
+      { to: "/", label: "Home", icon: HomeIcon, end: true },
+      { to: "/overview", label: "Overview", icon: LayoutGrid, end: true },
+    ],
   },
   {
     label: "Settings",
@@ -111,7 +116,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             <ShieldHalf className="h-4.5 w-4.5 text-[var(--color-brand-foreground)]" strokeWidth={2.25} />
           </div>
           <div className="leading-tight">
-            <p className="text-sm font-semibold tracking-tight text-[var(--color-text)]">IoTGuard</p>
+            <p className="text-sm font-semibold tracking-tight text-[var(--color-text)]">Raqib</p>
             <p className="font-mono text-[10px] tracking-wider text-[var(--color-text-muted)] uppercase">
               NCA Compliance
             </p>
@@ -125,35 +130,50 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 {group.label}
               </p>
               <div className="space-y-1">
-                {group.items.map(({ to, label, icon: Icon, end }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={end}
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                      cn(
-                        "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-[var(--color-surface-hover)] text-[var(--color-text)]"
-                          : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]",
-                      )
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <span
-                          className={cn(
-                            "absolute left-0 h-5 w-0.5 -translate-x-3 rounded-full bg-[var(--color-brand)] transition-opacity",
-                            isActive ? "opacity-100" : "opacity-0",
-                          )}
-                        />
-                        <Icon className="h-4 w-4" strokeWidth={2} />
-                        {label}
-                      </>
-                    )}
-                  </NavLink>
-                ))}
+                {group.items.map(({ to, label, icon: Icon, end }) => {
+                  // Pipeline items only - see lib/phaseTheme.ts. undefined
+                  // for every non-pipeline nav item, which keeps the plain
+                  // brand-colored active indicator they've always had.
+                  const phaseGroup = PIPELINE_ROUTE_PHASE_GROUP[to];
+                  const accentVar = phaseGroup ? PHASE_GROUP_VAR[phaseGroup] : "var(--color-brand)";
+                  return (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      end={end}
+                      onClick={onClose}
+                      className={({ isActive }) =>
+                        cn(
+                          "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                          isActive
+                            ? "bg-[var(--color-surface-hover)] text-[var(--color-text)]"
+                            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]",
+                        )
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          <span
+                            className={cn(
+                              "absolute left-0 h-5 w-0.5 -translate-x-3 rounded-full transition-opacity",
+                              isActive ? "opacity-100" : "opacity-0",
+                            )}
+                            style={{ backgroundColor: accentVar }}
+                          />
+                          {phaseGroup ? (
+                            <span
+                              className="h-1.5 w-1.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: accentVar }}
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                          <Icon className="h-4 w-4" strokeWidth={2} />
+                          {label}
+                        </>
+                      )}
+                    </NavLink>
+                  );
+                })}
               </div>
             </div>
           ))}

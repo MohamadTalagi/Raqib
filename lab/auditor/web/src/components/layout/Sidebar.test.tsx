@@ -11,6 +11,29 @@ function renderAt(path: string) {
   );
 }
 
+describe("Sidebar Home/Overview nav", () => {
+  it("has Home above Overview, Home at / and Overview at /overview", () => {
+    renderAt("/");
+    const home = screen.getByRole("link", { name: /^home$/i });
+    const overview = screen.getByRole("link", { name: /^overview$/i });
+    expect(home).toHaveAttribute("href", "/");
+    expect(overview).toHaveAttribute("href", "/overview");
+    // Home comes first in document order.
+    expect(home.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("highlights only Home at /, and only Overview at /overview", () => {
+    const first = renderAt("/");
+    expect(screen.getByRole("link", { name: /^home$/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /^overview$/i })).not.toHaveAttribute("aria-current");
+    first.unmount();
+
+    renderAt("/overview");
+    expect(screen.getByRole("link", { name: /^overview$/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /^home$/i })).not.toHaveAttribute("aria-current");
+  });
+});
+
 describe("Sidebar active state", () => {
   it("highlights only NCA Compliance on the NCA Compliance page itself", () => {
     renderAt("/nca-compliance");

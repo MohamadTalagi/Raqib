@@ -8,9 +8,17 @@ describe("App", () => {
     vi.stubGlobal("fetch", vi.fn((url: string) => mockFetchImplementation(url)));
   });
 
-  it("renders the Overview page at the root route", async () => {
+  it("renders the new Home page at the root route", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Raqib" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start a manual run/i })).toBeInTheDocument();
+  });
+
+  it("renders the Overview dashboard at /overview, one slot below Home", async () => {
+    window.history.pushState({}, "", "/overview");
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
+    window.history.pushState({}, "", "/");
   });
 
   it("renders sidebar navigation for all four screens", () => {
