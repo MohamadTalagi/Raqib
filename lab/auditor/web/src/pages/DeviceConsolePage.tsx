@@ -28,14 +28,6 @@ interface ConsoleEndpoint {
 
 const CONSOLE_ENDPOINTS: ConsoleEndpoint[] = [
   { key: "login-page", label: "Login page", method: "GET", path: "/", viewable: true },
-  {
-    key: "login",
-    label: "Login (admin / admin)",
-    method: "POST",
-    path: "/login",
-    body: "username=admin&password=admin",
-    contentType: "application/x-www-form-urlencoded",
-  },
   { key: "device-info", label: "Device info", method: "GET", path: "/api/device/info" },
   { key: "config", label: "Config", method: "GET", path: "/api/config" },
   { key: "firmware", label: "Firmware version", method: "GET", path: "/api/firmware/version" },
