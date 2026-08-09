@@ -16,7 +16,6 @@ import { EvidencePage } from "@/pages/EvidencePage";
 import { VerdictsPage } from "@/pages/VerdictsPage";
 import { RiskAssessmentPage } from "@/pages/RiskAssessmentPage";
 import { DeviceConsolePage } from "@/pages/DeviceConsolePage";
-import { ScanConsolePage } from "@/pages/ScanConsolePage";
 import { ControlsPage } from "@/pages/ControlsPage";
 import { ControlDetailPage } from "@/pages/ControlDetailPage";
 import { NCACompliancePage } from "@/pages/NCACompliancePage";
@@ -74,7 +73,6 @@ export default function App() {
             <Route path="/nca-compliance/organization" element={<OrganizationalCompliancePage />} />
 
             {/* Advanced tools - deliberately set apart from the guided pipeline */}
-            <Route path="/scan-console" element={<ScanConsolePage />} />
             <Route path="/console" element={<DeviceConsolePage />} />
 
             <Route path="*" element={<NotFoundPage />} />

@@ -1289,9 +1289,16 @@ def assess_control_verdict(device_id: str, control_id: str, payload: dict | None
                 # by a control whose required tests are all unautomated.)
                 runnable = sorted(t for t in required_test_ids if t in SCAN_CATALOG)
                 if runnable:
+                    # Names the pipeline page that actually runs these today.
+                    # This used to say "Run Scan or the Scan Console" - both of
+                    # those pages have since been removed (Run Scan in the
+                    # 2026-08-01 dashboard overhaul, Scan Console later), so the
+                    # message was directing people to two things that no longer
+                    # exist.
                     detail = (
                         "No evidence collected for this control yet — run "
-                        f"{', '.join(runnable)} on this device first (Run Scan or the Scan Console), then assess."
+                        f"{', '.join(runnable)} on this device first from its pipeline page "
+                        "(Fingerprinting or SA-IOT Compliance), then assess."
                     )
                 else:
                     detail = "This control has no automated collector, so it cannot be assessed from a scan."

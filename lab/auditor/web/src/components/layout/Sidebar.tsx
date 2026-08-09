@@ -7,7 +7,6 @@ import {
   FileSearch,
   Gavel,
   Terminal,
-  SquareTerminal,
   ShieldCheck,
   ClipboardCheck,
   ListChecks,
@@ -72,19 +71,18 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/controls", label: "Controls", icon: ShieldCheck, end: false },
       { to: "/nca-compliance/controls", label: "NCA Controls", icon: ListChecks, end: false },
       { to: "/network-map", label: "Network Map", icon: Network, end: false },
+      // Device Console lives here rather than in Pipeline: it is not a
+      // pipeline stage, and that group is deliberately ordered top-to-bottom
+      // as the 10-stage sequence. This group already holds Network Map, which
+      // is likewise a live view rather than a stored record, so "Records"
+      // reads as "inspect things" in practice.
+      { to: "/console", label: "Device Console", icon: Terminal, end: false },
     ],
   },
   {
     label: "Organization-wide",
     items: [
       { to: "/nca-compliance/organization", label: "Organizational Compliance", icon: Building2, end: true },
-    ],
-  },
-  {
-    label: "Advanced Tools",
-    items: [
-      { to: "/scan-console", label: "Scan Console", icon: SquareTerminal, end: false },
-      { to: "/console", label: "Device Console", icon: Terminal, end: false },
     ],
   },
 ];

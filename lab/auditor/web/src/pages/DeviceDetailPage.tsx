@@ -505,8 +505,8 @@ export function DeviceDetailPage() {
                 <CardHeader>
                   <CardTitle>Assessment history</CardTitle>
                   <p className="text-xs text-[var(--color-text-muted)]">
-                    Every batch of collectors run together as one Assessment (via Run Scan's "Run selected" or the
-                    Scan Console). Click a row to see its collector jobs.
+                    Every batch of collectors run together as one Assessment (via "Run selected" on a pipeline
+                    phase page). Click a row to see its collector jobs.
                   </p>
                 </CardHeader>
                 <CardContent className="pt-2">
