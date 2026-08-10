@@ -55,6 +55,7 @@ from policies.catalog.pqc_crypto_reference import (
     TIP_TLS_KEY_EXCHANGE_FAIL,
     firmware_crypto_pqc_status,
 )
+from policies.catalog import firmware_version_compare
 from policies.catalog.vuln_reference import lookup_component
 
 HTTP_SERVICE_TYPES = ("http", "https")
@@ -2008,6 +2009,50 @@ def _parse_device_cve_lookup_observations(target: dict, output: str) -> dict:
     index_available = "index_available=True" in output
     error = _line("error")
 
+    # Firmware currency: compare this device's reported version against each
+    # CVE's stated affected-version range. CSAF is consulted first where it
+    # applies (a vendor's own advisory outranks NVD's transcription of it),
+    # falling back to NVD's range whenever CSAF cannot resolve the CVE - so a
+    # single advisory_source field records which one actually answered, and
+    # there is never a second parallel affected/not-affected concept.
+    schneider_csaf_applicable = "schneider_csaf_applicable=True" in output
+    try:
+        csaf_ranges = json.loads(_line("schneider_csaf_ranges") or "{}")
+    except json.JSONDecodeError:
+        csaf_ranges = {}
+
+    sources_checked = ["nvd_version_range"]
+    if schneider_csaf_applicable:
+        sources_checked.append("schneider_csaf")
+
+    for cve in cves:
+        # version_range is the raw NVD extraction; it is consumed here and not
+        # persisted verbatim into evidence, which keeps the recorded shape the
+        # already-established {id, cvss, summary, kev_*} plus the three new
+        # decided fields, rather than raw source internals.
+        nvd_range = cve.pop("version_range", None)
+        csaf_range = csaf_ranges.get(cve.get("id")) if schneider_csaf_applicable else None
+
+        status, fixed = firmware_version_compare.version_status_for_range(
+            firmware_version, csaf_range,
+        )
+        source = "schneider_csaf" if status != firmware_version_compare.STATUS_UNKNOWN else None
+        if status == firmware_version_compare.STATUS_UNKNOWN:
+            status, fixed = firmware_version_compare.version_status_for_range(
+                firmware_version, nvd_range,
+            )
+            source = "nvd_version_range" if status != firmware_version_compare.STATUS_UNKNOWN else None
+
+        cve["version_status"] = status
+        cve["fixed_version"] = fixed
+        cve["advisory_source"] = source
+
+    firmware_currency = (
+        firmware_version_compare.rollup_firmware_currency(cves, sources_checked)
+        if cpe_matched
+        else None
+    )
+
     kev_listed = [c for c in cves if c.get("kev_listed")]
     highest_cvss = max(
         (c["cvss"] for c in cves if c.get("cvss") is not None), default=None,
@@ -2056,6 +2101,8 @@ def _parse_device_cve_lookup_observations(target: dict, output: str) -> dict:
                 "Vulnerabilities catalog - treat those as actively exploited "
                 "in the wild, not theoretical.",
             )
+        if firmware_currency:
+            notes.append(f"Firmware currency: {firmware_currency['reason']}")
 
     return {
         "vendor": vendor,
@@ -2067,6 +2114,7 @@ def _parse_device_cve_lookup_observations(target: dict, output: str) -> dict:
         "total_device_cves": len(cves),
         "kev_listed_device_cves": len(kev_listed),
         "highest_device_cvss": highest_cvss,
+        "firmware_currency": firmware_currency,
         "notes": notes,
     }
 

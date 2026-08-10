@@ -2327,3 +2327,168 @@ def test_mac_vendor_suggests_high_confidence_only_on_a_resolved_oui():
 
     assert _suggest_confidence_mac_vendor({"oui_vendor": "NETGEAR"}) == "high"
     assert _suggest_confidence_mac_vendor({"oui_vendor": None}) == "medium"
+
+
+# -- Firmware currency merge (TEST-DEVICE-CVE-LOOKUP write-time comparison) --
+# The comparison itself is unit-tested in test_firmware_version_compare.py;
+# these cover the MERGE: that per-CVE verdicts land on the right CVEs, that
+# CSAF outranks NVD where both resolve, and that the existing 5-branch notes
+# chain is extended rather than restructured.
+
+
+def _cve_line(cves):
+    return f"device_cves={json.dumps(cves)}\n"
+
+
+def _lookup_output(*, firmware="V1.0.11.132_10.2.132", cves=None, csaf=None):
+    body = (
+        "vendor=Netgear\nmodel=R7000\n"
+        f"firmware_version={firmware}\n"
+        "cpe_matched=True\ncpe=o:netgear:r7000_firmware\nindex_available=True\n"
+    ) + _cve_line(cves or [])
+    if csaf is not None:
+        body += f"schneider_csaf_applicable=True\nschneider_csaf_ranges={json.dumps(csaf)}\n"
+    return body
+
+
+NVD_FIXED_AT = {
+    "start_including": None, "start_excluding": None,
+    "end_including": None, "end_excluding": "1.0.11.136", "unbounded": False,
+}
+NVD_ALREADY_PAST = {
+    "start_including": None, "start_excluding": None,
+    "end_including": None, "end_excluding": "1.0.11.128", "unbounded": False,
+}
+NVD_UNBOUNDED = {
+    "start_including": None, "start_excluding": None,
+    "end_including": None, "end_excluding": None, "unbounded": True,
+}
+
+
+def test_firmware_currency_reports_outdated_with_the_real_netgear_numbers():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = _lookup_output(cves=[
+        {"id": "CVE-2022-48196", "cvss": 8.8, "summary": "x", "kev_listed": False,
+         "kev_date_added": None, "version_range": NVD_FIXED_AT},
+        {"id": "CVE-2021-34991", "cvss": 8.8, "summary": "y", "kev_listed": True,
+         "kev_date_added": "2022-01-10", "version_range": NVD_ALREADY_PAST},
+    ])
+    observations = _parse_device_cve_lookup_observations({}, output)
+
+    currency = observations["firmware_currency"]
+    assert currency["status"] == "outdated"
+    assert "1.0.11.136" in currency["reason"]
+
+    by_id = {c["id"]: c for c in observations["device_cves"]}
+    assert by_id["CVE-2022-48196"]["version_status"] == "affected"
+    assert by_id["CVE-2022-48196"]["fixed_version"] == "1.0.11.136"
+    assert by_id["CVE-2022-48196"]["advisory_source"] == "nvd_version_range"
+    assert by_id["CVE-2021-34991"]["version_status"] == "not_affected"
+    # The raw range is consumed, not persisted verbatim into evidence.
+    assert "version_range" not in by_id["CVE-2021-34991"]
+
+
+def test_firmware_currency_reports_affected_no_fix_for_an_unbounded_cve():
+    # The real Hikvision/Yale/Sonos situation - must not be buried as unknown.
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = _lookup_output(cves=[
+        {"id": "CVE-2021-36260", "cvss": 9.8, "summary": "z", "kev_listed": True,
+         "kev_date_added": "2021-11-03", "version_range": NVD_UNBOUNDED},
+    ])
+    observations = _parse_device_cve_lookup_observations({}, output)
+
+    assert observations["firmware_currency"]["status"] == "affected_no_fix"
+    assert observations["device_cves"][0]["version_status"] == "affected_no_fix"
+
+
+def test_firmware_currency_is_current_only_when_everything_resolved_clean():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = _lookup_output(cves=[
+        {"id": "CVE-1", "cvss": 5.0, "summary": "", "kev_listed": False,
+         "kev_date_added": None, "version_range": NVD_ALREADY_PAST},
+    ])
+    assert _parse_device_cve_lookup_observations({}, output)["firmware_currency"]["status"] == "current"
+
+
+def test_firmware_currency_is_unknown_when_the_version_cannot_be_parsed():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = _lookup_output(firmware="210628", cves=[
+        {"id": "CVE-1", "cvss": 5.0, "summary": "", "kev_listed": False,
+         "kev_date_added": None, "version_range": NVD_FIXED_AT},
+    ])
+    observations = _parse_device_cve_lookup_observations({}, output)
+    assert observations["firmware_currency"]["status"] == "unknown"
+    assert observations["device_cves"][0]["version_status"] == "unknown"
+    assert observations["device_cves"][0]["advisory_source"] is None
+
+
+def test_schneider_csaf_takes_precedence_over_nvd_when_both_resolve():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = (
+        "vendor=Schneider Electric\nmodel=Modicon M221\nfirmware_version=SV3.8.1\n"
+        "cpe_matched=True\ncpe=o:schneider-electric:modicon_m221_firmware\n"
+        "index_available=True\n"
+        + _cve_line([{"id": "CVE-2018-7789", "cvss": 9.8, "summary": "", "kev_listed": False,
+                      "kev_date_added": None, "version_range": NVD_UNBOUNDED}])
+        + "schneider_csaf_applicable=True\n"
+        + "schneider_csaf_ranges=" + json.dumps({"CVE-2018-7789": {
+            "start_including": None, "start_excluding": None,
+            "end_including": None, "end_excluding": "1.6.2.0", "unbounded": False}}) + "\n"
+    )
+    observations = _parse_device_cve_lookup_observations({}, output)
+    cve = observations["device_cves"][0]
+
+    # CSAF resolves it as a real boundary (3.8.1 >= 1.6.2.0 -> not affected),
+    # overriding NVD's vaguer "every version" claim.
+    assert cve["advisory_source"] == "schneider_csaf"
+    assert cve["version_status"] == "not_affected"
+    assert "schneider_csaf" in observations["firmware_currency"]["sources_checked"]
+
+
+def test_nvd_is_used_when_csaf_has_nothing_for_that_cve():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = _lookup_output(
+        cves=[{"id": "CVE-2022-48196", "cvss": 8.8, "summary": "", "kev_listed": False,
+               "kev_date_added": None, "version_range": NVD_FIXED_AT}],
+        csaf={},
+    )
+    cve = _parse_device_cve_lookup_observations({}, output)["device_cves"][0]
+    assert cve["advisory_source"] == "nvd_version_range"
+    assert cve["version_status"] == "affected"
+
+
+def test_csaf_is_not_consulted_for_a_non_schneider_device():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = _lookup_output(cves=[
+        {"id": "CVE-1", "cvss": 5.0, "summary": "", "kev_listed": False,
+         "kev_date_added": None, "version_range": NVD_FIXED_AT},
+    ])
+    observations = _parse_device_cve_lookup_observations({}, output)
+    assert observations["firmware_currency"]["sources_checked"] == ["nvd_version_range"]
+
+
+def test_firmware_currency_is_none_without_a_cpe_match():
+    # Mirrors the existing cves/notes gating - nothing to compare against.
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = "vendor=Dahua\nmodel=NVR4108-8P\nfirmware_version=3.218.0000019.0\ncpe_matched=False\ncpe=\n"
+    assert _parse_device_cve_lookup_observations({}, output)["firmware_currency"] is None
+
+
+def test_firmware_currency_adds_a_note_without_restructuring_the_existing_chain():
+    from policies.catalog.scan_tests import _parse_device_cve_lookup_observations
+
+    output = _lookup_output(cves=[
+        {"id": "CVE-1", "cvss": 5.0, "summary": "", "kev_listed": False,
+         "kev_date_added": None, "version_range": NVD_FIXED_AT},
+    ])
+    notes = _parse_device_cve_lookup_observations({}, output)["notes"]
+    assert any(n.startswith("1 CVE(s) are published against") for n in notes)  # existing note kept
+    assert any(n.startswith("Firmware currency:") for n in notes)              # new note appended

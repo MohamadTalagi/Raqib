@@ -776,6 +776,37 @@ export interface VulnFleetSummary {
  * resolved to a real NVD CPE. `cpe_matched: false` is an honest gap ("this
  * product isn't in NVD's CPE dictionary"), never a clean bill of health.
  */
+/**
+ * A device-level CVE, with the firmware-currency verdict the worker decided
+ * for it at scan time. `unknown` means the comparison could not be made -
+ * never that the device is safe.
+ */
+export interface VulnDeviceCVE extends VulnCVE {
+  version_status: "affected" | "not_affected" | "affected_no_fix" | "unknown";
+  /** The published fixed version, when a real boundary comparison produced one. */
+  fixed_version: string | null;
+  /** Which source answered. null when neither could resolve it. */
+  advisory_source: "nvd_version_range" | "schneider_csaf" | null;
+}
+
+/**
+ * One device's overall firmware currency.
+ *
+ * `affected_no_fix` is a real, distinct finding: a published CVE affects every
+ * known version of the product and no fix was ever released, so updating would
+ * not help. It is deliberately not folded into `outdated` (which means "a fix
+ * exists and you are behind it") nor into `unknown` (which would bury it).
+ */
+export interface VulnFirmwareCurrency {
+  status: "outdated" | "current" | "affected_no_fix" | "unknown";
+  reason: string;
+  sources_checked: string[];
+  affected_count: number;
+  affected_no_fix_count: number;
+  not_affected_count: number;
+  unknown_count: number;
+}
+
 export interface VulnDeviceIdentity {
   vendor: string | null;
   model: string | null;
@@ -810,8 +841,9 @@ export interface VulnDeviceSummary {
   device_cve_evidence_id: string | null;
   device_cve_observed_at: string | null;
   device_identity: VulnDeviceIdentity | null;
-  /** Reuses VulnCVE - a device-level CVE has the same shape as a package one. */
-  device_cves: VulnCVE[];
+  device_cves: VulnDeviceCVE[];
+  /** null when this evidence predates the firmware-currency check, or when no CPE matched. */
+  firmware_currency: VulnFirmwareCurrency | null;
   total_device_cves: number;
   kev_listed_device_cves: number;
   highest_device_cvss: number | null;

@@ -1,0 +1,1 @@
+devices/device-insecure/telemetry {"device_id": "device-insecure", "status": "ok", "ts": 1786392835.1456435}

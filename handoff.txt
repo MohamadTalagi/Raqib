@@ -1168,5 +1168,118 @@ write-up if the session runs long.
 - docs/vulnerability-intelligence.md, docs/known-limitations.md
 
 ================================================================================
+9. IMPLEMENTATION-SESSION AUDIT (2026-08-10) — AUTHORITATIVE WHERE IT
+   CONTRADICTS §5-§8
+================================================================================
+§7's open items were resolved with real live calls before any code was
+written, exactly as §7 instructs. The plan held up well: §5.1's quoted code
+matched the real files, the cache/refresher patterns are as described, and
+the core insight — that NVD's already-fetched records carry version ranges
+being thrown away — is correct and works. Five things did not hold.
+
+--------------------------------------------------------------------------------
+9.1 §7 item 4 RESOLVED — a fourth status, `affected_no_fix`
+--------------------------------------------------------------------------------
+§6.1's closing note asked for this judgment call to be revisited "if it
+produces a counter-intuitive result." It does, for HALF the fleet.
+
+Simulated against real NVD data and every fixture's real firmware string:
+
+| Device | CVEs matched to its CPE | Under §6.1's rule |
+|---|---|---|
+| device-router-gw (Netgear) | 117 not_affected, 12 affected, 9 unbounded | outdated |
+| device-plc-gateway (Schneider) | 9 not_affected, 7 unbounded | current |
+| device-insecure (Hikvision) | 1 unbounded | **unknown** |
+| device-smartlock (Yale) | 1 unbounded | **unknown** |
+| device-speaker (Sonos) | 5 unbounded | **unknown** |
+
+Hikvision's single unbounded CVE is CVE-2021-36260 — KEV-listed and actively
+exploited. Reporting "unknown" for that is the weakest possible answer and
+actively misleading.
+
+**Owner's decision (asked explicitly, per §7 item 4): add a fourth status.**
+  outdated         a fix exists and the device is behind it
+  current          no CVE affects it at any known boundary
+  affected_no_fix  a real CVE affects ALL known versions; upgrading won't help
+  unknown          could not determine
+
+This keeps §6.1's core discipline intact — an unbounded CVE still never
+counts as `outdated`, because "no fix was ever published" is genuinely not
+"you are behind a fix" — while refusing to hide a real finding behind
+"unknown." `rollup_firmware_currency`'s precedence: outdated > affected_no_fix
+> unknown > current. `current` remains the hardest status to earn, which is
+correct for a security tool: a false "you're safe" is the worst failure mode.
+
+--------------------------------------------------------------------------------
+9.2 BUG in §6.1's parse_version — it returns None for a real fixture
+--------------------------------------------------------------------------------
+`_LEADING_PREFIX_RE = r"^[A-Za-z]+(?=\d)"` only strips letters IMMEDIATELY
+followed by a digit. Axis's real firmware string is `"AXIS OS 11.11.100"` —
+the space defeats it, `_NUMERIC_CORE_RE.match` then fails, and the function
+returns None.
+
+§5.2's table never recorded Axis's actual string (it wrote "(hardware-only
+CPE, no `_firmware` product)" in that column instead), so the regex was never
+designed against it. This is precisely what §7 item 7 asked to be checked.
+Fix: find the first dotted-numeric run anywhere in the string rather than
+requiring it at position 0, after stripping a leading alphabetic prefix.
+All 7 real strings are literal unit-test cases.
+
+--------------------------------------------------------------------------------
+9.3 §7 item 1 RESOLVED — and Axis can never resolve, structurally
+--------------------------------------------------------------------------------
+Real `cpeMatch` shapes, all 7 prefixes fetched live:
+
+| CPE prefix | CVEs | bounded | unbounded | notes |
+|---|---|---|---|---|
+| o:netgear:r7000_firmware | 139 | 130 | 9 | mostly versionEndExcluding |
+| o:schneider-electric:modicon_m221_firmware | 16 | 9 | 7 | |
+| h:axis:m3216-lve | 6 | 0 | 0 | **all 6 are `vulnerable: false`** |
+| o:hikvision:...-i\(s\)_firmware | 1 | 0 | 1 | |
+| o:hikvision:...-iu_firmware | 1 | 0 | 1 | |
+| o:assaabloy:yale_conexis_l1_firmware | 1 | 0 | 1 | |
+| o:sonos:one_firmware | 5 | 0 | 5 | |
+
+**Axis has ZERO `vulnerable: true` matches for its own CPE.** A hardware
+(`h:`) CPE is only ever the AND-node partner of a firmware CPE; the vulnerable
+side is a different product entirely. So this feature is structurally a no-op
+for `device-hardened`, no matter how the parser behaves. That must be
+reported as its own honest reason ("this product is catalogued only as a
+hardware CPE, which carries no version ranges"), never as a generic failure.
+
+Also confirmed: a real boundary value can itself carry a suffix
+(`versionEndIncluding: "1.0.7.2_1.1.93"` on Netgear), so the
+discard-the-suffix simplification applies to BOTH sides of the comparison,
+not just the device's own string. §6.9's disclosure must say so.
+
+--------------------------------------------------------------------------------
+9.4 §7 items 2/3 RESOLVED — CSAF covers exactly one advisory, one CVE
+--------------------------------------------------------------------------------
+§7 item 2 suspected the advisory table "almost certainly under-covers." It
+does not, at least not via CISA's mirror. CVE-2024-11737 — the other Modicon
+M221 CVE this project already cites in `docs/device-vendor-realism.md` — has
+exactly ONE reference in NVD: a Schneider **PDF**
+(`SEVD-2024-345-03.pdf`). There is no CSAF/ICSA JSON for it.
+
+So sub-feature (B) delivers: **1 advisory, 1 CVE (CVE-2018-7789), 1 device.**
+That is worth stating plainly in the docs rather than implying broader
+coverage. §6.3's `SCHNEIDER_M221_CSAF_ADVISORY_IDS = ["ICSA-18-240-02"]`
+stands as-is — not because the table is complete, but because it is the
+complete set of *machine-readable* advisories that could be verified.
+
+§7 item 3: the year-derivation URL logic (`ICSA-18-240-02` → `2018`) was
+confirmed against three further real advisory IDs from different years. It
+holds. Guessing advisory IDs, however, is worthless — two plausible-looking
+guesses resolved to completely unrelated products (OSIsoft PI System, Ruijie
+Reyee OS), reinforcing that only individually-verified IDs may be added.
+
+--------------------------------------------------------------------------------
+9.5 §7 item 5 RESOLVED — hand-roll confirmed correct
+--------------------------------------------------------------------------------
+`packaging` IS importable inside the real worker container (transitive), but
+is pinned in NEITHER requirements file. Depending on a transitive dependency
+would be fragile, so §5.5's hand-rolled comparator stands.
+
+================================================================================
 END OF HANDOFF
 ================================================================================

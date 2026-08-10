@@ -286,6 +286,28 @@ firmware-manifest evidence record says exactly which snapshot produced it, and
 `TEST-FW-MANIFEST` evidence carries this data — `TEST-NET-HTTP-INSPECT`'s Server-banner
 enrichment stayed on the older, much smaller static reference table.
 
+## Firmware currency compares only the numeric core of a version string
+
+`TEST-DEVICE-CVE-LOOKUP`'s firmware-currency verdict (see
+`docs/vulnerability-intelligence.md`'s "Firmware currency" section) compares the
+device's reported firmware against each CVE's published affected-version range.
+No real firmware string in this lab is a clean dotted integer — they carry vendor
+prefixes and trailing suffixes (`V1.0.11.132_10.2.132`, `SV3.8.1`, `V5.3.0 build
+160530`) — and NVD's own boundary values do the same
+(`versionEndIncluding: "1.0.7.2_1.1.93"`). Only the leading dotted-numeric core
+is compared, on **both** sides; everything else is discarded. That is a real loss
+of precision, accepted deliberately because refusing to compare anything with a
+suffix would make the check useless for this entire fleet.
+
+Two further bounds worth knowing. A product catalogued only as a **hardware**
+CPE (Axis M3216-LVE) can never resolve at all — every one of its CVEs marks that
+CPE `vulnerable: false`, because a hardware CPE is only ever the AND-partner of a
+firmware CPE — so it permanently reports `unknown`. And a CVE that NVD records as
+affecting every version with no fix published reports `affected_no_fix`, never
+`outdated`: it is a real finding, but there is no newer version to move to. The
+whole check is informational and never feeds `risk_engine.py` or any compliance
+verdict.
+
 ## Dynamic risk scores are self-reported for two of their seven inputs
 
 `GET /risk/devices/{id}` (see `docs/risk-assessment.md` for the full write-up)

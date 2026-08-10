@@ -59,6 +59,9 @@ describe("VulnAdvisoryPanel", () => {
         summary: "synthetic",
         kev_listed: false,
         kev_date_added: null,
+        version_status: "unknown",
+        fixed_version: null,
+        advisory_source: null,
       })),
     };
     render(<VulnAdvisoryPanel packages={[manyOpenssl]} />);

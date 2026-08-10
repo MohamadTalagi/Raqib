@@ -286,3 +286,35 @@ def test_device_summary_uses_only_the_most_recent_device_cve_evidence(client, co
 
     assert body["device_cve_evidence_id"] == "EV-DEV-NEW"
     assert body["total_device_cves"] == 2
+
+
+def test_device_summary_carries_the_firmware_currency_verdict(client, conn):
+    _seed_device_cve_evidence(conn, "EV-CURRENCY", "device-router-gw", {
+        **NETGEAR_DEVICE_CVE_OBSERVATIONS,
+        "firmware_currency": {
+            "status": "outdated",
+            "reason": "1 published CVE(s) are fixed in a newer firmware version.",
+            "sources_checked": ["nvd_version_range"],
+            "affected_count": 1, "affected_no_fix_count": 0,
+            "not_affected_count": 1, "unknown_count": 0,
+        },
+    })
+
+    body = client.get("/vuln-intel/devices/device-router-gw").json()
+
+    assert body["firmware_currency"]["status"] == "outdated"
+    assert body["firmware_currency"]["sources_checked"] == ["nvd_version_range"]
+
+
+def test_device_summary_reports_null_currency_for_evidence_that_predates_the_check(client, conn):
+    # Evidence recorded before the firmware-currency feature existed simply has
+    # no such key. It must come back null - absent, not a claim of any status.
+    _seed_device_cve_evidence(conn, "EV-OLD-SHAPE", "device-router-gw", NETGEAR_DEVICE_CVE_OBSERVATIONS)
+
+    assert client.get("/vuln-intel/devices/device-router-gw").json()["firmware_currency"] is None
+
+
+def test_device_summary_with_no_evidence_at_all_has_a_null_currency_key(client):
+    body = client.get("/vuln-intel/devices/device-nvr").json()
+    assert body["has_device_cve_data"] is False
+    assert body["firmware_currency"] is None

@@ -159,6 +159,7 @@ def _empty_device_cve_fields() -> dict:
         "total_device_cves": 0,
         "kev_listed_device_cves": 0,
         "highest_device_cvss": None,
+        "firmware_currency": None,
     }
 
 
@@ -189,6 +190,11 @@ def _device_cve_fields(row) -> dict:
         "total_device_cves": observations.get("total_device_cves") or 0,
         "kev_listed_device_cves": observations.get("kev_listed_device_cves") or 0,
         "highest_device_cvss": observations.get("highest_device_cvss"),
+        # Whether the device's reported firmware is behind a published fix.
+        # Decided at write time by the worker's comparator; None on evidence
+        # recorded before that existed, which the frontend renders as absent
+        # rather than as a claim.
+        "firmware_currency": observations.get("firmware_currency"),
         "notes": observations.get("notes") or [],
     }
 

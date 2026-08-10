@@ -238,6 +238,7 @@ export const vulnDeviceSummaryFixture: VulnDeviceSummary = {
   total_device_cves: 0,
   kev_listed_device_cves: 0,
   highest_device_cvss: null,
+  firmware_currency: null,
   packages: [
     {
       name: "openssl",

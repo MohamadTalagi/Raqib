@@ -39,7 +39,7 @@ from policies.catalog.scan_tests import (
     is_firmware_test,
     is_network_discovery_test,
 )
-from lab.auditor.worker.scan_scripts import cisa_kev, nvd_lookup, oui_lookup
+from lab.auditor.worker.scan_scripts import cisa_kev, nvd_lookup, oui_lookup, schneider_csaf
 from lab.auditor.worker.scan_scripts.interface_detect import detect_candidate_subnets
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
@@ -101,10 +101,26 @@ NVD_CVE_REFRESH_SENTINEL = os.environ.get(
     "NVD_CVE_REFRESH_SENTINEL", os.path.expanduser("~/.cache/grype/db/.nvd-device-cves-last-refresh"),
 )
 
+# Fifth use of the same pattern - Schneider Electric's CSAF advisories, for
+# the firmware-currency check. Unlike the NVD refresher this needs no
+# fleet-scoping: there is exactly one hardcoded Schneider CPE and a small
+# hand-verified advisory table, regardless of what is currently registered.
+SCHNEIDER_CSAF_CHECK_INTERVAL_SECONDS = float(
+    os.environ.get("SCHNEIDER_CSAF_CHECK_INTERVAL_SECONDS", str(6 * 3600))
+)
+SCHNEIDER_CSAF_MAX_AGE_SECONDS = float(
+    os.environ.get("SCHNEIDER_CSAF_MAX_AGE_SECONDS", str(7 * 24 * 3600))
+)
+SCHNEIDER_CSAF_REFRESH_SENTINEL = os.environ.get(
+    "SCHNEIDER_CSAF_REFRESH_SENTINEL",
+    os.path.expanduser("~/.cache/grype/db/.schneider-csaf-last-refresh"),
+)
+
 _last_grype_check_monotonic: float | None = None
 _last_kev_check_monotonic: float | None = None
 _last_oui_check_monotonic: float | None = None
 _last_nvd_cve_check_monotonic: float | None = None
+_last_schneider_csaf_check_monotonic: float | None = None
 
 # Network Scope: unlike auditor-api, which reconfigures device_validation/
 # scan_tests in-process on every write (see network_scope_routes.py), this
@@ -598,6 +614,34 @@ def maybe_refresh_device_cve_index(now: float | None = None) -> None:
         print("job_runner: NVD device-CVE index refresh failed", file=sys.stderr, flush=True)
 
 
+def maybe_refresh_schneider_csaf(now: float | None = None) -> None:
+    """Same hybrid model and sentinel pattern as maybe_refresh_cisa_kev, for
+    Schneider Electric's CSAF advisories (schneider_csaf.py). Never raises - a
+    failed fetch leaves the last-good cache in place and is retried at the
+    next check.
+
+    No fleet-scoping, unlike maybe_refresh_device_cve_index: the advisory
+    table is hardcoded and tiny, so there is nothing to scope to."""
+    global _last_schneider_csaf_check_monotonic
+    now = time.monotonic() if now is None else now
+    if (
+        _last_schneider_csaf_check_monotonic is not None
+        and (now - _last_schneider_csaf_check_monotonic) < SCHNEIDER_CSAF_CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_schneider_csaf_check_monotonic = now
+
+    sentinel_age = _sentinel_age_seconds(SCHNEIDER_CSAF_REFRESH_SENTINEL)
+    if sentinel_age is not None and sentinel_age < SCHNEIDER_CSAF_MAX_AGE_SECONDS:
+        return
+
+    if schneider_csaf.fetch_and_cache_schneider_csaf():
+        print("job_runner: Schneider CSAF advisory refresh completed", flush=True)
+        _touch_sentinel(SCHNEIDER_CSAF_REFRESH_SENTINEL)
+    else:
+        print("job_runner: Schneider CSAF advisory refresh failed", file=sys.stderr, flush=True)
+
+
 def _enrich_mac_vendors(observations: dict) -> dict:
     """Overrides each host's mac_vendor/mac_vendor_source with a maintained
     IEEE OUI-registry lookup when one resolves, falling back to whatever
@@ -687,6 +731,7 @@ def main() -> None:
             maybe_refresh_cisa_kev()
             maybe_refresh_oui_registry()
             maybe_refresh_device_cve_index()
+            maybe_refresh_schneider_csaf()
         except Exception as exc:  # noqa: BLE001 - never let a poll failure kill the loop
             print(f"job_runner: poll error: {exc}", file=sys.stderr, flush=True)
         time.sleep(POLL_INTERVAL_SECONDS)

@@ -26,7 +26,7 @@ const VULN_NO_DATA: VulnDeviceSummary = {
   total_packages: 0, outdated_packages: 0, total_cves: 0, kev_listed_cves: 0, highest_cvss: null,
   has_device_cve_data: false, device_cve_evidence_id: null, device_cve_observed_at: null,
   device_identity: null, device_cves: [], total_device_cves: 0,
-  kev_listed_device_cves: 0, highest_device_cvss: null,
+  kev_listed_device_cves: 0, highest_device_cvss: null, firmware_currency: null,
 };
 const VULN_WITH_DATA: VulnDeviceSummary = { ...VULN_NO_DATA, has_data: true };
 const VULN_WITH_DEVICE_CVES: VulnDeviceSummary = { ...VULN_NO_DATA, has_device_cve_data: true };

@@ -33,7 +33,7 @@ import sys
 
 import requests
 
-from lab.auditor.worker.scan_scripts import nvd_lookup
+from lab.auditor.worker.scan_scripts import nvd_lookup, schneider_csaf
 from policies.catalog.scan_tests import lookup_device_cpe
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
@@ -81,6 +81,19 @@ def main() -> None:
     # would be the exact overclaim this project forbids.
     print(f"index_available={cpe_prefix in index}")
     print(f"device_cves={json.dumps(index.get(cpe_prefix, []))}")
+
+    # Schneider Electric is the only vendor in this lab publishing
+    # machine-readable (CSAF) advisories, so this resolves for exactly one
+    # device. Everything else relies on NVD's own version ranges, which are
+    # carried inside device_cves above.
+    csaf_applicable = cpe_prefix == schneider_csaf.SCHNEIDER_M221_CPE_PREFIX
+    print(f"schneider_csaf_applicable={csaf_applicable}")
+    csaf_ranges = (
+        schneider_csaf.load_schneider_csaf_index().get("cve_version_ranges", {})
+        if csaf_applicable
+        else {}
+    )
+    print(f"schneider_csaf_ranges={json.dumps(csaf_ranges)}")
 
 
 if __name__ == "__main__":

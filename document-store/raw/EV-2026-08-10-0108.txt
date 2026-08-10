@@ -1,0 +1,11 @@
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-10 20:13 UTC
+Nmap scan report for device-speaker (172.30.0.8)
+Host is up (0.0000090s latency).
+rDNS record for 172.30.0.8: kaust-iot-lab-device-speaker-1.kaust-iot-lab_audit-network
+Not shown: 65534 closed tcp ports (reset)
+PORT   STATE SERVICE VERSION
+80/tcp open  http    Uvicorn
+MAC Address: 7A:B0:64:5A:03:A5 (Unknown)
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 7.19 seconds

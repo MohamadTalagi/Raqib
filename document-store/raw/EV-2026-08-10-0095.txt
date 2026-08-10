@@ -1,0 +1,1 @@
+{"device_id":"device-smartlock","vendor":"Yale","model":"Conexis L1","mac":"B0:44:9C:00:22:01","device_type":"smart-lock","firmware_version":"1.4.2"}

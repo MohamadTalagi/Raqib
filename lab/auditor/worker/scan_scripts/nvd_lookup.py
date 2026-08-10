@@ -30,6 +30,7 @@ from urllib.parse import quote
 import requests
 
 from lab.auditor.worker.scan_scripts import cisa_kev
+from policies.catalog import firmware_version_compare
 
 NVD_CVE_API_URL ="https://services.nvd.nist.gov/rest/json/cves/2.0"
 NVD_CACHE_PATH = Path(
@@ -55,7 +56,7 @@ def _headers() -> dict:
     return {"apiKey": api_key} if api_key else {}
 
 
-def _summarize_cve(item: dict, kev_index: dict) -> dict:
+def _summarize_cve(item: dict, kev_index: dict, cpe_prefix: str) -> dict:
     """Trim one NVD `vulnerabilities[]` entry to the exact advisory shape this
     project already uses for package-level CVEs (VulnCVE in types.ts), so the
     frontend renders both with the same components.
@@ -94,6 +95,12 @@ def _summarize_cve(item: dict, kev_index: dict) -> dict:
         "summary": summary,
         "kev_listed": kev_entry is not None,
         "kev_date_added": kev_entry["date_added"] if kev_entry else None,
+        # The affected-version range this CVE states for THIS product. NVD has
+        # always returned it; it was simply being discarded here, which is why
+        # the collector could only ever say "a listed CVE may already be fixed
+        # in the running firmware". Keeping it needs no new source and no new
+        # request - see policies/catalog/firmware_version_compare.py.
+        "version_range": firmware_version_compare.extract_nvd_version_range(item, cpe_prefix),
     }
 
 
@@ -118,7 +125,7 @@ def _fetch_one(cpe_prefix: str, kev_index: dict) -> list[dict] | None:
     if "vulnerabilities" not in data:
         return None
 
-    summarized = [_summarize_cve(item, kev_index) for item in data["vulnerabilities"]]
+    summarized = [_summarize_cve(item, kev_index, cpe_prefix) for item in data["vulnerabilities"]]
     cves = [c for c in summarized if c]
     # KEV-listed first, then worst CVSS - the same ordering convention
     # firmware_check.py already applies to package-level CVE lists.

@@ -910,3 +910,60 @@ def test_fleet_cpe_prefixes_maps_only_devices_with_a_verified_cpe(mock_get):
 @patch("job_runner.requests.get", side_effect=requests.ConnectionError("api down"))
 def test_fleet_cpe_prefixes_returns_none_when_the_device_list_cannot_be_read(_mock_get):
     assert job_runner._fleet_cpe_prefixes() is None
+
+
+# -- Schneider CSAF scheduled refresh --------------------------------------
+# Fifth use of the sentinel pattern. Unlike the NVD refresher this one has no
+# fleet-scoping - the advisory table is hardcoded - so it is the plain
+# cisa_kev shape.
+
+
+@patch("job_runner.schneider_csaf.fetch_and_cache_schneider_csaf")
+def test_maybe_refresh_schneider_csaf_skips_check_within_the_interval(mock_fetch, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_schneider_csaf_check_monotonic", 100.0)
+    job_runner.maybe_refresh_schneider_csaf(
+        now=100.0 + job_runner.SCHNEIDER_CSAF_CHECK_INTERVAL_SECONDS - 1,
+    )
+    mock_fetch.assert_not_called()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.schneider_csaf.fetch_and_cache_schneider_csaf")
+def test_maybe_refresh_schneider_csaf_fetches_when_sentinel_is_stale(
+    mock_fetch, mock_age, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(job_runner, "_last_schneider_csaf_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "SCHNEIDER_CSAF_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = job_runner.SCHNEIDER_CSAF_MAX_AGE_SECONDS + 1
+    mock_fetch.return_value = True
+
+    job_runner.maybe_refresh_schneider_csaf(now=0.0)
+
+    mock_fetch.assert_called_once()
+    assert (tmp_path / "sentinel").exists()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.schneider_csaf.fetch_and_cache_schneider_csaf")
+def test_maybe_refresh_schneider_csaf_skips_fetch_when_sentinel_is_fresh(mock_fetch, mock_age, monkeypatch):
+    monkeypatch.setattr(job_runner, "_last_schneider_csaf_check_monotonic", None)
+    mock_age.return_value = 60.0
+
+    job_runner.maybe_refresh_schneider_csaf(now=0.0)
+
+    mock_fetch.assert_not_called()
+
+
+@patch("job_runner._sentinel_age_seconds")
+@patch("job_runner.schneider_csaf.fetch_and_cache_schneider_csaf")
+def test_maybe_refresh_schneider_csaf_does_not_touch_sentinel_on_failed_fetch(
+    mock_fetch, mock_age, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(job_runner, "_last_schneider_csaf_check_monotonic", None)
+    monkeypatch.setattr(job_runner, "SCHNEIDER_CSAF_REFRESH_SENTINEL", str(tmp_path / "sentinel"))
+    mock_age.return_value = None
+    mock_fetch.return_value = False
+
+    job_runner.maybe_refresh_schneider_csaf(now=0.0)
+
+    assert not (tmp_path / "sentinel").exists()

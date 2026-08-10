@@ -89,6 +89,11 @@ export function devicePipelineStatus(data: DevicePipelineData): PipelinePhaseSta
   // TEST-FW-MANIFEST only, so device-level CVEs (however real) do not move the
   // risk score at all. Adding them here would claim a phase was reached when
   // nothing it computes has changed.
+  //
+  // firmware_currency rides on the same has_device_cve_data flag and follows
+  // the identical rule: it is informational vuln-intel, never a risk input.
+  // Same precedent as PQC readiness, which is likewise real computed data that
+  // deliberately never feeds risk_engine.py.
   const hasUpstreamPipelineData = data.hasSaIotVerdict || hasNcaAssessment || hasVulnData;
 
   return {

@@ -1,0 +1,7 @@
+mac=E0:46:EE:00:22:03
+claimed_vendor=Netgear
+mac_disclosed=True
+oui=E046EE
+oui_vendor=NETGEAR
+oui_source=ieee-registry
+lookup_error=

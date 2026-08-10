@@ -1,0 +1,130 @@
+CONNECTED(00000003)
+---
+Certificate chain
+ 0 s:CN=device-partial
+   i:CN=KAUST-IoT-Lab-CA
+   a:PKEY: RSA, 1024 (bit); sigalg: sha1WithRSAEncryption
+   v:NotBefore: Aug  6 14:04:24 2026 GMT; NotAfter: Aug  6 14:04:24 2027 GMT
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIDgDCCAWigAwIBAgIUGJwwYWJvzzNVdjCtueEUs2Lp9oMwDQYJKoZIhvcNAQEF
+BQAwGzEZMBcGA1UEAwwQS0FVU1QtSW9ULUxhYi1DQTAeFw0yNjA4MDYxNDA0MjRa
+Fw0yNzA4MDYxNDA0MjRaMBkxFzAVBgNVBAMMDmRldmljZS1wYXJ0aWFsMIGfMA0G
+CSqGSIb3DQEBAQUAA4GNADCBiQKBgQC2cDOgOdsvfDyicrMJv5oBOh3hmv6sxmP2
+/jsiADanXsVxrXLZNTAtfPoItqDVqQ6XsiF8S74YlmZhP4l6hgLArGZPhEBXdJIV
+3mquVz/RYwUG2BcVY3xP2JjR0iKolDdA+uDFduy6wuulR3Fq6bThVAhj1NNPBNqG
+xXDrAMtNbwIDAQABo0IwQDAdBgNVHQ4EFgQUw4hJaMiy0lNV/xysdBP0skJvF7Uw
+HwYDVR0jBBgwFoAUuV3ODKTyXY2ce27FBkVMPSGJd84wDQYJKoZIhvcNAQEFBQAD
+ggIBACv1d1d6MknZVCFlhkMGNSuGH/duqrbKgNJ+3QJJSvF9BbE4w4lPForBLt/l
+kRyIc3avZaFmk8kd4In5GG0K0WkzviIsPZB2IueqgqbbJepDbqte6jP+gmUWUlDs
+Yk6dA5Xe+/Q+qOysG1GsWuKz2pEUbLwypq3B+IpXReBhEuP1FJBIMjn7auVIku5X
+edxvxTyB4dxdCcY7Kxq1C//nCTA/meJYGVFi5BK1SfXJ/yDR8mRZUunkHRSkdMIb
+MWpFIqx29iP0KW27cQMYtSUguxuSpl3Zk8Z67zbv8o/x6msAJ1M4qbOcBqpo+zEk
+djum5A8LHMQIW9vQHDPjLdX/lSMeaRvFyAW5BGDZaYzKJcYgjK3rsVD1K778sUfC
+nHWmGPR5TRM6+ZNjrTZwRwW1SFDFlFuYKMI16xYw2mWZHRxe+9M1E6cFtlPwvb7Y
+AV6xPn68+k+QOLL3oO/vA5Ac6/6a+Zmyfn0wsnTGH+y+nTZVaeJoBSlxs04/ceCl
+vxQAvTD9g3igC2l0SLvuGkP4IVZZgwWtfDVieb/cgOkK4XQNjI0jA+3AsECh1vT9
+knsLLeesp8PbIRaxf4EZNEDN+KIwSXPYBmZQMMqn65Mh9yrRvlS8X0CwAf6anYbn
+HX4h4+6zlEHf99Iu8sfZflhPIFYRcYim/2l0YpcoWdtjV0Pa
+-----END CERTIFICATE-----
+subject=CN=device-partial
+issuer=CN=KAUST-IoT-Lab-CA
+---
+No client certificate CA names sent
+Peer signing digest: SHA256
+Peer signature type: rsa_pss_rsae_sha256
+Negotiated TLS1.3 group: X25519MLKEM768
+---
+SSL handshake has read 2416 bytes and written 1502 bytes
+Verification error: unable to verify the first certificate
+---
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+Protocol: TLSv1.3
+Server public key is 1024 bit
+This TLS version forbids renegotiation.
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+Early data was not sent
+Verify return code: 21 (unable to verify the first certificate)
+---
+
+Connecting to 172.30.0.13
+Can't use SSL_get_servername
+depth=0 CN=device-partial
+verify error:num=66:EE certificate key too weak
+verify return:1
+depth=0 CN=device-partial
+verify error:num=66:EE certificate key too weak
+verify return:1
+depth=0 CN=device-partial
+verify error:num=21:unable to verify the first certificate
+verify return:1
+depth=0 CN=device-partial
+verify return:1
+DONE
+
+cert_pem_found=True
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            18:9c:30:61:62:6f:cf:33:55:76:30:ad:b9:e1:14:b3:62:e9:f6:83
+        Signature Algorithm: sha1WithRSAEncryption
+        Issuer: CN=KAUST-IoT-Lab-CA
+        Validity
+            Not Before: Aug  6 14:04:24 2026 GMT
+            Not After : Aug  6 14:04:24 2027 GMT
+        Subject: CN=device-partial
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (1024 bit)
+                Modulus:
+                    00:b6:70:33:a0:39:db:2f:7c:3c:a2:72:b3:09:bf:
+                    9a:01:3a:1d:e1:9a:fe:ac:c6:63:f6:fe:3b:22:00:
+                    36:a7:5e:c5:71:ad:72:d9:35:30:2d:7c:fa:08:b6:
+                    a0:d5:a9:0e:97:b2:21:7c:4b:be:18:96:66:61:3f:
+                    89:7a:86:02:c0:ac:66:4f:84:40:57:74:92:15:de:
+                    6a:ae:57:3f:d1:63:05:06:d8:17:15:63:7c:4f:d8:
+                    98:d1:d2:22:a8:94:37:40:fa:e0:c5:76:ec:ba:c2:
+                    eb:a5:47:71:6a:e9:b4:e1:54:08:63:d4:d3:4f:04:
+                    da:86:c5:70:eb:00:cb:4d:6f
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Subject Key Identifier: 
+                C3:88:49:68:C8:B2:D2:53:55:FF:1C:AC:74:13:F4:B2:42:6F:17:B5
+            X509v3 Authority Key Identifier: 
+                B9:5D:CE:0C:A4:F2:5D:8D:9C:7B:6E:C5:06:45:4C:3D:21:89:77:CE
+    Signature Algorithm: sha1WithRSAEncryption
+    Signature Value:
+        2b:f5:77:57:7a:32:49:d9:54:21:65:86:43:06:35:2b:86:1f:
+        f7:6e:aa:b6:ca:80:d2:7e:dd:02:49:4a:f1:7d:05:b1:38:c3:
+        89:4f:16:8a:c1:2e:df:e5:91:1c:88:73:76:af:65:a1:66:93:
+        c9:1d:e0:89:f9:18:6d:0a:d1:69:33:be:22:2c:3d:90:76:22:
+        e7:aa:82:a6:db:25:ea:43:6e:ab:5e:ea:33:fe:82:65:16:52:
+        50:ec:62:4e:9d:03:95:de:fb:f4:3e:a8:ec:ac:1b:51:ac:5a:
+        e2:b3:da:91:14:6c:bc:32:a6:ad:c1:f8:8a:57:45:e0:61:12:
+        e3:f5:14:90:48:32:39:fb:6a:e5:48:92:ee:57:79:dc:6f:c5:
+        3c:81:e1:dc:5d:09:c6:3b:2b:1a:b5:0b:ff:e7:09:30:3f:99:
+        e2:58:19:51:62:e4:12:b5:49:f5:c9:ff:20:d1:f2:64:59:52:
+        e9:e4:1d:14:a4:74:c2:1b:31:6a:45:22:ac:76:f6:23:f4:29:
+        6d:bb:71:03:18:b5:25:20:bb:1b:92:a6:5d:d9:93:c6:7a:ef:
+        36:ef:f2:8f:f1:ea:6b:00:27:53:38:a9:b3:9c:06:aa:68:fb:
+        31:24:76:3b:a6:e4:0f:0b:1c:c4:08:5b:db:d0:1c:33:e3:2d:
+        d5:ff:95:23:1e:69:1b:c5:c8:05:b9:04:60:d9:69:8c:ca:25:
+        c6:20:8c:ad:eb:b1:50:f5:2b:be:fc:b1:47:c2:9c:75:a6:18:
+        f4:79:4d:13:3a:f9:93:63:ad:36:70:47:05:b5:48:50:c5:94:
+        5b:98:28:c2:35:eb:16:30:da:65:99:1d:1c:5e:fb:d3:35:13:
+        a7:05:b6:53:f0:bd:be:d8:01:5e:b1:3e:7e:bc:fa:4f:90:38:
+        b2:f7:a0:ef:ef:03:90:1c:eb:fe:9a:f9:99:b2:7e:7d:30:b2:
+        74:c6:1f:ec:be:9d:36:55:69:e2:68:05:29:71:b3:4e:3f:71:
+        e0:a5:bf:14:00:bd:30:fd:83:78:a0:0b:69:74:48:bb:ee:1a:
+        43:f8:21:56:59:83:05:ad:7c:35:62:79:bf:dc:80:e9:0a:e1:
+        74:0d:8c:8d:23:03:ed:c0:b0:40:a1:d6:f4:fd:92:7b:0b:2d:
+        e7:ac:a7:c3:db:21:16:b1:7f:81:19:34:40:cd:f8:a2:30:49:
+        73:d8:06:66:50:30:ca:a7:eb:93:21:f7:2a:d1:be:54:bc:5f:
+        40:b0:01:fe:9a:9d:86:e7:1d:7e:21:e3:ee:b3:94:41:df:f7:
+        d2:2e:f2:c7:d9:7e:58:4f:20:56:11:71:88:a6:ff:69:74:62:
+        97:28:59:db:63:57:43:da
+

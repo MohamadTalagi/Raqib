@@ -1,0 +1,12 @@
+reachable=True
+response_start
+HTTP/1.1 200 OK
+CACHE-CONTROL: max-age=1800
+EXT:
+LOCATION: http://172.30.0.9:80/description.xml
+SERVER: Linux/1.0 UPnP/1.0 Netgear/R7000
+ST: upnp:rootdevice
+USN: uuid:38a4a7c0-1111-2222-3333-aabbccddee03::upnp:rootdevice
+
+
+response_end
