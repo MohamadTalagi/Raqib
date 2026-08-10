@@ -1,0 +1,2 @@
+manifest_present=True
+pqc_results=[{"name": "openssl", "version": "1.0.1e", "pqc_status": "fail"}, {"name": "busybox", "version": "1.19.4", "pqc_status": "unknown"}]

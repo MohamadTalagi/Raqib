@@ -1,0 +1,19 @@
+HTTP/1.1 200 OK
+date: Tue, 04 Aug 2026 13:56:18 GMT
+server: uvicorn
+content-length: 550
+content-type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html><head><title>Smart Camera Login</title></head>
+<body>
+<h1>Axis Communications M3216-LVE - Login</h1>
+<form method="post" action="/login">
+  <input type="text" name="username" placeholder="Username" />
+  <input type="password" name="password" placeholder="Password" />
+  <button type="submit">Login</button>
+</form>
+<p><a href="/dashboard">View device dashboard</a></p>
+<p style="font-size:11px;color:#888;">Simulated device for security research &mdash; not affiliated with or endorsed by Axis Communications.</p>
+</body></html>
+HTTP_VERSION:1.1
