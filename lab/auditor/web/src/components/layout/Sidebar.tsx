@@ -1,6 +1,5 @@
 import { NavLink } from "react-router-dom";
 import {
-  ShieldHalf,
   Home as HomeIcon,
   LayoutGrid,
   HardDrive,
@@ -22,6 +21,7 @@ import {
   KeyRound,
   Settings,
 } from "lucide-react";
+import raqibMark from "@/assets/raqib-mark.png";
 import { cn } from "@/lib/utils";
 import { PIPELINE_ROUTE_PHASE_GROUP, PHASE_GROUP_VAR } from "@/lib/phaseTheme";
 
@@ -110,8 +110,16 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         )}
       >
         <div className="flex h-16 items-center gap-2.5 px-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--color-brand)]">
-            <ShieldHalf className="h-4.5 w-4.5 text-[var(--color-brand-foreground)]" strokeWidth={2.25} />
+          {/* The mark sits on a light chip rather than directly on the sidebar:
+              its shield is navy, which all but disappears against the dark
+              theme's near-black surface. The ring keeps the chip readable in
+              the light theme too, where white-on-white would otherwise vanish. */}
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white p-1 ring-1 ring-inset ring-[var(--color-border)]">
+            <img
+              src={raqibMark}
+              alt="Raqib"
+              className="h-full w-full object-contain"
+            />
           </div>
           <div className="leading-tight">
             <p className="text-sm font-semibold tracking-tight text-[var(--color-text)]">Raqib</p>
