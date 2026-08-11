@@ -38,7 +38,7 @@ describe("App", () => {
 
   it("redirects the old /run-scan route to Devices, rather than 404ing", async () => {
     // Run Scan's functionality is now split across the Fingerprinting and
-    // SA-IOT Compliance pipeline pages - anyone with the old URL bookmarked
+    // NCA Compliance pipeline pages - anyone with the old URL bookmarked
     // should land somewhere real, not a dead link.
     window.history.pushState({}, "", "/run-scan");
     render(<App />);
@@ -55,7 +55,7 @@ describe("App", () => {
     // Remediation (informational readiness check ahead of acting on
     // findings), not after it.
     const pipelineOrder = [
-      "Discovery", "Devices", "Fingerprinting", "SA-IOT Compliance",
+      "Discovery", "Devices", "Fingerprinting",
       "NCA Compliance", "Vulnerability Intelligence", "Risk Assessment",
       "Post-Quantum Readiness", "Remediation", "Executive Summary",
     ];

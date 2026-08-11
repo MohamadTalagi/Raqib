@@ -1,0 +1,16 @@
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-11 10:57 UTC
+Nmap scan report for device-insecure (172.30.0.7)
+Host is up (0.0000070s latency).
+rDNS record for 172.30.0.7: kaust-iot-lab-device-insecure-1.kaust-iot-lab_audit-network
+Not shown: 65533 closed tcp ports (reset)
+PORT   STATE SERVICE VERSION
+23/tcp open  telnet?
+80/tcp open  http    Uvicorn
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port23-TCP:V=7.95%I=7%D=8/11%Time=6A7B0018%P=x86_64-pc-linux-gnu%r(NULL
+SF:,3B,"Hikvision\x20DS-2CD2143G2-I\x20Telnet\x20Management\x20Console\r\n
+SF:login:\x20");
+MAC Address: 9E:64:94:53:CB:ED (Unknown)
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 7.09 seconds

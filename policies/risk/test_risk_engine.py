@@ -17,7 +17,6 @@ CLEAN_INPUTS = DeviceRiskInputs(
     has_kev_listed_cve=False,
     criticality="low",
     exposure="none",
-    violation_count=0,
     insecure_service_count=0,
 )
 
@@ -27,7 +26,6 @@ WORST_INPUTS = DeviceRiskInputs(
     has_kev_listed_cve=True,
     criticality="critical",
     exposure="internet_facing",
-    violation_count=10,
     insecure_service_count=10,
 )
 
@@ -138,15 +136,23 @@ def test_rejects_an_unknown_exposure_value():
         )
 
 
-# -- violation count factor (capped) -----------------------------------------
+# -- the retired violations factor -------------------------------------------
 
 
-@pytest.mark.parametrize("count,expected", [(0, 0), (1, 20), (3, 60), (5, 100), (10, 100)])
-def test_violation_count_scales_then_caps_at_100(count, expected):
-    result = compute_device_risk(
-        DeviceRiskInputs(**{**vars(CLEAN_INPUTS), "violation_count": count}),
-    )
-    assert result["breakdown"]["violations"]["normalized"] == expected
+def test_violations_is_no_longer_a_factor():
+    # It used to combine SA-IOT FAIL verdicts with NCA fail assessments, which
+    # made it independent of the compliance score. With the SA-IOT stage
+    # retired it would have counted only NCA failures - the same failures the
+    # NCA compliance score already reflects - so it double-counted one
+    # framework. Its weight was folded into compliance.
+    result = compute_device_risk(CLEAN_INPUTS)
+    assert "violations" not in result["breakdown"]
+    assert "violations" not in WEIGHTS
+
+
+def test_nca_compliance_carries_the_largest_single_weight():
+    assert WEIGHTS["compliance"] == 0.30
+    assert WEIGHTS["compliance"] == max(WEIGHTS.values())
 
 
 # -- insecure-service count factor (capped) ----------------------------------

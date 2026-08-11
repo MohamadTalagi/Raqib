@@ -20,9 +20,10 @@ def _non_device_guideline_ids() -> set[str]:
 
 
 def test_every_non_device_guideline_has_a_checklist():
-    # Locks down full coverage of the 60 organizational/mobile/supplier/cloud
+    # Locks down full coverage of the organizational/mobile/supplier/cloud
     # guidelines - catches a future guideline reclassification or catalog
-    # change leaving a gap silently unnoticed.
+    # change leaving a gap silently unnoticed. It did exactly that when 2-1-1
+    # moved to device scope and its now-unreachable checklist was left behind.
     assert set(CHECKLIST_SPECS.keys()) == _non_device_guideline_ids()
 
 

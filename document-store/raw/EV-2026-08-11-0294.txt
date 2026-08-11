@@ -1,0 +1,1 @@
+{"device_id":"device-plc-gateway","vendor":"Schneider Electric","model":"Modicon M221","mac":"9C:0E:51:00:22:02","device_type":"industrial-sensor-gateway","firmware_version":"SV3.8.1","modbus_port":502}

@@ -141,7 +141,7 @@ describe("DevicesPage", () => {
   // the instant a device is registered - neither means "a real assessment
   // happened." device-hardened in this fixture has zero evidence and only a
   // NOT_APPLICABLE verdict, so its badge must stay "Devices," not jump ahead
-  // to "SA-IOT Compliance" or "Risk Assessment."
+  // to "NCA Compliance" or "Risk Assessment."
   it("does not advance a device's phase badge from a NOT_APPLICABLE-only verdict", async () => {
     vi.spyOn(api, "verdicts").mockResolvedValue([
       {

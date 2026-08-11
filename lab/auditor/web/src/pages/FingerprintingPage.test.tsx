@@ -97,7 +97,7 @@ const SCAN_TESTS: ScanTestSpec[] = [
     label: "Default credentials",
     category: "web-and-auth",
     applicable_service_types: ["http", "https"],
-    pipeline_phase: "sa_iot_compliance",
+    pipeline_phase: "nca_compliance",
   },
 ];
 

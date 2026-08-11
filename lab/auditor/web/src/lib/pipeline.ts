@@ -21,7 +21,6 @@ export interface PipelinePhaseDef {
 export const PIPELINE_PHASES: PipelinePhaseDef[] = [
   { id: "devices", label: "Devices" },
   { id: "fingerprinting", label: "Fingerprinting" },
-  { id: "sa_iot_compliance", label: "SA-IOT Compliance" },
   { id: "nca_compliance", label: "NCA Compliance" },
   { id: "vuln_intelligence", label: "Vulnerability Intelligence" },
   { id: "risk_assessment", label: "Risk Assessment" },
@@ -38,8 +37,6 @@ export const PIPELINE_PHASES: PipelinePhaseDef[] = [
 export interface DevicePipelineData {
   /** This device's own evidence records (only .test_id is used). */
   evidenceTestIds: string[];
-  /** True once this device has at least one recorded SA-IOT verdict. */
-  hasSaIotVerdict: boolean;
   /** The full scan test catalog, used to classify evidenceTestIds by phase. */
   scanTests: ScanTestSpec[];
   nca: NCADeviceDetail | null;
@@ -75,14 +72,17 @@ export function devicePipelineStatus(data: DevicePipelineData): PipelinePhaseSta
   // before any other phase has run. Require real signal that actually
   // changes the risk score before calling this phase reached.
   //
-  // Deliberately excludes fingerprinting: risk_routes.py's 7 inputs
-  // (compliance/CVSS/KEV/criticality/exposure/violation-count/
-  // insecure-service-count) are assembled from SA-IOT verdicts, NCA
-  // assessments, vuln-intel (firmware manifest) evidence, and device_services
-  // recorded at registration time - never from fingerprinting scan evidence
-  // (TEST-NET-PORTSCAN etc.). A device with only fingerprinting evidence
-  // produces the exact same risk score as one with none, so fingerprinting
-  // alone must not count as "reached" risk assessment.
+  // Deliberately excludes fingerprinting: risk_routes.py's 6 inputs
+  // (compliance/CVSS/KEV/criticality/exposure/insecure-service-count) are
+  // assembled from NCA assessments, vuln-intel (firmware manifest) evidence,
+  // and device_services recorded at registration time - never from
+  // fingerprinting scan evidence (TEST-NET-PORTSCAN etc.). A device with only
+  // fingerprinting evidence produces the exact same risk score as one with
+  // none, so fingerprinting alone must not count as "reached" risk assessment.
+  //
+  // SA-IOT verdicts are likewise excluded, and no longer an input at all: the
+  // SA-IOT stage was retired as redundant with NCA, and the risk score is now
+  // NCA-only.
   //
   // hasDeviceCveData is excluded for exactly the same reason: risk_engine.py's
   // CVSS and exploit-availability factors read observations.packages[] from
@@ -94,12 +94,11 @@ export function devicePipelineStatus(data: DevicePipelineData): PipelinePhaseSta
   // the identical rule: it is informational vuln-intel, never a risk input.
   // Same precedent as PQC readiness, which is likewise real computed data that
   // deliberately never feeds risk_engine.py.
-  const hasUpstreamPipelineData = data.hasSaIotVerdict || hasNcaAssessment || hasVulnData;
+  const hasUpstreamPipelineData = hasNcaAssessment || hasVulnData;
 
   return {
     devices: true,
     fingerprinting: hasFingerprintingEvidence,
-    sa_iot_compliance: data.hasSaIotVerdict,
     nca_compliance: hasNcaAssessment,
     vuln_intelligence: hasVulnData || hasDeviceCveData,
     risk_assessment: data.risk !== null && data.risk.known && hasUpstreamPipelineData,

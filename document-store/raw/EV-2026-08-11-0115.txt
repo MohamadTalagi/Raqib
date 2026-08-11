@@ -1,0 +1,19 @@
+HTTP/1.1 200 OK
+date: Tue, 11 Aug 2026 10:51:10 GMT
+server: uvicorn
+content-length: 535
+content-type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html><head><title>Smart Camera Login</title></head>
+<body>
+<h1>Hikvision DS-2CD2143G2-I - Login</h1>
+<form method="post" action="/login">
+  <input type="text" name="username" placeholder="Username" />
+  <input type="password" name="password" placeholder="Password" />
+  <button type="submit">Login</button>
+</form>
+<p><a href="/dashboard">View device dashboard</a></p>
+<p style="font-size:11px;color:#888;">Simulated device for security research &mdash; not affiliated with or endorsed by Hikvision.</p>
+</body></html>
+HTTP_VERSION:1.1

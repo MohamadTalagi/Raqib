@@ -25,7 +25,7 @@ const IN_FLIGHT_STATUSES = new Set<AutomatedRunStatus>(["pending", "running"]);
 
 const STAGE_LABEL: Record<string, string> = {
   discovery: "Discovery: scanning the network and registering new devices",
-  fingerprinting_and_compliance: "Running Fingerprinting and SA-IOT Compliance tests",
+  fingerprinting_and_compliance: "Running Fingerprinting and NCA compliance collectors",
   vulnerability_intelligence: "Running Vulnerability Intelligence on devices with firmware",
   pqc_readiness: "Checking Post-Quantum Readiness (informational only)",
   nca_compliance: "Auto-recording NCA compliance assessments",
@@ -186,10 +186,10 @@ export function AutomatedRunProgressPage() {
                   <HardDrive className="h-4 w-4" /> Devices
                 </Link>
                 <Link
-                  to="/sa-iot-compliance"
+                  to="/nca-compliance"
                   className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]"
                 >
-                  <Fingerprint className="h-4 w-4" /> SA-IOT Compliance
+                  <ClipboardCheck className="h-4 w-4" /> NCA Compliance
                 </Link>
                 <Link
                   to="/nca-compliance"

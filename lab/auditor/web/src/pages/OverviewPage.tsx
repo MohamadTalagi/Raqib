@@ -318,7 +318,7 @@ export function OverviewPage() {
               </CardTitle>
               <p className="text-xs text-[var(--color-text-muted)]">
                 Combines NCA compliance, CVE/CVSS, exploit availability, device criticality,
-                internet exposure, violations, and insecure services into one score per
+                internet exposure, and insecure services into one score per
                 device.{" "}
                 <Link to="/risk" className="text-[var(--color-brand)] hover:underline">
                   See the full breakdown

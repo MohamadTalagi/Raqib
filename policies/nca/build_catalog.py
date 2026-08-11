@@ -54,6 +54,15 @@ DEVICE_TESTABLE_GUIDELINES: dict[str, tuple[str, str]] = {
     # means real automated evidence exists but doesn't cover every way the
     # guideline could be satisfied or violated; "automated" means the
     # automated signal alone is a defensible, complete verdict.
+    # Asset inventory. Reclassified from organization/manual when the SA-IOT
+    # stage was retired into this one: TEST-DEVICE-ID reads a device's real
+    # vendor/model/firmware live, which is genuine device-scope evidence for
+    # an inventory guideline that previously had none. "hybrid", not
+    # "automated", because the guideline also covers maintaining the
+    # inventory across the organization - which no scan can demonstrate - and
+    # because the collector only proves a device DISCLOSES an identity, not
+    # that the recorded values are accurate.
+    "2-1-1": ("device", "hybrid"),
     "2-2-1": ("device", "hybrid"),      # access/permission restriction - partly observable, partly policy
     "2-2-2": ("device", "automated"),   # default/hard-coded creds - TEST-AUTH-DEFAULT-CREDS
     "2-4-2": ("device", "hybrid"),      # peer authentication - TEST-MQTT-OPEN's mqtt_anonymous signal (MQTT devices only)

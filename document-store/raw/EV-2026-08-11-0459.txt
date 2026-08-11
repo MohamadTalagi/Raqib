@@ -1,0 +1,34 @@
+packets_captured=30
+plaintext_get_visible=True
+--- packet summary ---
+12:49:05.706956 eth0  Out IP 172.30.0.14.33666 > 172.30.0.8.80: Flags [S], seq 3687756381, win 64240, options [mss 1460,sackOK,TS val 4149527520 ecr 0,nop,wscale 9], length 0
+12:49:05.707023 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33666: Flags [S.], seq 1871590679, ack 3687756382, win 65160, options [mss 1460,sackOK,TS val 1648723984 ecr 4149527520,nop,wscale 9], length 0
+12:49:05.707037 eth0  Out IP 172.30.0.14.33666 > 172.30.0.8.80: Flags [.], ack 1, win 126, options [nop,nop,TS val 4149527520 ecr 1648723984], length 0
+12:49:05.707151 eth0  Out IP 172.30.0.14.33666 > 172.30.0.8.80: Flags [P.], seq 1:124, ack 1, win 126, options [nop,nop,TS val 4149527520 ecr 1648723984], length 123: HTTP: GET / HTTP/1.1
+12:49:05.707169 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33666: Flags [.], ack 124, win 128, options [nop,nop,TS val 1648723984 ecr 4149527520], length 0
+12:49:05.708991 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33666: Flags [P.], seq 1:616, ack 124, win 128, options [nop,nop,TS val 1648723986 ecr 4149527520], length 615: HTTP: HTTP/1.1 200 OK
+12:49:05.709082 eth0  Out IP 172.30.0.14.33666 > 172.30.0.8.80: Flags [.], ack 616, win 125, options [nop,nop,TS val 4149527522 ecr 1648723986], length 0
+12:49:05.709436 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33666: Flags [F.], seq 616, ack 124, win 128, options [nop,nop,TS val 1648723986 ecr 4149527522], length 0
+12:49:05.709593 eth0  Out IP 172.30.0.14.33666 > 172.30.0.8.80: Flags [F.], seq 124, ack 617, win 125, options [nop,nop,TS val 4149527522 ecr 1648723986], length 0
+12:49:05.709645 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33666: Flags [.], ack 125, win 128, options [nop,nop,TS val 1648723986 ecr 4149527522], length 0
+12:49:06.111123 eth0  Out IP 172.30.0.14.33678 > 172.30.0.8.80: Flags [S], seq 2828276386, win 64240, options [mss 1460,sackOK,TS val 3812131021 ecr 0,nop,wscale 9], length 0
+12:49:06.111192 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33678: Flags [S.], seq 3654844554, ack 2828276387, win 65160, options [mss 1460,sackOK,TS val 1567361377 ecr 3812131021,nop,wscale 9], length 0
+12:49:06.111206 eth0  Out IP 172.30.0.14.33678 > 172.30.0.8.80: Flags [.], ack 1, win 126, options [nop,nop,TS val 3812131021 ecr 1567361377], length 0
+12:49:06.111266 eth0  Out IP 172.30.0.14.33678 > 172.30.0.8.80: Flags [P.], seq 1:124, ack 1, win 126, options [nop,nop,TS val 3812131021 ecr 1567361377], length 123: HTTP: GET / HTTP/1.1
+12:49:06.111280 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33678: Flags [.], ack 124, win 128, options [nop,nop,TS val 1567361377 ecr 3812131021], length 0
+12:49:06.114223 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33678: Flags [P.], seq 1:616, ack 124, win 128, options [nop,nop,TS val 1567361380 ecr 3812131021], length 615: HTTP: HTTP/1.1 200 OK
+12:49:06.114270 eth0  Out IP 172.30.0.14.33678 > 172.30.0.8.80: Flags [.], ack 616, win 125, options [nop,nop,TS val 3812131024 ecr 1567361380], length 0
+12:49:06.114352 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33678: Flags [F.], seq 616, ack 124, win 128, options [nop,nop,TS val 1567361380 ecr 3812131024], length 0
+12:49:06.114769 eth0  Out IP 172.30.0.14.33678 > 172.30.0.8.80: Flags [F.], seq 124, ack 617, win 125, options [nop,nop,TS val 3812131024 ecr 1567361380], length 0
+12:49:06.114839 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33678: Flags [.], ack 125, win 128, options [nop,nop,TS val 1567361380 ecr 3812131024], length 0
+12:49:06.517833 eth0  Out IP 172.30.0.14.33684 > 172.30.0.8.80: Flags [S], seq 2025736286, win 64240, options [mss 1460,sackOK,TS val 3398578972 ecr 0,nop,wscale 9], length 0
+12:49:06.517897 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33684: Flags [S.], seq 3520278977, ack 2025736287, win 65160, options [mss 1460,sackOK,TS val 2574248986 ecr 3398578972,nop,wscale 9], length 0
+12:49:06.517913 eth0  Out IP 172.30.0.14.33684 > 172.30.0.8.80: Flags [.], ack 1, win 126, options [nop,nop,TS val 3398578973 ecr 2574248986], length 0
+12:49:06.517970 eth0  Out IP 172.30.0.14.33684 > 172.30.0.8.80: Flags [P.], seq 1:124, ack 1, win 126, options [nop,nop,TS val 3398578973 ecr 2574248986], length 123: HTTP: GET / HTTP/1.1
+12:49:06.517986 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33684: Flags [.], ack 124, win 128, options [nop,nop,TS val 2574248987 ecr 3398578973], length 0
+12:49:06.523282 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33684: Flags [P.], seq 1:616, ack 124, win 128, options [nop,nop,TS val 2574248992 ecr 3398578973], length 615: HTTP: HTTP/1.1 200 OK
+12:49:06.523311 eth0  Out IP 172.30.0.14.33684 > 172.30.0.8.80: Flags [.], ack 616, win 125, options [nop,nop,TS val 3398578978 ecr 2574248992], length 0
+12:49:06.523394 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33684: Flags [F.], seq 616, ack 124, win 128, options [nop,nop,TS val 2574248992 ecr 3398578978], length 0
+12:49:06.526705 eth0  Out IP 172.30.0.14.33684 > 172.30.0.8.80: Flags [F.], seq 124, ack 617, win 125, options [nop,nop,TS val 3398578981 ecr 2574248992], length 0
+12:49:06.526772 eth0  In  IP 172.30.0.8.80 > 172.30.0.14.33684: Flags [.], ack 125, win 128, options [nop,nop,TS val 2574248995 ecr 3398578981], length 0
+

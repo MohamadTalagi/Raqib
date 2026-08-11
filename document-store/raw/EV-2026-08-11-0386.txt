@@ -1,0 +1,3 @@
+/health 200
+/metrics 404
+/status 404

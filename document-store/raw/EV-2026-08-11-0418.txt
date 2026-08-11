@@ -1,0 +1,1 @@
+{"device_id":"device-partial","vendor":"Hikvision","model":"DS-2CD2143G2-IU","mac":"A4:14:37:00:11:33","device_type":"smart-camera","firmware_version":"V5.5.0 build 190723"}

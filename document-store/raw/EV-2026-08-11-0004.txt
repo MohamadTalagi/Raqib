@@ -1,0 +1,9 @@
+mac=AC:CC:8E:00:11:44
+claimed_vendor=Axis Communications
+mac_disclosed=True
+oui=ACCC8E
+oui_vendor=Axis Communications AB
+oui_source=ieee-registry
+lookup_error=
+/usr/local/lib/python3.12/site-packages/urllib3/connectionpool.py:1110: InsecureRequestWarning: Unverified HTTPS request is being made to host 'device-hardened'. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#tls-warnings
+  warnings.warn(

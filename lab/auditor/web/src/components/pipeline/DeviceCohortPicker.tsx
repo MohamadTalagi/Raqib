@@ -16,7 +16,7 @@ interface DeviceCohortPickerProps {
 
 /**
  * The one "select 1/some/all" device-cohort control, shared by every
- * pipeline page (Devices, Fingerprinting, SA-IOT Compliance, Vulnerability
+ * pipeline page (Devices, Fingerprinting, NCA Compliance, Vulnerability
  * Intelligence, NCA Compliance) instead of a bespoke checkbox list on each -
  * see ui-overhaul.txt. Selecting a device here never mutates it or triggers
  * anything on its own; the calling page decides what "advance" means for

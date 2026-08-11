@@ -26,7 +26,7 @@ interface PhaseRunnerCardProps {
   /** Shown next to the test list when there's nothing to check yet, e.g.
    * "No firmware uploaded" - lets a phase page explain its own gating. */
   emptyHint?: ReactNode;
-  /** Extra controls rendered once real jobs exist, e.g. SA-IOT Compliance's
+  /** Extra controls rendered once real jobs exist, e.g. NCA Compliance's
    * "Recompute verdicts" button. */
   resultsActions?: ReactNode;
 }

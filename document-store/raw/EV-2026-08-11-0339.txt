@@ -1,0 +1,7 @@
+mac=38:42:0B:00:22:05
+claimed_vendor=Sonos
+mac_disclosed=True
+oui=38420B
+oui_vendor=Sonos, Inc.
+oui_source=ieee-registry
+lookup_error=

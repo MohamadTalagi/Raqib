@@ -11,7 +11,7 @@ vuln_routes._summarize_packages(), it's computed fresh from current data on
 every request, since every input already lives somewhere real.
 
 No write endpoints - a device's risk score is entirely derived from data
-recorded elsewhere (NCA assessments, SA-IOT verdicts, vulnerability-intel
+recorded elsewhere (NCA assessments, vulnerability-intel
 evidence, device_services) plus the two auditor-set fields
 (devices.criticality/exposure) that already have their own write path via
 the existing PATCH /devices/{id}.
@@ -22,35 +22,15 @@ from fastapi import APIRouter
 from db import get_connection
 from device_validation import validate_device_id
 from nca_routes import _evaluator_rows_for_scope
-from policies.nca.evaluator import _applicable_required, device_score, effective_status
+from policies.nca.evaluator import device_score
 from policies.risk.risk_engine import DeviceRiskInputs, compute_device_risk
 from vuln_routes import _manifest_packages, _summarize_packages
 
 router = APIRouter(prefix="/risk", tags=["risk"])
 
 
-def _nca_violation_count(conn, device_id: str) -> int:
-    rows = _evaluator_rows_for_scope(conn, device_id=device_id)
-    return sum(
-        1 for row in _applicable_required(rows) if effective_status(row) == "fail"
-    )
 
 
-def _sa_iot_violation_count(conn, device_id: str) -> int:
-    # Most recent verdict per control_id only - a re-tested control must not
-    # be counted more than once, same dedup rule
-    # main.py's _compliance_from_verdict_rows already applies to the
-    # SA-IOT-* compliance percentage.
-    rows = conn.execute(
-        """
-        SELECT DISTINCT ON (control_id) control_id, status
-        FROM verdicts
-        WHERE device_id = %s
-        ORDER BY control_id, timestamp DESC
-        """,
-        (device_id,),
-    ).fetchall()
-    return sum(1 for _, status in rows if status == "FAIL")
 
 
 def _insecure_service_count(conn, device_id: str) -> int:
@@ -89,7 +69,6 @@ def _compute_risk_for_device(conn, device_id: str) -> dict:
 
     compliance_score = device_score(_evaluator_rows_for_scope(conn, device_id=device_id))
     vuln_summary = _vuln_summary_for_device(conn, device_id)
-    violation_count = _nca_violation_count(conn, device_id) + _sa_iot_violation_count(conn, device_id)
     insecure_service_count = _insecure_service_count(conn, device_id)
 
     inputs = DeviceRiskInputs(
@@ -98,7 +77,6 @@ def _compute_risk_for_device(conn, device_id: str) -> dict:
         has_kev_listed_cve=vuln_summary["kev_listed_cves"] > 0,
         criticality=criticality,
         exposure=exposure,
-        violation_count=violation_count,
         insecure_service_count=insecure_service_count,
     )
     return compute_device_risk(inputs)

@@ -1,0 +1,7 @@
+HTTP/1.1 200 OK
+date: Tue, 11 Aug 2026 10:23:59 GMT
+server: uvicorn
+content-length: 28
+content-type: application/json
+
+{"status":"reset-triggered"}

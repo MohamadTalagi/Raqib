@@ -1,0 +1,1 @@
+{"device_id":"device-hardened","vendor":"Axis Communications","model":"M3216-LVE","mac":"AC:CC:8E:00:11:44","device_type":"smart-camera","firmware_version":"AXIS OS 11.11.100"}

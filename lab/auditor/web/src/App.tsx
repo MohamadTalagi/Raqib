@@ -4,7 +4,6 @@ import { OverviewPage } from "@/pages/OverviewPage";
 import { DiscoveryPage } from "@/pages/DiscoveryPage";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { FingerprintingPage } from "@/pages/FingerprintingPage";
-import { SAIOTCompliancePage } from "@/pages/SAIOTCompliancePage";
 import { VulnerabilityIntelligencePage } from "@/pages/VulnerabilityIntelligencePage";
 import { RemediationPage } from "@/pages/RemediationPage";
 import { PostQuantumReadinessPage } from "@/pages/PostQuantumReadinessPage";
@@ -45,7 +44,6 @@ export default function App() {
             <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
             <Route path="/devices/:deviceId/assessment" element={<DeviceAssessmentReportPage />} />
             <Route path="/fingerprinting" element={<FingerprintingPage />} />
-            <Route path="/sa-iot-compliance" element={<SAIOTCompliancePage />} />
             <Route path="/nca-compliance" element={<NCACompliancePage />} />
             <Route path="/nca-compliance/devices/:deviceId" element={<DeviceAssessmentPage />} />
             <Route path="/vulnerability-intelligence" element={<VulnerabilityIntelligencePage />} />
@@ -56,9 +54,11 @@ export default function App() {
             <Route path="/automated-run/:runId" element={<AutomatedRunProgressPage />} />
 
             {/* /run-scan's functionality is now split across Fingerprinting
-                and SA-IOT Compliance - redirect rather than 404 for anyone
-                with the old URL bookmarked. */}
+                and NCA Compliance - redirect rather than 404 for anyone with
+                the old URL bookmarked. /sa-iot-compliance redirects too: that
+                stage was retired as redundant with NCA. */}
             <Route path="/run-scan" element={<Navigate to="/devices" replace />} />
+            <Route path="/sa-iot-compliance" element={<Navigate to="/nca-compliance" replace />} />
 
             {/* Records - reference material, not pipeline steps */}
             <Route path="/evidence" element={<EvidencePage />} />

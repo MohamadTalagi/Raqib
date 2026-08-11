@@ -291,7 +291,6 @@ export const riskDeviceDetailFixture: DeviceRiskDetail = {
     exploit_availability: { raw_value: true, normalized: 100, weight: 0.2, contribution: 20 },
     criticality: { raw_value: "high", normalized: 75, weight: 0.15, contribution: 11.25 },
     exposure: { raw_value: "internal_only", normalized: 40, weight: 0.1, contribution: 4 },
-    violations: { raw_value: 2, normalized: 40, weight: 0.05, contribution: 2 },
     insecure_services: { raw_value: 1, normalized: 25, weight: 0.05, contribution: 1.25 },
   },
 };
@@ -314,7 +313,7 @@ export const scanTestsFixture: ScanTestSpec[] = [
     test_id: "TEST-AUTH-DEFAULT-CREDS",
     label: "Default credentials",
     category: "web-and-auth",
-    pipeline_phase: "sa_iot_compliance",
+    pipeline_phase: "nca_compliance",
     applicable_service_types: ["http", "https"],
   },
   {

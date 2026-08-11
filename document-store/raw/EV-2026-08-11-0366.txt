@@ -1,0 +1,9 @@
+vendor=Yale
+model=Conexis L1
+firmware_version=1.4.2
+cpe_matched=True
+cpe=o:assaabloy:yale_conexis_l1_firmware
+index_available=True
+device_cves=[{"id": "CVE-2023-26941", "cvss": 6.5, "summary": "Weak encryption mechanisms in RFID Tags in Yale Conexis L1 v1.1.0 allows attackers to create a cloned tag via physical proximity to the original.", "kev_listed": false, "kev_date_added": null, "version_range": {"start_including": null, "start_excluding": null, "end_including": null, "end_excluding": null, "unbounded": true}}]
+schneider_csaf_applicable=False
+schneider_csaf_ranges={}

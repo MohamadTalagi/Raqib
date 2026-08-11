@@ -25,6 +25,7 @@ import { ComplianceGauge } from "@/components/charts/ComplianceGauge";
 import { NCADomainBarChart } from "@/components/charts/NCADomainBarChart";
 import { DomainSummaryGrid } from "@/components/nca/DomainSummaryGrid";
 import { DeviceCohortPicker } from "@/components/pipeline/DeviceCohortPicker";
+import { PhaseRunnerCard } from "@/components/pipeline/PhaseRunnerCard";
 import { useFetch } from "@/lib/useFetch";
 import { api, ApiError } from "@/lib/api";
 import { applicableDomains } from "@/lib/nca";
@@ -58,6 +59,21 @@ export function NCACompliancePage() {
   const domains = useFetch(api.ncaDomains, [refreshKey]);
   const devices = useFetch(api.ncaDevices, [refreshKey]);
   const [recomputing, setRecomputing] = useState(false);
+
+  // The collector runner needs the full device records (services, firmware
+  // state) that PhaseRunnerCard works from - ncaDevices only carries
+  // compliance rollups.
+  const allDevices = useFetch(api.devices, []);
+  const scanTests = useFetch(api.scanTests, []);
+  const [collectorCohort, setCollectorCohort] = useState<Set<string>>(new Set());
+  const registeredDevices = useMemo(
+    () => (allDevices.data ?? []).filter((device) => device.registered),
+    [allDevices.data],
+  );
+  const complianceTests = useMemo(
+    () => (scanTests.data ?? []).filter((test) => test.pipeline_phase === "nca_compliance"),
+    [scanTests.data],
+  );
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [tierFilter, setTierFilter] = useState<string>("all");
@@ -356,6 +372,54 @@ export function NCACompliancePage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Collector runner, rehomed here when the SA-IOT Compliance stage
+              was retired. These are the same 18 device-scope collectors that
+              stage ran; they were always the evidence behind this page's own
+              finding mappings and auto-suggestions, so they belong here rather
+              than behind a separate stage. Without this section they would be
+              reachable only through a Fully Automated Run. */}
+          {!loading && (registeredDevices?.length ?? 0) > 0 && complianceTests.length > 0 && (
+            <Card>
+              <CardHeader className="flex-col items-start gap-2">
+                <CardTitle>Collect compliance evidence</CardTitle>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  Run the device-scope collectors that feed this framework's automated findings -
+                  default credentials, TLS, MQTT, logging, tamper status and the firmware checks.
+                  Record each finding, then assess the affected guidelines below.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-2">
+                <DeviceCohortPicker
+                  devices={registeredDevices ?? []}
+                  selected={collectorCohort}
+                  onChange={setCollectorCohort}
+                />
+                {(registeredDevices ?? [])
+                  .filter((device) => collectorCohort.has(device.device_id))
+                  .map((device) => (
+                    <PhaseRunnerCard
+                      key={device.device_id}
+                      device={device}
+                      tests={complianceTests.filter((test) =>
+                        test.applicable_service_types.length === 0
+                          ? Boolean(device.firmware_sha256)
+                          : device.services.some(
+                              (service) =>
+                                service.enabled &&
+                                test.applicable_service_types.includes(service.service_type),
+                            ),
+                      )}
+                      emptyHint={
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                          No compliance collector applies to this device's registered services.
+                        </p>
+                      }
+                    />
+                  ))}
+              </CardContent>
+            </Card>
+          )}
 
           {!loading && (devices.data?.length ?? 0) > 0 && (
             <Card>

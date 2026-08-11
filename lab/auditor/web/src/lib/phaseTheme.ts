@@ -37,7 +37,6 @@ export const PIPELINE_ROUTE_PHASE_GROUP: Record<string, PipelinePhaseGroup> = {
   "/discovery": "discovery",
   "/devices": "discovery",
   "/fingerprinting": "discovery",
-  "/sa-iot-compliance": "compliance",
   "/nca-compliance": "compliance",
   "/vulnerability-intelligence": "intelligence",
   "/risk": "intelligence",

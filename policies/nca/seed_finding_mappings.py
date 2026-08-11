@@ -30,6 +30,30 @@ from policies.nca.build_catalog import control_id
 
 MAPPINGS = [
     {
+        # The only positive-signal rule in this table - every other one fires
+        # on an insecure condition. This fires when a device successfully
+        # discloses its vendor, model and firmware version, which is the
+        # identifying data an asset inventory is built from, so a match
+        # supports 2-1-1 rather than undermining it.
+        #
+        # Still "review_required", not a suggested pass, for two reasons that
+        # both matter: 2-1-1 also requires the ORGANIZATION to maintain and
+        # review that inventory, which no scan can demonstrate; and
+        # TEST-DEVICE-ID only proves a device DISCLOSES an identity, not that
+        # the values recorded against it are accurate (SA-IOT-001's own
+        # limitations text said the same). Same treatment the other
+        # evidence-for-review mappings get.
+        "finding_key": "device-identity-disclosed",
+        "description": (
+            "The device disclosed its vendor, model and firmware version via an unauthenticated "
+            "read-only endpoint - the identifying data an IoT asset inventory records."
+        ),
+        "control_id": control_id("2-1-1"),
+        "match_rule": {"field": "observations.device_identified", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+        "verdict_hint": "review_required",
+    },
+    {
         "finding_key": "default-creds-accepted",
         "description": "A default/well-known credential pair was accepted on login.",
         "control_id": control_id("2-2-2"),

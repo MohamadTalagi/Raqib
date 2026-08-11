@@ -30,7 +30,6 @@ _EXPOSURE_RISK = {"none": 0, "internal_only": 40, "internet_facing": 100}
 # Every point value and cap below is a named, tunable constant - never
 # hardcoded inline - matching policies/nca/evaluator.py's
 # DEFAULT_PASS_THRESHOLD precedent.
-VIOLATION_POINTS_PER_COUNT = 20
 INSECURE_SERVICE_POINTS_PER_COUNT = 25
 
 # A device with no compliance assessment at all is not "neutral" - absence
@@ -39,13 +38,19 @@ INSECURE_SERVICE_POINTS_PER_COUNT = 25
 # already applies to a never-assessed device (None, never a guessed 0%).
 NEVER_ASSESSED_COMPLIANCE_RISK = 100
 
+# The `violations` factor was removed when the SA-IOT stage was retired.
+# It used to count SA-IOT FAIL verdicts AND NCA fail assessments together,
+# which made it a genuinely independent signal. With SA-IOT gone it would
+# have counted only NCA failures - the same failures the NCA compliance
+# score already reflects - so it double-counted one framework. Its 0.05 is
+# folded into `compliance` rather than redistributed elsewhere, which is
+# also the requested increase in NCA weight: 0.25 -> 0.30.
 WEIGHTS = {
-    "compliance": 0.25,
+    "compliance": 0.30,
     "cvss": 0.20,
     "exploit_availability": 0.20,
     "criticality": 0.15,
     "exposure": 0.10,
-    "violations": 0.05,
     "insecure_services": 0.05,
 }
 assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, "risk factor weights must sum to 100%"
@@ -73,7 +78,6 @@ class DeviceRiskInputs:
     has_kev_listed_cve: bool  # any CISA KEV-listed CVE among the device's findings
     criticality: str  # one of CRITICALITY_LEVELS
     exposure: str  # one of EXPOSURE_LEVELS
-    violation_count: int  # SA-IOT FAIL verdicts + NCA fail assessments, combined
     insecure_service_count: int  # enabled http/mqtt/telnet services
 
 
@@ -104,7 +108,6 @@ def compute_device_risk(inputs: DeviceRiskInputs) -> dict:
     exploit_risk = 100 if inputs.has_kev_listed_cve else 0
     criticality_risk = _CRITICALITY_RISK[inputs.criticality]
     exposure_risk = _EXPOSURE_RISK[inputs.exposure]
-    violation_risk = min(100, inputs.violation_count * VIOLATION_POINTS_PER_COUNT)
     insecure_service_risk = min(
         100, inputs.insecure_service_count * INSECURE_SERVICE_POINTS_PER_COUNT,
     )
@@ -115,7 +118,6 @@ def compute_device_risk(inputs: DeviceRiskInputs) -> dict:
         "exploit_availability": (inputs.has_kev_listed_cve, exploit_risk),
         "criticality": (inputs.criticality, criticality_risk),
         "exposure": (inputs.exposure, exposure_risk),
-        "violations": (inputs.violation_count, violation_risk),
         "insecure_services": (inputs.insecure_service_count, insecure_service_risk),
     }
 

@@ -1,0 +1,1 @@
+{"device_id":"device-nvr","vendor":"Dahua","model":"NVR4108-8P","mac":"14:A7:8B:00:22:04","device_type":"network-video-recorder","firmware_version":"3.218.0000019.0"}

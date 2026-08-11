@@ -107,7 +107,10 @@ def test_device_risk_treats_never_assessed_compliance_as_maximum_risk(client, co
     assert body["breakdown"]["compliance"]["normalized"] == 100
 
 
-def test_device_risk_counts_a_real_nca_fail_as_a_violation(client, conn):
+def test_device_risk_reflects_a_real_nca_fail_through_the_compliance_score(client, conn):
+    # The `violations` factor was retired with the SA-IOT stage: counting NCA
+    # failures separately double-counted what the NCA compliance score already
+    # measures. An NCA fail must still move the score - through compliance.
     _seed_control(conn, CONTROL_ID)
     _register_device(conn)
     client.post(
@@ -122,12 +125,17 @@ def test_device_risk_counts_a_real_nca_fail_as_a_violation(client, conn):
 
     body = client.get("/risk/devices/risk-cam").json()
 
-    assert body["breakdown"]["violations"]["raw_value"] == 1
+    assert "violations" not in body["breakdown"]
     assert body["breakdown"]["compliance"]["raw_value"] == 0  # the only control, and it failed
+    assert body["breakdown"]["compliance"]["weight"] == 0.30
 
 
-def test_device_risk_counts_a_real_sa_iot_fail_verdict_as_a_violation(client, conn):
+def test_device_risk_ignores_sa_iot_verdicts_entirely(client, conn):
+    # SA-IOT verdicts used to contribute to the violation count. The stage is
+    # retired, so a FAIL verdict must now have no effect on the risk score at
+    # all - the score is NCA-only.
     _register_device(conn)
+    before = client.get("/risk/devices/risk-cam").json()["risk_score"]
     conn.execute(
         """
         INSERT INTO verdicts (verdict_id, control_id, device_id, status, severity,
@@ -138,33 +146,7 @@ def test_device_risk_counts_a_real_sa_iot_fail_verdict_as_a_violation(client, co
     )
     conn.commit()
 
-    body = client.get("/risk/devices/risk-cam").json()
-
-    assert body["breakdown"]["violations"]["raw_value"] == 1
-
-
-def test_device_risk_violation_count_ignores_a_superseded_re_tested_verdict(client, conn):
-    # An older FAIL re-tested to PASS must not still count as a violation -
-    # only the most recent verdict per control_id counts, same dedup rule
-    # main.py's SA-IOT-* compliance percentage already applies.
-    _register_device(conn)
-    conn.execute(
-        """
-        INSERT INTO verdicts (verdict_id, control_id, device_id, status, severity,
-                              evidence_ids, reason, saudi_source, remediation, timestamp)
-        VALUES
-            ('VD-OLD', 'SA-IOT-002', 'risk-cam', 'FAIL', 'critical', '[]'::jsonb,
-             'default creds accepted', '{}'::jsonb, 'change creds', now() - interval '1 day'),
-            ('VD-NEW', 'SA-IOT-002', 'risk-cam', 'PASS', 'critical', '[]'::jsonb,
-             'creds changed', '{}'::jsonb, 'n/a', now())
-        """
-    )
-    conn.commit()
-
-    body = client.get("/risk/devices/risk-cam").json()
-
-    assert body["breakdown"]["violations"]["raw_value"] == 0
-
+    assert client.get("/risk/devices/risk-cam").json()["risk_score"] == before
 
 def test_device_risk_counts_enabled_insecure_services_only(client, conn):
     _register_device(conn)

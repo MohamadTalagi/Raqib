@@ -137,7 +137,11 @@ CHECKLIST_SPECS: dict[str, tuple] = {
     "1-9-2": (_practice_with_evidence, "organization-wide IoT cybersecurity awareness promotion"),
     # Domain 2 - organizational-scope subdomains (device-testable ones are
     # classified separately in build_catalog.py's DEVICE_TESTABLE_GUIDELINES)
-    "2-1-1": (_practice_with_evidence, "maintaining an inventory of IoT devices/services assets"),
+    # 2-1-1 deliberately absent: it moved to device/hybrid scope when
+    # TEST-DEVICE-ID was wired into it, so it is now assessed from real device
+    # evidence in the per-device workspace rather than from a checklist. The
+    # organizational half of asset management is still covered here by 2-1-2
+    # (periodic review of the inventory), which stays organization-scope.
     "2-1-2": (_periodic_review, "the IoT asset inventory"),
     "2-2-3": (_periodic_review, "IoT access identities and permissions"),
     "2-3-1": (_define_approve_implement, "cybersecurity requirements for data transmitted between IoT devices and email/messaging services"),

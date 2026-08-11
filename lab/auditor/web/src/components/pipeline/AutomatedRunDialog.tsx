@@ -46,7 +46,7 @@ export function AutomatedRunDialog({ open, onCancel, onStarted }: AutomatedRunDi
           <p>This drives the whole fleet through the pipeline with zero further clicks:</p>
           <ol className="list-decimal space-y-1 pl-4">
             <li>Scans the network and registers any new devices it finds.</li>
-            <li>Runs every applicable Fingerprinting and SA-IOT Compliance test on every device.</li>
+            <li>Runs every applicable Fingerprinting and NCA compliance collector on every device.</li>
             <li>Auto-submits each test&apos;s deterministic suggested finding - no human review.</li>
             <li>Recomputes SA-IOT verdicts.</li>
             <li>

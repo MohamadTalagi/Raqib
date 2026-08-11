@@ -190,7 +190,6 @@ describe("DeviceAssessmentReportPage", () => {
         exploit_availability: { raw_value: true, normalized: 100, weight: 0.2, contribution: 20 },
         criticality: { raw_value: "high", normalized: 75, weight: 0.15, contribution: 11.25 },
         exposure: { raw_value: "internal_only", normalized: 40, weight: 0.1, contribution: 4 },
-        violations: { raw_value: 2, normalized: 40, weight: 0.05, contribution: 2 },
         insecure_services: { raw_value: 1, normalized: 25, weight: 0.05, contribution: 1.25 },
       },
     });

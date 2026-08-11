@@ -1,0 +1,1 @@
+{"cred_mode":"strong","mqtt_host":"mqtt-broker-insecure","mqtt_tls":false,"logging_mode":"basic"}

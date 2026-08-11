@@ -38,7 +38,7 @@ from job_runner import process_job, process_network_scan
 from policies.catalog.scan_tests import (
     PIPELINE_PHASE_FINGERPRINTING,
     PIPELINE_PHASE_PQC_READINESS,
-    PIPELINE_PHASE_SA_IOT_COMPLIANCE,
+    PIPELINE_PHASE_NCA_COMPLIANCE,
     SCAN_CATALOG,
     is_firmware_test,
     is_network_discovery_test,
@@ -46,7 +46,7 @@ from policies.catalog.scan_tests import (
 
 API_URL = os.environ.get("AUDITOR_API_URL", "http://auditor-api:8000")
 
-AUTOMATED_TEST_PHASES = (PIPELINE_PHASE_FINGERPRINTING, PIPELINE_PHASE_SA_IOT_COMPLIANCE)
+AUTOMATED_TEST_PHASES = (PIPELINE_PHASE_FINGERPRINTING, PIPELINE_PHASE_NCA_COMPLIANCE)
 
 # Mirrors lab/auditor/web/src/components/devices/NetworkDiscoveryPanel.tsx's
 # own PORT_SERVICE_TYPE map exactly - kept as a separate Python copy rather

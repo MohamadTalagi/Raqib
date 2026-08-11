@@ -154,9 +154,6 @@ export function DevicesPage() {
         // fleet-wide recompute synthesizes these for every device regardless
         // of whether any test ever ran against it. Excluding it here matches
         // nca_compliance's own "not_tested" exclusion just below.
-        hasSaIotVerdict: (verdicts.data ?? []).some(
-          (v) => v.device_id === device.device_id && v.status !== "NOT_APPLICABLE",
-        ),
         scanTests: scanTests.data ?? [],
         nca: ncaRow ? { overall_status: ncaRow.overall_status } : null,
         vuln: (vulnFleet.data?.devices ?? []).some((d) => d.device_id === device.device_id)
@@ -169,7 +166,10 @@ export function DevicesPage() {
       result.set(device.device_id, furthestReachedPhase(devicePipelineStatus(data)));
     }
     return result;
-  }, [devices.data, evidence.data, verdicts.data, scanTests.data, ncaDevices.data, vulnFleet.data, riskDevices.data]);
+    // verdicts.data is deliberately absent: pipeline status stopped reading
+    // verdicts when the SA-IOT stage was retired. They are still fetched for
+    // the per-device verdict counts below, just not for phase computation.
+  }, [devices.data, evidence.data, scanTests.data, ncaDevices.data, vulnFleet.data, riskDevices.data]);
 
   const registeredDevices = useMemo(() => (devices.data ?? []).filter((d) => d.registered), [devices.data]);
 

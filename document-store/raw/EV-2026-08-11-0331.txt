@@ -1,0 +1,17 @@
+HTTP/1.1 200 OK
+date: Tue, 11 Aug 2026 10:59:52 GMT
+server: uvicorn
+content-length: 394
+content-type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html><head><title>Smart Lock</title></head>
+<body>
+<h1>Yale Conexis L1 - Access Panel</h1>
+<form method="post" action="/login">
+  <input type="password" name="pin" placeholder="PIN" />
+  <button type="submit">Unlock</button>
+</form>
+<p style="font-size:11px;color:#888;">Simulated device for security research &mdash; not affiliated with or endorsed by Yale.</p>
+</body></html>
+HTTP_VERSION:1.1

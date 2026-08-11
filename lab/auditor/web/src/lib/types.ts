@@ -100,7 +100,6 @@ export type ScanTestCategory =
 export type PipelinePhaseId =
   | "devices"
   | "fingerprinting"
-  | "sa_iot_compliance"
   | "nca_compliance"
   | "vuln_intelligence"
   | "risk_assessment";
@@ -115,7 +114,7 @@ export type PipelinePhaseId =
 // furthest-reached-phase badge, since it's explicitly informational only and
 // never feeds risk_engine.py.
 export type ScanTestPipelinePhase =
-  | Extract<PipelinePhaseId, "fingerprinting" | "sa_iot_compliance" | "vuln_intelligence">
+  | Extract<PipelinePhaseId, "fingerprinting" | "nca_compliance" | "vuln_intelligence">
   | "pqc_readiness";
 
 export interface ScanTestSpec {
@@ -864,7 +863,9 @@ export const RISK_FACTOR_KEYS = [
   "exploit_availability",
   "criticality",
   "exposure",
-  "violations",
+  // "violations" was retired with the SA-IOT stage - it counted SA-IOT
+  // verdicts and NCA assessments together, and NCA-only it just
+  // double-counted the compliance score. Its weight moved to "compliance".
   "insecure_services",
 ] as const;
 export type RiskFactorKey = (typeof RISK_FACTOR_KEYS)[number];

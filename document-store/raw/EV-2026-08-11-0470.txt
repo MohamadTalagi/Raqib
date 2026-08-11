@@ -1,0 +1,13 @@
+HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:49:19 GMT
+server: uvicorn
+content-length: 24
+content-type: application/json
+
+{"detail":"Invalid PIN"}HTTP/1.1 404 Not Found
+date: Tue, 11 Aug 2026 12:49:19 GMT
+server: uvicorn
+content-length: 22
+content-type: application/json
+
+{"detail":"Not Found"}

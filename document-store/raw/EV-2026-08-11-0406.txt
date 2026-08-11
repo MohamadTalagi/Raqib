@@ -1,0 +1,61 @@
+HTTP/1.1 200 OK
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 44
+content-type: application/json
+
+{"status":"ok","message":"Login successful"}HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}HTTP/1.1 401 Unauthorized
+date: Tue, 11 Aug 2026 12:47:27 GMT
+server: uvicorn
+content-length: 32
+content-type: application/json
+
+{"detail":"Invalid credentials"}

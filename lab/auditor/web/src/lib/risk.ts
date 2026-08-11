@@ -9,7 +9,6 @@ export const RISK_FACTOR_LABELS: Record<RiskFactorKey, string> = {
   exploit_availability: "Exploit availability (CISA KEV)",
   criticality: "Device criticality",
   exposure: "Internet exposure",
-  violations: "Violation count (SA-IOT + NCA combined)",
   insecure_services: "Insecure service count",
 };
 

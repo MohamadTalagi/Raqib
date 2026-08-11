@@ -1,0 +1,18 @@
+HTTP/1.1 200 OK
+date: Tue, 11 Aug 2026 12:49:04 GMT
+server: uvicorn
+content-length: 462
+content-type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html><head><title>Router Admin</title></head>
+<body>
+<h1>Netgear R7000 - Admin</h1>
+<form method="post" action="/login">
+  <input type="text" name="username" placeholder="Username" />
+  <input type="password" name="password" placeholder="Password" />
+  <button type="submit">Login</button>
+</form>
+<p style="font-size:11px;color:#888;">Simulated device for security research &mdash; not affiliated with or endorsed by Netgear.</p>
+</body></html>
+HTTP_VERSION:1.1

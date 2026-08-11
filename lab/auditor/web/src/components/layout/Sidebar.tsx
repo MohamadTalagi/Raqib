@@ -14,7 +14,6 @@ import {
   Flame,
   Radar,
   Fingerprint,
-  BadgeCheck,
   Bug,
   Wrench,
   FileBarChart,
@@ -32,8 +31,8 @@ interface NavGroup {
 
 // Order matches lib/pipeline.ts's PIPELINE_PHASES exactly for the "Pipeline"
 // group - the sidebar literally reads top to bottom as the guided flow
-// (Devices -> Fingerprinting -> SA-IOT Compliance -> NCA Compliance ->
-// Vulnerability Intelligence -> Risk Assessment -> Remediation). Discovery
+// (Devices -> Fingerprinting -> NCA Compliance -> Vulnerability
+// Intelligence -> Risk Assessment -> Remediation). Discovery
 // sits above Devices since it's the pre-registration, fleet-wide activity
 // that feeds into Devices, but has no per-device pipeline status of its own.
 const NAV_GROUPS: NavGroup[] = [
@@ -54,7 +53,6 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/discovery", label: "Discovery", icon: Radar, end: false },
       { to: "/devices", label: "Devices", icon: HardDrive, end: false },
       { to: "/fingerprinting", label: "Fingerprinting", icon: Fingerprint, end: false },
-      { to: "/sa-iot-compliance", label: "SA-IOT Compliance", icon: BadgeCheck, end: false },
       { to: "/nca-compliance", label: "NCA Compliance", icon: ClipboardCheck, end: true },
       { to: "/vulnerability-intelligence", label: "Vulnerability Intelligence", icon: Bug, end: false },
       { to: "/risk", label: "Risk Assessment", icon: Flame, end: false },

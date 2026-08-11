@@ -44,7 +44,7 @@ describe("AutomatedRunProgressPage", () => {
     renderPage();
 
     expect(await screen.findByText("Running")).toBeInTheDocument();
-    expect(screen.getByText(/fingerprinting and sa-iot compliance/i)).toBeInTheDocument();
+    expect(screen.getByText(/fingerprinting and nca compliance collectors/i)).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument(); // hosts discovered
   });
 

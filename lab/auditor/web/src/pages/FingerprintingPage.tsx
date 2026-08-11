@@ -17,7 +17,7 @@ interface FingerprintingLocationState {
  * First real assessment phase: reachability, port/service identification -
  * "what is this device?" - not yet a compliance judgment. Scoped to
  * pipeline_phase === "fingerprinting" tests only (see
- * policies/catalog/scan_tests.py); SA-IOT Compliance covers the rest of
+ * policies/catalog/scan_tests.py); NCA Compliance covers the rest of
  * what Run Scan used to call "Web and Auth"/"Network and Protocol".
  */
 export function FingerprintingPage() {

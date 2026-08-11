@@ -1,0 +1,1 @@
+{"device_id":"device-router-gw","vendor":"Netgear","model":"R7000","mac":"E0:46:EE:00:22:03","device_type":"router-gateway","firmware_version":"V1.0.11.132_10.2.132"}
