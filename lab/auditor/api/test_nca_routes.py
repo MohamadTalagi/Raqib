@@ -807,6 +807,33 @@ def _seed_evidence(conn, evidence_id, device_id, observations, *, test_id="TEST-
     conn.commit()
 
 
+def test_summary_reports_control_pass_rate_separately_from_device_pass_rate(client, conn):
+    """Regression: the NCA Compliance page's gauge is titled "NCA Control Pass
+    Rate" but rendered overall_pass_percentage, which counts *devices*. A
+    device only counts as pass when every applicable control passes, so on any
+    real fleet it sits at 0 - and genuinely passing controls displayed as 0%.
+    The two rates are now distinct fields."""
+    _seed_control(conn, CONTROL_ID)
+    other = "NCA-CGIoT-1_2024-2-15-2"
+    _seed_control(conn, other)
+    _register_device(conn, "cam-1")
+    # One control passes, one fails: the device is fail (so the device rate is
+    # 0%), but half the assessed controls passed.
+    client.post("/nca/assessments", json=_assessment_payload(device_id="cam-1", status="pass"))
+    client.post(
+        "/nca/assessments",
+        json={**_assessment_payload(device_id="cam-1", status="fail"), "control_id": other},
+    )
+
+    body = client.get("/nca/summary").json()
+
+    assert body["device_counts"]["pass"] == 0
+    assert body["overall_pass_percentage"] == 0
+    assert body["control_counts"]["pass"] == 1
+    assert body["control_counts"]["fail"] == 1
+    assert body["control_pass_percentage"] == 50
+
+
 def test_suggestions_404_for_unknown_device(client):
     assert client.get("/nca/devices/nope/suggestions").status_code == 404
 

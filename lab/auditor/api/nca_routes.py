@@ -250,9 +250,15 @@ def get_nca_summary():
     try:
         device_ids = [r[0] for r in conn.execute("SELECT device_id FROM devices ORDER BY device_id").fetchall()]
         counts = {"pass": 0, "partial": 0, "fail": 0, "not_tested": 0}
+        control_counts = {status: 0 for status in ("pass", "partial", "fail", "not_tested", "review_required")}
         for device_id in device_ids:
             rows = _evaluator_rows_for_scope(conn, device_id=device_id)
             counts[device_overall_status(rows)] += 1
+            # Per-control tally across the same rows, so this can never
+            # disagree with GET /nca/domains, which aggregates identically.
+            for domain in domain_summary(rows).values():
+                for status, n in domain.items():
+                    control_counts[status] = control_counts.get(status, 0) + n
 
         last_assessment = conn.execute("SELECT MAX(assessed_at) FROM compliance_assessments").fetchone()[0]
         total_controls = conn.execute(
@@ -264,6 +270,22 @@ def get_nca_summary():
     assessed = counts["pass"] + counts["partial"] + counts["fail"]
     overall_percentage = round(counts["pass"] / assessed * 100) if assessed else None
 
+    # Two genuinely different rates, kept separate because they answer
+    # different questions and had been conflated: overall_pass_percentage is
+    # the share of *devices* fully passing (0 whenever every device has at
+    # least one failing control, which is the normal state of a real fleet),
+    # while this is the share of assessed *controls* that passed. The NCA
+    # Compliance page's gauge is titled "NCA Control Pass Rate" and was
+    # rendering the device figure, so 24 genuinely passing controls still
+    # displayed as 0%. Denominator excludes not_tested for the same reason
+    # device percentages do - an unassessed control is missing coverage, not
+    # a failure - and includes review_required, which is assessed but not yet
+    # a pass.
+    control_assessed = (
+        control_counts["pass"] + control_counts["partial"] + control_counts["fail"] + control_counts["review_required"]
+    )
+    control_percentage = round(control_counts["pass"] / control_assessed * 100) if control_assessed else None
+
     return {
         "product_label": PRODUCT_LABEL,
         "framework": "NCA-CGIoT",
@@ -272,6 +294,8 @@ def get_nca_summary():
         "total_devices": len(device_ids),
         "device_counts": counts,
         "overall_pass_percentage": overall_percentage,
+        "control_counts": control_counts,
+        "control_pass_percentage": control_percentage,
         "total_controls": total_controls,
         "last_assessment_at": last_assessment.isoformat() if last_assessment else None,
         "status_definitions": STATUS_DEFINITIONS,

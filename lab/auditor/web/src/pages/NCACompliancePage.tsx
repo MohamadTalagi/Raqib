@@ -257,15 +257,27 @@ export function NCACompliancePage() {
               <CardContent className="flex flex-col items-center gap-3 pb-6">
                 {loading || !summary.data ? (
                   <Skeleton className="h-40 w-40 rounded-full" />
-                ) : summary.data.overall_pass_percentage === null ? (
+                ) : summary.data.control_pass_percentage === null ? (
                   <div className="flex h-40 w-40 items-center justify-center rounded-full border border-[var(--color-border)]">
                     <Gauge className="h-8 w-8 text-[var(--color-text-muted)]" />
                   </div>
                 ) : (
-                  <ComplianceGauge score={summary.data.overall_pass_percentage} sourceLabel="NCA CONTROLS" />
+                  /* Controls, not devices - this card is titled "NCA Control
+                     Pass Rate" but rendered the device pass rate, which is 0
+                     whenever every device has at least one failing control,
+                     so genuinely passing controls showed as 0%. The device
+                     figure is still shown, by the status tiles above. */
+                  <ComplianceGauge score={summary.data.control_pass_percentage} sourceLabel="NCA CONTROLS" />
                 )}
                 <p className="text-center text-xs text-[var(--color-text-muted)]">
-                  Informational only, never the strict per-control status
+                  {summary.data
+                    ? `${summary.data.control_counts.pass} of ${
+                        summary.data.control_counts.pass +
+                        summary.data.control_counts.partial +
+                        summary.data.control_counts.fail +
+                        summary.data.control_counts.review_required
+                      } assessed controls passing`
+                    : "Informational only, never the strict per-control status"}
                 </p>
               </CardContent>
             </Card>

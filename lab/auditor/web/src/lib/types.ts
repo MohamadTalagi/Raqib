@@ -523,7 +523,17 @@ export interface NCASummary {
   disclaimer: string;
   total_devices: number;
   device_counts: NCADomainCounts;
+  /** Share of *devices* fully passing. Naturally 0 whenever every device has
+   * at least one failing control, so it is not the right number for a
+   * control-level gauge - see control_pass_percentage. */
   overall_pass_percentage: number | null;
+  /** Per-control status tally across every device scope, aggregated the same
+   * way GET /nca/domains does so the two can never disagree. */
+  control_counts: NCADomainCounts;
+  /** Share of *assessed controls* that passed (not_tested excluded from the
+   * denominator, review_required included). What the "NCA Control Pass Rate"
+   * gauge shows. */
+  control_pass_percentage: number | null;
   total_controls: number;
   last_assessment_at: string | null;
   status_definitions?: Record<string, string>;

@@ -17,6 +17,11 @@ const SUMMARY: NCASummary = {
   total_devices: 2,
   device_counts: { pass: 1, partial: 0, fail: 1, not_tested: 0, review_required: 0 },
   overall_pass_percentage: 50,
+  // Deliberately different from the device rate, so a test asserting on the
+  // gauge cannot pass by reading the wrong one - which is the bug this
+  // fixture now guards against.
+  control_counts: { pass: 12, partial: 2, fail: 4, not_tested: 30, review_required: 2 },
+  control_pass_percentage: 60,
   total_controls: 81,
   last_assessment_at: "2026-07-20T00:00:00Z",
 };
@@ -78,12 +83,14 @@ describe("NCACompliancePage", () => {
     expect(screen.getByText(/not an NCA certification/i)).toBeInTheDocument();
   });
 
-  it("shows summary stat tiles and the overall pass rate as a gauge", async () => {
+  it("shows summary stat tiles and the control pass rate as a gauge", async () => {
     setup();
     renderPage();
 
     expect(await screen.findByText("Devices assessed")).toBeInTheDocument();
-    expect(screen.getByText("50")).toBeInTheDocument();
+    // 60 = control_pass_percentage. This asserted 50 (the *device* rate)
+    // until the gauge was corrected to show what its title claims.
+    expect(screen.getByText("60")).toBeInTheDocument();
     expect(screen.getByText("81")).toBeInTheDocument();
   });
 
@@ -273,5 +280,22 @@ describe("NCACompliancePage", () => {
     await user.click(screen.getByRole("button", { name: /recompute from evidence/i }));
 
     expect(await screen.findByText(/no new automated findings/i)).toBeInTheDocument();
+  });
+
+  it("shows the control pass rate on the control-pass-rate gauge, not the device rate", async () => {
+    // Regression: the card is titled "NCA Control Pass Rate" but rendered
+    // overall_pass_percentage, which counts devices. A device is only "pass"
+    // when every applicable control passes, so on any real fleet it is 0 -
+    // and 24 genuinely passing controls displayed as 0%.
+    vi.spyOn(api, "ncaSummary").mockResolvedValue(SUMMARY);
+    vi.spyOn(api, "ncaDomains").mockResolvedValue(DOMAINS);
+    vi.spyOn(api, "ncaDevices").mockResolvedValue(DEVICES);
+
+    renderPage();
+
+    expect(await screen.findByText("NCA Control Pass Rate")).toBeInTheDocument();
+    expect(await screen.findByText("60")).toBeInTheDocument();
+    expect(screen.queryByText("50")).not.toBeInTheDocument();
+    expect(screen.getByText(/12 of 20 assessed controls passing/i)).toBeInTheDocument();
   });
 });
