@@ -189,6 +189,27 @@ All are idempotent — safe to re-run.
 - Clean-deployment smoke test: `bash scripts/smoke_test.sh` from the repo root brings the stack up
   and asserts every health-checked service reports healthy plus a few HTTP endpoints respond.
 
+### Running the per-device fixture tests (56 across the 6 devices)
+
+Each device's suite imports its own `app` package, so it must be run **from that device's own
+directory**, not from the repo root — `pytest lab/devices` fails collection with
+`ModuleNotFoundError: No module named 'app'`, which is a path artefact, not a broken test:
+
+```bash
+cd lab/devices/smart-camera && python -m pytest tests -q   # 23; repeat per device
+```
+
+They also need three packages the auditor-side venv doesn't otherwise pull in, and which are **not**
+in the device images either (those ship app code without tests), so neither the host venv nor
+`docker compose exec` works until you install them:
+
+```bash
+python -m pip install pydantic-settings==2.5.2 pymodbus==3.6.9 paho-mqtt==1.6.1
+```
+
+Expected: 23 smart-camera + 9 router-gateway + 8 smart-lock + 7 nvr + 5 smart-speaker + 4 plc-gateway
+= **56 passing**.
+
 ### A note on where data lives
 
 Evidence recorded through the dashboard's **Run Scan** flow is written to the database only — it does
