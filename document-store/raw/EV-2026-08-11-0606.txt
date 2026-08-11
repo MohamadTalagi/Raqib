@@ -1,0 +1,7 @@
+mac=B0:44:9C:00:22:01
+claimed_vendor=Yale
+mac_disclosed=True
+oui=B0449C
+oui_vendor=Assa Abloy AB - Yale
+oui_source=ieee-registry
+lookup_error=

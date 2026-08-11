@@ -59,8 +59,10 @@ export function AutomatedRunDialog({ open, onCancel, onStarted }: AutomatedRunDi
               informational only, never affects risk scoring or compliance verdicts.
             </li>
             <li>
-              Auto-records NCA compliance assessments from matching evidence, marked{" "}
-              <span className="font-mono text-[var(--color-medium)]">auto-recorded</span> - not a human sign-off.
+              Auto-records failing and review-required NCA compliance assessments from matching evidence, marked{" "}
+              <span className="font-mono text-[var(--color-medium)]">auto-recorded</span> - not a human sign-off. A
+              suggested <span className="font-mono">pass</span> is never auto-recorded: it waits for you to sign it in
+              NCA Compliance.
             </li>
           </ol>
           <p className="text-xs text-[var(--color-text-muted)]">

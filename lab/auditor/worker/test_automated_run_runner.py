@@ -250,7 +250,7 @@ def test_run_nca_compliance_auto_records_with_attestation_and_auto_recorded_flag
         }}),
     ]
 
-    summary = {"nca_assessments_recorded": 0, "errors": []}
+    summary = {"nca_assessments_recorded": 0, "nca_passes_left_for_review": 0, "errors": []}
     _run_nca_compliance([{"device_id": "device-insecure"}], summary)
 
     record_call = mock_requests.post.call_args_list[-1]
@@ -263,6 +263,42 @@ def test_run_nca_compliance_auto_records_with_attestation_and_auto_recorded_flag
     assert payload["assessed_by"] == "Fully Automated Run"
     assert "not reviewed by a human" in payload["attestation_statement"]
     assert summary["nca_assessments_recorded"] == 1
+
+
+@patch("automated_run_runner.requests")
+def test_run_nca_compliance_never_auto_records_a_suggested_pass(mock_requests):
+    """A machine may flag a problem unattended; only a person certifies
+    compliance. Auto-recording a suggested pass would have this run assert,
+    under its own system attestation, that a device meets an NCA guideline
+    with nobody having looked - so passes are counted and left for a human
+    while fail/review_required still record automatically."""
+    mock_requests.post.side_effect = [
+        _response(200, {}),  # POST /nca/assessments/recompute
+        _response(201, {"id": "ASM-1"}),  # POST /nca/assessments (the fail only)
+    ]
+    mock_requests.get.side_effect = [
+        _response(200, [{"id": "2-2-2", "severity": "critical"}, {"id": "2-15-2", "severity": "high"}]),
+        _response(200, {"suggestions": {
+            "2-2-2": {
+                "suggested_status": "fail", "evidence_ids": ["EV-1"], "test_ids": ["T"],
+                "reasons": ["Default credentials accepted (evidence EV-1)"],
+            },
+            "2-15-2": {
+                "suggested_status": "pass", "evidence_ids": ["EV-2"], "test_ids": ["T"],
+                "reasons": ["Telnet was not open (evidence EV-2)"],
+            },
+        }}),
+    ]
+
+    summary = {"nca_assessments_recorded": 0, "nca_passes_left_for_review": 0, "errors": []}
+    _run_nca_compliance([{"device_id": "device-insecure"}], summary)
+
+    recorded = [c.kwargs["json"] for c in mock_requests.post.call_args_list if "json" in c.kwargs]
+    assert [p["control_id"] for p in recorded] == ["2-2-2"]
+    assert all(p["status"] != "pass" for p in recorded)
+    assert summary["nca_assessments_recorded"] == 1
+    assert summary["nca_passes_left_for_review"] == 1
+    assert summary["errors"] == []
 
 
 # -- process_automated_run: cancellation and end-to-end summary -------------

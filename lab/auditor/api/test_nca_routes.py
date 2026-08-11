@@ -872,6 +872,90 @@ def test_suggestions_fail_dominates_review_for_same_control(client, conn):
     assert suggestion["suggested_status"] == "fail"
 
 
+def test_suggestions_pass_from_matching_clean_evidence(client, conn):
+    # The gap this closed: before pass mappings existed, clean evidence
+    # produced no suggestion at all, so a device that genuinely passed a
+    # check was indistinguishable from one never tested and sat at
+    # not_tested with nothing for an auditor to act on.
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "device-hardened")
+    _seed_mapping(
+        conn, CONTROL_ID, "default-creds-rejected",
+        '{"field": "observations.default_creds", "op": "equals", "value": false}',
+        verdict_hint="pass",
+        description="Every default credential pair tried was rejected.",
+    )
+    _seed_evidence(conn, "EV-SUG-0010", "device-hardened", '{"default_creds": false}',
+                   test_id="TEST-AUTH-DEFAULT-CREDS")
+
+    suggestion = client.get("/nca/devices/device-hardened/suggestions").json()["suggestions"][CONTROL_ID]
+    assert suggestion["suggested_status"] == "pass"
+    assert "EV-SUG-0010" in suggestion["evidence_ids"]
+
+
+def test_suggestions_fail_dominates_pass_for_same_control(client, conn):
+    # The precedence that makes a permissive pass rule safe: one real
+    # problem outweighs any number of clean aspects, so a control with a
+    # clean TLS reading AND an open Modbus port still suggests fail.
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "device-partial")
+    _seed_mapping(
+        conn, CONTROL_ID, "clean-one",
+        '{"field": "observations.mqtt_tls", "op": "equals", "value": true}',
+        verdict_hint="pass",
+    )
+    _seed_mapping(
+        conn, CONTROL_ID, "fail-one",
+        '{"field": "observations.modbus_port_open", "op": "equals", "value": true}',
+        verdict_hint="fail",
+    )
+    _seed_evidence(conn, "EV-SUG-0011", "device-partial",
+                   '{"mqtt_tls": true, "modbus_port_open": true}')
+
+    suggestion = client.get("/nca/devices/device-partial/suggestions").json()["suggestions"][CONTROL_ID]
+    assert suggestion["suggested_status"] == "fail"
+
+
+def test_suggestions_review_required_dominates_pass_for_same_control(client, conn):
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "device-partial")
+    _seed_mapping(
+        conn, CONTROL_ID, "clean-one",
+        '{"field": "observations.mqtt_tls", "op": "equals", "value": true}',
+        verdict_hint="pass",
+    )
+    _seed_mapping(
+        conn, CONTROL_ID, "review-one",
+        '{"field": "observations.manifest_present", "op": "equals", "value": true}',
+        verdict_hint="review_required",
+    )
+    _seed_evidence(conn, "EV-SUG-0012", "device-partial",
+                   '{"mqtt_tls": true, "manifest_present": true}')
+
+    suggestion = client.get("/nca/devices/device-partial/suggestions").json()["suggestions"][CONTROL_ID]
+    assert suggestion["suggested_status"] == "review_required"
+
+
+def test_suggestions_report_which_aspects_were_actually_checked(client, conn):
+    # Because one clean aspect is enough to suggest pass, the auditor
+    # signing it must be able to see that it rested on one check and not on
+    # every aspect the control covers.
+    _seed_control(conn, CONTROL_ID)
+    _register_device(conn, "device-hardened")
+    _seed_mapping(
+        conn, CONTROL_ID, "clean-tls",
+        '{"field": "observations.mqtt_tls", "op": "equals", "value": true}',
+        verdict_hint="pass",
+    )
+    _seed_evidence(conn, "EV-SUG-0013", "device-hardened", '{"mqtt_tls": true, "modbus_port_open": false}')
+
+    suggestion = client.get("/nca/devices/device-hardened/suggestions").json()["suggestions"][CONTROL_ID]
+    assert suggestion["suggested_status"] == "pass"
+    # Only the aspect a mapping actually keyed on - not every observation
+    # that happened to be in the evidence row.
+    assert suggestion["checked_aspects"] == ["mqtt_tls"]
+
+
 def test_suggestions_ignore_other_devices_evidence(client, conn):
     _seed_control(conn, CONTROL_ID)
     _register_device(conn, "device-insecure")

@@ -239,7 +239,7 @@ CREATE TABLE compliance_finding_mappings (
     -- for a manual review ('review_required'). Read by the per-device
     -- assessment workspace's auto-verdict suggestions; see migration 007.
     verdict_hint            TEXT NOT NULL DEFAULT 'fail'
-                            CHECK (verdict_hint IN ('fail', 'review_required')),
+                            CHECK (verdict_hint IN ('fail', 'review_required', 'pass')),
     UNIQUE (finding_key, control_id)
 );
 

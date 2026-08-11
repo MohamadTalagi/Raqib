@@ -1,6 +1,29 @@
 from policies.nca.build_catalog import CLOUD_GUIDELINES, SUPPLIER_GUIDELINES, control_id
-from policies.nca.finding_mappings import map_evidence_to_controls
+from policies.nca.finding_mappings import map_evidence_to_controls, map_evidence_to_mappings
 from policies.nca.seed_finding_mappings import MAPPINGS
+
+
+def controls_by_hint(evidence: dict, hint: str) -> list[str]:
+    """The controls this evidence maps to via mappings carrying one specific
+    verdict_hint.
+
+    Needed because clean evidence is no longer inert. Until pass mappings
+    were seeded, "clean evidence maps to no control at all" and "clean
+    evidence never produces a fail" were the same assertion, and nine tests
+    below were written as the former. They are now different: clean evidence
+    deliberately maps to a *pass* mapping. The invariant those tests actually
+    exist to protect is the latter - a clean reading must never be turned
+    into a failing suggestion - so they assert that directly instead of
+    asserting an emptiness that is no longer true.
+    """
+    # .get(..., "fail") because most entries in MAPPINGS omit verdict_hint
+    # entirely - seed() supplies the "fail" default on insert, so the
+    # in-memory dicts genuinely have no such key.
+    return [
+        m["control_id"]
+        for m in map_evidence_to_mappings(evidence, MAPPINGS)
+        if m.get("verdict_hint", "fail") == hint
+    ]
 
 
 def test_every_mapping_control_id_is_a_real_guideline_reference():
@@ -20,10 +43,10 @@ def test_default_creds_evidence_maps_to_2_2_2():
     assert control_id("2-2-2") in matched
 
 
-def test_no_default_creds_does_not_map_to_2_2_2_via_that_finding():
+def test_no_default_creds_suggests_pass_for_2_2_2_never_fail():
     evidence = {"test_id": "TEST-AUTH-DEFAULT-CREDS", "observations": {"default_creds": False}}
-    matched = map_evidence_to_controls(evidence, MAPPINGS)
-    assert control_id("2-2-2") not in matched
+    assert control_id("2-2-2") not in controls_by_hint(evidence, "fail")
+    assert control_id("2-2-2") in controls_by_hint(evidence, "pass")
 
 
 def test_telnet_open_port_maps_to_2_15_2():
@@ -35,10 +58,10 @@ def test_telnet_open_port_maps_to_2_15_2():
     assert control_id("2-15-2") in matched
 
 
-def test_no_telnet_port_does_not_map_to_2_15_2():
+def test_no_telnet_port_suggests_pass_for_2_15_2_never_fail():
     evidence = {"test_id": "TEST-NET-PORTSCAN", "observations": {"open_ports": [443], "services": []}}
-    matched = map_evidence_to_controls(evidence, MAPPINGS)
-    assert control_id("2-15-2") not in matched
+    assert control_id("2-15-2") not in controls_by_hint(evidence, "fail")
+    assert control_id("2-15-2") in controls_by_hint(evidence, "pass")
 
 
 def test_unencrypted_mqtt_maps_to_both_2_4_3_and_2_7_2():
@@ -50,12 +73,19 @@ def test_unencrypted_mqtt_maps_to_both_2_4_3_and_2_7_2():
     assert control_id("2-4-2") in matched
 
 
-def test_encrypted_mqtt_does_not_map_to_cleartext_controls():
+def test_encrypted_mqtt_never_fails_the_cleartext_controls_and_suggests_pass():
     evidence = {"test_id": "TEST-MQTT-OPEN", "observations": {"mqtt_tls": True, "mqtt_anonymous": False}}
-    matched = map_evidence_to_controls(evidence, MAPPINGS)
-    assert control_id("2-4-3") not in matched
-    assert control_id("2-7-2") not in matched
-    assert control_id("2-4-2") not in matched
+    failed = controls_by_hint(evidence, "fail")
+    assert control_id("2-4-3") not in failed
+    assert control_id("2-7-2") not in failed
+    assert control_id("2-4-2") not in failed
+    passed = controls_by_hint(evidence, "pass")
+    assert control_id("2-4-3") in passed
+    assert control_id("2-7-2") in passed
+    # 2-4-2 (peer authentication) has no pass mapping: mqtt_anonymous being
+    # false means this broker refused THIS anonymous subscribe, which is not
+    # the same as demonstrating authentication is enforced generally.
+    assert control_id("2-4-2") not in passed
 
 
 def test_plaintext_packet_capture_maps_to_transport_controls():
@@ -77,10 +107,22 @@ def test_deprecated_tls_version_maps_to_2_4_3():
     assert control_id("2-4-3") in matched
 
 
-def test_current_tls_version_and_strong_cipher_maps_to_nothing():
+def test_current_tls_version_and_strong_cipher_suggests_pass_for_2_4_3():
     evidence = {"test_id": "TEST-TLS-CONFIG", "observations": {"weak_cipher": False, "tls_version": "TLSv1.3"}}
-    matched = map_evidence_to_controls(evidence, MAPPINGS)
-    assert matched == []
+    assert controls_by_hint(evidence, "fail") == []
+    assert control_id("2-4-3") in controls_by_hint(evidence, "pass")
+
+
+def test_failed_tls_handshake_never_suggests_pass_for_2_4_3():
+    # The guard behind seeding only a positive TLS pass rule. A refused
+    # connection still parses: weak_cipher is `"certificate key too weak" in
+    # output`, so it is False, and tls_version is None because the "Protocol
+    # version:" line never appeared. A `weak_cipher == False` or
+    # `tls_version not_in [deprecated]` pass rule would both fire here and
+    # suggest pass for a blocking guideline off a probe that never connected.
+    evidence = {"test_id": "TEST-TLS-CONFIG", "observations": {"weak_cipher": False, "tls_version": None}}
+    assert controls_by_hint(evidence, "pass") == []
+    assert controls_by_hint(evidence, "fail") == []
 
 
 def test_hardcoded_firmware_secret_maps_to_2_2_2():
@@ -95,10 +137,10 @@ def test_missing_security_headers_maps_to_2_14_1():
     assert control_id("2-14-1") in matched
 
 
-def test_all_security_headers_present_maps_to_nothing_for_that_finding():
+def test_all_security_headers_present_suggests_pass_for_2_14_1_never_fail():
     evidence = {"test_id": "TEST-HTTP-HEADERS", "observations": {"missing_security_headers": []}}
-    matched = map_evidence_to_controls(evidence, MAPPINGS)
-    assert control_id("2-14-1") not in matched
+    assert control_id("2-14-1") not in controls_by_hint(evidence, "fail")
+    assert control_id("2-14-1") in controls_by_hint(evidence, "pass")
 
 
 def test_disabled_mapping_is_never_matched():
@@ -126,13 +168,13 @@ def test_tamper_detection_not_wired_maps_to_2_13_2():
     assert control_id("2-13-2") in matched
 
 
-def test_tamper_detection_wired_does_not_map_to_2_13_2():
+def test_tamper_detection_wired_suggests_pass_for_2_13_2_never_fail():
     evidence = {
         "test_id": "TEST-PHYSICAL-TAMPER-STATUS",
         "observations": {"tamper_detection_wired": True},
     }
-    matched = map_evidence_to_controls(evidence, MAPPINGS)
-    assert control_id("2-13-2") not in matched
+    assert control_id("2-13-2") not in controls_by_hint(evidence, "fail")
+    assert control_id("2-13-2") in controls_by_hint(evidence, "pass")
 
 
 def test_modbus_open_port_maps_to_2_15_2_and_2_4_3():
@@ -158,14 +200,17 @@ def test_rtsp_unauthenticated_stream_maps_to_2_6_2_and_2_6_3():
     assert control_id("2-6-3") in matched
 
 
-def test_rtsp_authenticated_stream_does_not_map_to_data_protection_controls():
+def test_rtsp_authenticated_stream_suggests_pass_for_data_protection_never_fail():
     evidence = {
         "test_id": "TEST-RTSP-PROBE",
         "observations": {"unauthenticated_stream_access": False},
     }
-    matched = map_evidence_to_controls(evidence, MAPPINGS)
-    assert control_id("2-6-2") not in matched
-    assert control_id("2-6-3") not in matched
+    failed = controls_by_hint(evidence, "fail")
+    assert control_id("2-6-2") not in failed
+    assert control_id("2-6-3") not in failed
+    passed = controls_by_hint(evidence, "pass")
+    assert control_id("2-6-2") in passed
+    assert control_id("2-6-3") in passed
 
 
 def test_mdns_voice_log_unencrypted_maps_to_2_6_2_and_2_6_3():
@@ -225,10 +270,10 @@ def test_no_client_cert_required_maps_to_2_4_5():
     assert control_id("2-4-5") in matched
 
 
-def test_client_cert_required_does_not_map_to_2_4_5():
+def test_client_cert_required_suggests_pass_for_2_4_5_never_fail():
     evidence = {"test_id": "TEST-TLS-CLIENT-AUTH", "observations": {"client_cert_requested": True}}
-    matched = map_evidence_to_controls(evidence, MAPPINGS)
-    assert control_id("2-4-5") not in matched
+    assert control_id("2-4-5") not in controls_by_hint(evidence, "fail")
+    assert control_id("2-4-5") in controls_by_hint(evidence, "pass")
 
 
 def test_missing_security_log_endpoint_maps_to_2_11_1():
@@ -243,7 +288,7 @@ def test_missing_monitoring_endpoint_maps_to_2_11_2():
     assert control_id("2-11-2") in matched
 
 
-def test_present_monitoring_endpoint_does_not_map_to_2_11_2():
+def test_present_monitoring_endpoint_suggests_pass_for_2_11_2_never_fail():
     evidence = {"test_id": "TEST-MONITORING-ENDPOINT", "observations": {"monitoring_endpoint_present": True}}
-    matched = map_evidence_to_controls(evidence, MAPPINGS)
-    assert control_id("2-11-2") not in matched
+    assert control_id("2-11-2") not in controls_by_hint(evidence, "fail")
+    assert control_id("2-11-2") in controls_by_hint(evidence, "pass")

@@ -141,6 +141,55 @@ groups** — a network or device scan cannot demonstrate policy approval, person
 training, audit outcomes, or supplier/cloud contract compliance. Those stay
 manual-assessment-only, enforced by `test_finding_mappings.py`'s own regression test.
 
+### Suggested passes (2026-08-11)
+
+Until this change every mapping fired on an *insecure* condition, so clean evidence
+produced no suggestion at all. That made a device which genuinely passed a check
+indistinguishable from one that was never tested — both sat at `not_tested` with
+nothing for an auditor to act on, and only failures were ever actionable.
+
+18 pass-condition mappings (`verdict_hint = "pass"`, added to the column's CHECK by
+migration 017) fix that. Each is the exact inverse of a fail rule, keyed on the same
+observation field, so `finding_mappings._field_present` still guarantees it can only
+fire on evidence that genuinely carries that observation — "the field is present and
+clean" is a real positive signal, never inferred from silence.
+
+**Precedence: fail > review_required > pass.** A control matched by both a clean
+aspect and a failing one suggests fail. Confirmed live on `device-partial`, whose
+2-4-3 matches `weak_cipher` (fail) and `tls_version` (pass) and correctly resolves
+to fail.
+
+**One clean aspect is enough** — symmetric with fail, and the project owner's explicit
+choice over a stricter "every applicable aspect must have been checked" rule. Its
+trade-off is real and deliberate: 2-4-3 covers six independent aspects, so a device can
+be suggested pass on one clean TLS reading while the other five were never run. Two
+things bound it:
+
+- Every suggestion carries **`checked_aspects`**, the observation fields the matched
+  mappings keyed on. `RecordAssessmentDialog` shows this on a suggested pass ("Based on
+  1 check that actually ran: `tls_version` … confirm that is enough before signing"), so
+  the person certifying compliance can see the basis rather than a bare word.
+- **A pass mapping is only seeded where a clean reading proves the probe ran.** Three
+  obvious inverses were deliberately left out because each reads clean when the check
+  *failed to happen*: `weak_cipher == False` (a substring test — a refused connection
+  looks identical to a strong cert), `tls_version not_in [deprecated]` (`None not in
+  [...]` is `True`), and `plaintext_get_visible == False` (`docs/errors/023` records
+  this project's own zero-packet capture flake). A `match_rule` is a single predicate —
+  `policy_engine.py` supports no conjunction — so "clean AND the probe ran" cannot be
+  expressed, and 2-4-3 is a *blocking* guideline where a false pass would flip a
+  device's whole readiness classification. The positive rule
+  `tls_version in ["TLSv1.2", "TLSv1.3"]` is used instead; it can only match a
+  handshake that completed. `test_failed_tls_handshake_never_suggests_pass_for_2_4_3`
+  pins this.
+
+**The Fully Automated Run never auto-records a suggested pass** (it still auto-records
+fail and review_required, counting skipped passes as `nca_passes_left_for_review`). A
+machine may flag a suspected problem unattended; only a person certifies compliance —
+auto-recording a pass would have the run assert under its own system attestation that a
+device meets an NCA guideline with nobody having looked. Verified live: after a scoped
+run, `SELECT count(*) FROM compliance_assessments WHERE auto_recorded AND status='pass'`
+returns 0.
+
 ## Guided checklists (automated suggestion for the 60 non-device guidelines)
 
 The 60 organizational/mobile/supplier/cloud guidelines above can never get an

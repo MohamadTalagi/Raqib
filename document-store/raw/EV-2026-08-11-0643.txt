@@ -1,0 +1,9 @@
+vendor=Hikvision
+model=DS-2CD2143G2-I
+firmware_version=V5.3.0 build 160530
+cpe_matched=True
+cpe=o:hikvision:ds-2cd2143g2-i\(s\)_firmware
+index_available=True
+device_cves=[{"id": "CVE-2021-36260", "cvss": 9.8, "summary": "A command injection vulnerability in the web server of some Hikvision product. Due to the insufficient input validation, attacker can exploit the vulnerability to launch a command injection attack by sending some messages with malicious commands.", "kev_listed": true, "kev_date_added": "2022-01-10", "version_range": {"start_including": null, "start_excluding": null, "end_including": null, "end_excluding": null, "unbounded": true}}]
+schneider_csaf_applicable=False
+schneider_csaf_ranges={}

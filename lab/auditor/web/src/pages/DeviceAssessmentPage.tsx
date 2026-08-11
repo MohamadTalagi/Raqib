@@ -217,7 +217,10 @@ export function DeviceAssessmentPage() {
                             {suggestion && !assessed && (
                               <span
                                 className="inline-flex items-center gap-1 rounded-md border border-[var(--color-brand)]/40 bg-[color-mix(in_oklab,var(--color-brand)_8%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-brand)]"
-                                title={suggestion.reasons.join("\n")}
+                                title={[
+                                  ...suggestion.reasons,
+                                  `Checks that ran: ${suggestion.checked_aspects.join(", ") || "none recorded"}`,
+                                ].join("\n")}
                               >
                                 <Sparkles className="h-3 w-3" />
                                 suggests {suggestion.suggested_status.replace("_", " ")}

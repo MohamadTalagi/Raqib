@@ -1,0 +1,3 @@
+/api/access-log 200
+/api/voice-log 404
+/api/logs 404

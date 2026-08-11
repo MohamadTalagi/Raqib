@@ -1,0 +1,5 @@
+vendor=Dahua
+model=NVR4108-8P
+firmware_version=3.218.0000019.0
+cpe_matched=False
+cpe=

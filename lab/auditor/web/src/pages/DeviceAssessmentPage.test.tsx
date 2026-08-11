@@ -106,6 +106,7 @@ const SUGGESTIONS: NCADeviceSuggestions = {
       evidence_ids: ["EV-1"],
       test_ids: ["TEST-AUTH-DEFAULT-CREDS"],
       reasons: ["Default credential accepted. (evidence EV-1)"],
+      checked_aspects: ["default_creds"],
     },
   },
 };

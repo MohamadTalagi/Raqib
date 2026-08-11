@@ -297,6 +297,210 @@ MAPPINGS = [
         "match_rule": {"field": "observations.monitoring_endpoint_present", "op": "equals", "value": False},
         "manufacturer_principle": None,
     },
+    # ------------------------------------------------------------------
+    # Pass-condition mappings (verdict_hint "pass").
+    #
+    # Every mapping above this block fires on an insecure condition. That
+    # made "absence of a match" the only possible reading of clean evidence,
+    # and absence is genuinely ambiguous - a collector that ran and found
+    # nothing wrong is indistinguishable from a collector that never ran. So
+    # a device with real, clean evidence sat at not_tested with no
+    # suggestion, and only failures were ever actionable.
+    #
+    # Each rule below is the exact inverse of a fail rule above, keyed on the
+    # same observation field, so it can only fire on evidence that genuinely
+    # carries that observation (finding_mappings._field_present enforces
+    # this - a rule is never evaluated against evidence from an unrelated
+    # collector). "The field is present and clean" is a real positive
+    # signal; it is not inferred from silence.
+    #
+    # Per the owner's decision, this is symmetric with fail: ONE matching
+    # pass mapping suggests pass for that control. The suggestion carries
+    # `checked_aspects` so an auditor can see which aspects were actually
+    # tested before signing - important for a control like 2-4-3 that has six
+    # independent fail-mappings, where one clean aspect does not mean the
+    # other five were examined. Precedence in the API resolves
+    # fail > review_required > pass.
+    {
+        "finding_key": "default-creds-rejected",
+        "description": "Every well-known default credential pair tried was rejected on login.",
+        "control_id": control_id("2-2-2"),
+        "match_rule": {"field": "observations.default_creds", "op": "equals", "value": False},
+        "manufacturer_principle": "Manufacturer Principle 5",
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "no-firmware-hardcoded-secret",
+        "description": "No hard-coded password pattern was found in the firmware archive.",
+        "control_id": control_id("2-2-2"),
+        "match_rule": {"field": "observations.hardcoded_secret_found", "op": "equals", "value": False},
+        "manufacturer_principle": "Manufacturer Principle 5",
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "no-api-key-exposed-anonymously",
+        "description": "No live API key was present in the unauthenticated response.",
+        "control_id": control_id("2-2-2"),
+        "match_rule": {"field": "observations.api_key_exposed", "op": "equals", "value": False},
+        "manufacturer_principle": "Manufacturer Principle 5",
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "dashboard-requires-session",
+        "description": "The authenticated page was not reachable without a session carried over from login.",
+        "control_id": control_id("2-2-1"),
+        "match_rule": {
+            "field": "observations.dashboard_accessible_without_session",
+            "op": "equals",
+            "value": False,
+        },
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "session-cookie-issued",
+        "description": "Login issued a session cookie, so a session boundary is enforced.",
+        "control_id": control_id("2-2-1"),
+        "match_rule": {"field": "observations.session_cookie_issued", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "no-anonymous-config-access",
+        "description": "The device configuration endpoint refused to return data with no credentials supplied.",
+        "control_id": control_id("2-2-1"),
+        "match_rule": {"field": "observations.anonymous_access_allowed", "op": "equals", "value": False},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "admin-endpoint-requires-authentication",
+        "description": "The administrative action was refused with no Authorization header supplied.",
+        "control_id": control_id("2-14-1"),
+        "match_rule": {"field": "observations.admin_unauthenticated", "op": "equals", "value": False},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "unnecessary-service-telnet-closed",
+        "description": "Telnet (port 23) was not open during a full port-range scan.",
+        "control_id": control_id("2-15-2"),
+        "match_rule": {"field": "observations.open_ports", "op": "not_contains", "value": 23},
+        "manufacturer_principle": "Manufacturer Principle 3",
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "mqtt-encrypted-transport-transactions",
+        "description": "MQTT traffic is TLS-encrypted, so payloads and credentials are not visible on the wire.",
+        "control_id": control_id("2-4-3"),
+        "match_rule": {"field": "observations.mqtt_tls", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "mqtt-encrypted-transport-comms",
+        "description": "MQTT traffic is TLS-encrypted, so payloads and credentials are not visible on the wire.",
+        "control_id": control_id("2-7-2"),
+        "match_rule": {"field": "observations.mqtt_tls", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    # Deliberately NOT mirrored as pass mappings, because the inverse of
+    # these fail rules is not proof of anything - each is clean both when the
+    # device is genuinely fine and when the probe never got a result, and a
+    # match_rule is a single predicate (policy_engine.py supports no
+    # conjunction) so "clean AND the probe actually ran" cannot be expressed:
+    #
+    #   - weak_cipher == False. It is set by `"certificate key too weak" in
+    #     output`, so a refused connection or a timeout produces False
+    #     exactly like a strong 2048-bit cert does.
+    #   - tls_version not_in [deprecated]. tls_version is None when the
+    #     "Protocol version:" line never appeared, and `None not in [...]`
+    #     is True, so a failed handshake would read as a current version.
+    #   - plaintext_get_visible == False. docs/errors/023 records this
+    #     project's own real zero-packet capture flake on this host; a
+    #     capture that saw nothing reports the same False as one that saw
+    #     only ciphertext.
+    #
+    # 2-4-3 is a blocking guideline, so a false pass there flips a device's
+    # whole readiness classification. The positive TLS signal below is used
+    # instead: it can only match a handshake that genuinely completed.
+    {
+        "finding_key": "tls-current-protocol-negotiated",
+        "description": "A current TLS protocol version was actually negotiated with the device.",
+        "control_id": control_id("2-4-3"),
+        "match_rule": {
+            "field": "observations.tls_version",
+            "op": "in",
+            "value": ["TLSv1.2", "TLSv1.3"],
+        },
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "physical-tamper-detection-wired",
+        "description": "The device reports a hardware tamper-detection mechanism wired up.",
+        "control_id": control_id("2-13-2"),
+        "match_rule": {"field": "observations.tamper_detection_wired", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "rtsp-stream-requires-authentication-protection",
+        "description": "The RTSP video stream refused access without authentication.",
+        "control_id": control_id("2-6-2"),
+        "match_rule": {
+            "field": "observations.unauthenticated_stream_access",
+            "op": "equals",
+            "value": False,
+        },
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "rtsp-stream-requires-authentication-minimization",
+        "description": "The RTSP video stream refused access without authentication.",
+        "control_id": control_id("2-6-3"),
+        "match_rule": {
+            "field": "observations.unauthenticated_stream_access",
+            "op": "equals",
+            "value": False,
+        },
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "tls-client-certificate-required",
+        "description": "The TLS handshake requests a client certificate, so peers are cryptographically authenticated.",
+        "control_id": control_id("2-4-5"),
+        "match_rule": {"field": "observations.client_cert_requested", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "security-log-endpoint-present",
+        "description": "A conventional security/access-log endpoint was found on this device.",
+        "control_id": control_id("2-11-1"),
+        "match_rule": {"field": "observations.security_log_endpoint_present", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "diagnostic-monitoring-endpoint-present",
+        "description": "A conventional diagnostic/monitoring endpoint was found on this device.",
+        "control_id": control_id("2-11-2"),
+        "match_rule": {"field": "observations.monitoring_endpoint_present", "op": "equals", "value": True},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
+    {
+        "finding_key": "no-missing-security-headers",
+        "description": "Every browser-enforced security header checked was present on the web interface.",
+        "control_id": control_id("2-14-1"),
+        "match_rule": {"field": "observations.missing_security_headers", "op": "equals", "value": []},
+        "manufacturer_principle": None,
+        "verdict_hint": "pass",
+    },
 ]
 
 

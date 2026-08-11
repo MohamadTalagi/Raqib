@@ -581,10 +581,11 @@ export interface NCADeviceDetail {
 
 /**
  * The general shape RecordAssessmentDialog's `suggestion` prop accepts -
- * covers both a device auto-verdict hint (NCADeviceSuggestion, always
- * fail/review_required) and a checklist-derived suggestion (any status,
- * including pass - a checklist genuinely can conclude a guideline is
- * satisfied, unlike scan evidence which never implies a pass on its own).
+ * covers both a device auto-verdict hint (NCADeviceSuggestion) and a
+ * checklist-derived suggestion. Both can now be any status including pass:
+ * a checklist can conclude a guideline is satisfied, and scan evidence can
+ * too where a mapping matched a genuinely clean reading from a probe that
+ * demonstrably ran.
  */
 export interface NCAAssessmentSuggestion {
   control_id: string;
@@ -592,20 +593,35 @@ export interface NCAAssessmentSuggestion {
   evidence_ids: string[];
   test_ids: string[];
   reasons: string[];
+  /**
+   * Present only on a device suggestion - a checklist suggestion has no
+   * observation fields behind it, so the dialog must treat this as optional
+   * rather than assume every suggestion can explain its basis this way.
+   */
+  checked_aspects?: string[];
 }
 
 /**
  * Auto-verdict hint for one control, from GET /nca/devices/{id}/suggestions.
  * Emitted only when a finding mapping matched real automated evidence for
  * this device - it suggests a status the auditor confirms or overrides. The
- * absence of a suggestion never implies a pass (a test may not have run).
+ * absence of a suggestion still never implies a pass (a test may not have
+ * run); only a mapping that matched a genuinely clean reading does.
  */
 export interface NCADeviceSuggestion {
   control_id: string;
-  suggested_status: Extract<NCAStatus, "fail" | "review_required">;
+  suggested_status: Extract<NCAStatus, "fail" | "review_required" | "pass">;
   evidence_ids: string[];
   test_ids: string[];
   reasons: string[];
+  /**
+   * The observation fields the matched mappings keyed on (e.g. "mqtt_tls",
+   * "open_ports"). A suggested pass needs only one clean aspect to match, so
+   * a control covering several independent aspects can be suggested pass on
+   * the strength of one - this is what lets an auditor see which checks
+   * actually ran before signing, rather than reading a bare "pass".
+   */
+  checked_aspects: string[];
 }
 
 export interface NCADeviceSuggestions {

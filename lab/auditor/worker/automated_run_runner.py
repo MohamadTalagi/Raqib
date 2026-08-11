@@ -293,7 +293,17 @@ def _run_nca_compliance(devices: list[dict], summary: dict) -> None:
     CHECK constraint a human sign-off does), and a fixed attestation
     statement disclosing that no human reviewed it. The ~60 organizational/
     mobile/supplier/cloud guidelines are untouched - they need a human's
-    checklist answers, which nothing here can supply."""
+    checklist answers, which nothing here can supply.
+
+    One asymmetry, decided by the project owner: a suggested *pass* is
+    deliberately NOT auto-recorded. A machine may flag a problem unattended,
+    but only a person certifies compliance - auto-recording a pass would
+    have this run assert, under a system attestation, that a device meets an
+    NCA guideline with nobody having looked. Failing and review_required
+    suggestions still record automatically, since flagging a suspected
+    problem for review is not the same claim. Suggested passes stay visible
+    in the per-device workspace for a human to sign through
+    RecordAssessmentDialog."""
     requests.post(f"{API_URL}/nca/assessments/recompute", timeout=30)
 
     controls = requests.get(f"{API_URL}/nca/controls", timeout=15).json()
@@ -305,6 +315,9 @@ def _run_nca_compliance(devices: list[dict], summary: dict) -> None:
             continue
         suggestions = response.json().get("suggestions", {})
         for control_id, suggestion in suggestions.items():
+            if suggestion["suggested_status"] == "pass":
+                summary["nca_passes_left_for_review"] += 1
+                continue
             reasons = "; ".join(suggestion.get("reasons", [])) or "automated evidence mapping"
             payload = {
                 "control_id": control_id,
@@ -340,7 +353,9 @@ def process_automated_run(run: dict) -> None:
         "evidence_recorded": 0, "verdicts_computed": 0,
         "vuln_intel_devices_scanned": 0, "device_cve_devices_scanned": 0,
         "pqc_devices_scanned": 0,
-        "nca_assessments_recorded": 0, "errors": [],
+        # Suggested passes the run deliberately did not record, so the count
+        # surfaces as real work waiting for a human rather than vanishing.
+        "nca_assessments_recorded": 0, "nca_passes_left_for_review": 0, "errors": [],
     }
 
     try:

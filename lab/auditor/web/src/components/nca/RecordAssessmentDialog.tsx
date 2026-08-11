@@ -209,6 +209,19 @@ export function RecordAssessmentDialog({
             <p className="text-xs font-semibold tracking-wide text-[var(--color-brand)] uppercase">
               Suggested from automated evidence: {activeSuggestion.suggested_status.replace("_", " ")}
             </p>
+            {activeSuggestion.suggested_status === "pass" && (activeSuggestion.checked_aspects?.length ?? 0) > 0 && (
+              /* A pass needs only one clean aspect to be suggested, so the
+                 person signing it needs to see which checks it rests on -
+                 aspects this control covers that never ran are not evidence
+                 of compliance, and only they can judge whether what did run
+                 is enough. */
+              <p className="mt-1.5 text-xs text-[var(--color-text-secondary)]">
+                Based on {activeSuggestion.checked_aspects!.length} check
+                {activeSuggestion.checked_aspects!.length === 1 ? "" : "s"} that actually ran:{" "}
+                <span className="font-mono">{activeSuggestion.checked_aspects!.join(", ")}</span>. Any other aspect of
+                this control was not checked - confirm that is enough before signing.
+              </p>
+            )}
             <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs text-[var(--color-text-secondary)]">
               {activeSuggestion.reasons.map((reason, i) => (
                 <li key={i}>{reason}</li>

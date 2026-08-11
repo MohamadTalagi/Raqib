@@ -540,6 +540,12 @@ def get_nca_device_detail(device_id: str):
     }
 
 
+# Ordering, not severity: which suggested status wins when several finding
+# mappings match the same control. Kept next to the endpoint that applies it
+# so a future verdict_hint value can't be added without confronting it.
+_STATUS_PRECEDENCE = {"pass": 0, "review_required": 1, "fail": 2}
+
+
 @router.get("/devices/{device_id}/suggestions")
 def get_nca_device_suggestions(device_id: str):
     """Auto-verdict hints for the per-device assessment workspace: for each
@@ -551,7 +557,23 @@ def get_nca_device_suggestions(device_id: str):
     finding mapping actually matches real evidence for this device; the
     absence of a matching mapping is never reported as a pass, because a test
     may simply not have been run. verdict_hint (from the mapping) decides
-    fail vs review_required."""
+    fail vs review_required vs pass.
+
+    Precedence when several mappings match one control: fail beats
+    review_required beats pass. One real problem outweighs any number of
+    clean checks, so a device whose TLS is current but whose Modbus port is
+    wide open still suggests fail for 2-4-3.
+
+    A suggested pass is symmetric with fail - one matching pass mapping is
+    enough - which is a deliberate choice by the project owner, not an
+    oversight. Its known trade-off is that a control with several
+    independent aspects can suggest pass from one clean aspect while the
+    others were never checked, so every suggestion also carries
+    `checked_aspects`: the observation fields that actually produced it. An
+    auditor signing a pass for 2-4-3 can see whether that rested on the one
+    TLS check or on all six of its aspects. Pass mappings are seeded only
+    where a clean reading genuinely proves the probe ran (see the
+    "deliberately NOT mirrored" note in seed_finding_mappings.py)."""
     from policies.nca.finding_mappings import map_evidence_to_mappings
 
     conn = get_connection()
@@ -593,15 +615,29 @@ def get_nca_device_suggestions(device_id: str):
                 control_id,
                 {
                     "control_id": control_id,
-                    "suggested_status": "review_required",
+                    # Seeded from this first match's own hint rather than a
+                    # fixed "review_required": a control matched only by pass
+                    # mappings must come out as pass, and one matched only by
+                    # fail mappings as fail. _STATUS_PRECEDENCE below then
+                    # resolves any disagreement between later matches.
+                    "suggested_status": mapping["verdict_hint"],
                     "evidence_ids": [],
                     "test_ids": [],
                     "reasons": [],
+                    "checked_aspects": [],
                 },
             )
-            # Any failing signal dominates a review-only one.
-            if mapping["verdict_hint"] == "fail":
-                acc["suggested_status"] = "fail"
+            # fail > review_required > pass. A failing signal dominates a
+            # review-only one, and both dominate a clean one - a control is
+            # never suggested pass while any evidence says otherwise.
+            if _STATUS_PRECEDENCE[mapping["verdict_hint"]] > _STATUS_PRECEDENCE[acc["suggested_status"]]:
+                acc["suggested_status"] = mapping["verdict_hint"]
+            # The observation field this mapping keyed on, so the UI can show
+            # what a suggestion actually rests on. "observations.mqtt_tls" ->
+            # "mqtt_tls"; a nested path keeps its tail ("txt.voice_log_encrypted").
+            aspect = mapping["match_rule"]["field"].split("observations.", 1)[-1]
+            if aspect not in acc["checked_aspects"]:
+                acc["checked_aspects"].append(aspect)
             if evidence_id not in acc["evidence_ids"]:
                 acc["evidence_ids"].append(evidence_id)
             if test_id and test_id not in acc["test_ids"]:

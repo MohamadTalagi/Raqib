@@ -291,6 +291,61 @@ describe("RecordAssessmentDialog", () => {
     );
   });
 
+  it("shows which checks a suggested pass actually rests on, before it can be signed", () => {
+    // A pass is suggested from one clean aspect, so the person certifying
+    // compliance has to be able to see it was one check and not the whole
+    // control - otherwise the dialog would present a bare "pass" for
+    // signature with no way to judge the basis.
+    render(
+      <RecordAssessmentDialog
+        open
+        control={DEVICE_CONTROL}
+        devices={DEVICES}
+        initialDeviceId="device-hardened"
+        suggestion={{
+          control_id: DEVICE_CONTROL.id,
+          suggested_status: "pass",
+          evidence_ids: ["EV-SUG-2"],
+          test_ids: ["TEST-TLS-CONFIG"],
+          reasons: ["A current TLS protocol version was actually negotiated. (evidence EV-SUG-2)"],
+          checked_aspects: ["tls_version"],
+        }}
+        onSaved={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText("Status")).toHaveValue("pass");
+    expect(screen.getByText(/based on 1 check that actually ran/i)).toBeInTheDocument();
+    expect(screen.getByText("tls_version")).toBeInTheDocument();
+    expect(screen.getByText(/not checked - confirm that is enough before signing/i)).toBeInTheDocument();
+  });
+
+  it("does not claim a basis for a suggestion that carries no checked aspects", () => {
+    // A checklist-derived suggestion has no observation fields behind it;
+    // the dialog must stay silent rather than render an empty claim.
+    render(
+      <RecordAssessmentDialog
+        open
+        control={DEVICE_CONTROL}
+        devices={DEVICES}
+        initialDeviceId="device-hardened"
+        suggestion={{
+          control_id: DEVICE_CONTROL.id,
+          suggested_status: "pass",
+          evidence_ids: [],
+          test_ids: [],
+          reasons: ["Checklist answers indicate this guideline is satisfied."],
+        }}
+        onSaved={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/suggested from automated evidence/i)).toBeInTheDocument();
+    expect(screen.queryByText(/that actually ran/i)).not.toBeInTheDocument();
+  });
+
   it("ignores a suggestion when retesting an existing assessment", () => {
     render(
       <RecordAssessmentDialog
