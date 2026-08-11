@@ -1,0 +1,7 @@
+mac=14:A7:8B:00:22:04
+claimed_vendor=Dahua
+mac_disclosed=True
+oui=14A78B
+oui_vendor=Zhejiang Dahua Technology Co., Ltd.
+oui_source=ieee-registry
+lookup_error=

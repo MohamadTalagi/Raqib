@@ -1,0 +1,7 @@
+mac=A4:14:37:00:11:22
+claimed_vendor=Hikvision
+mac_disclosed=True
+oui=A41437
+oui_vendor=Hangzhou Hikvision Digital Technology Co.,Ltd.
+oui_source=ieee-registry
+lookup_error=

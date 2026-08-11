@@ -1,0 +1,77 @@
+HTTP/1.1 200 OK
+date: Tue, 11 Aug 2026 13:11:46 GMT
+server: uvicorn
+content-length: 44
+content-type: application/json
+
+{"status":"ok","message":"Login successful"}HTTP/1.1 200 OK
+date: Tue, 11 Aug 2026 13:11:46 GMT
+server: uvicorn
+content-length: 2768
+content-type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html><head><title>Hikvision DS-2CD2143G2-I - Dashboard</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #14151a; color: #e8e8ea;
+          margin: 0; padding: 32px; }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: #8a8f9a; font-size: 13px; margin-bottom: 20px; }
+  .card { background: #1c1e24; border: 1px solid #2a2d35; border-radius: 8px; padding: 16px 18px; margin-bottom: 14px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #8a8f9a; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 5px 0; border-bottom: 1px solid #2a2d35; }
+  td:first-child { color: #8a8f9a; width: 40%; }
+  tr:last-child td { border-bottom: none; }
+  .warn { color: #f2733c; }
+  button { background: #f2a93b; color: #14151a; border: none; border-radius: 6px; padding: 8px 14px;
+            font-weight: 600; cursor: pointer; }
+  pre { background: #0e0f13; border-radius: 6px; padding: 10px 12px; font-size: 12px; margin-top: 10px;
+         white-space: pre-wrap; word-break: break-word; }
+  a { color: #f2a93b; }
+</style></head>
+<body>
+<div class="wrap">
+  <h1>Hikvision DS-2CD2143G2-I</h1>
+  <div class="sub">device-insecure &middot; posture check for the manual assessment</div>
+
+  <div class="card">
+    <h2>Device Info</h2>
+    <table>
+      <tr><td>MAC address</td><td>A4:14:37:00:11:22</td></tr>
+      <tr><td>Firmware</td><td>V5.3.0 build 160530</td></tr>
+      <tr><td>Transport</td><td>HTTP</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Config</h2>
+    <table>
+      <tr><td>Credential mode</td><td>default</td></tr>
+      <tr><td>MQTT target</td><td>mqtt-broker-insecure (plaintext)</td></tr>
+      <tr><td>Logging mode</td><td>off</td></tr>
+      <tr><td class="warn">API key (exposed)</td><td class="warn">sk-insecure-hardcoded-key-000111222</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Admin</h2>
+    <p style="font-size:13px; color:#8a8f9a; margin-top:0;">
+      Auth required for reset: <b>False</b>
+    </p>
+    <button onclick="triggerReset()">Trigger admin reset</button>
+    <pre id="reset-result"></pre>
+  </div>
+
+  <p style="font-size:12px;"><a href="/privacy">Privacy document</a> &middot; <a href="/">Back to login</a></p>
+  <p style="font-size:11px;color:#5a5f6a;">Simulated device for security research &mdash; not affiliated with or endorsed by Hikvision.</p>
+</div>
+<script>
+  async function triggerReset() {
+    const res = await fetch('/api/admin/reset');
+    const body = await res.text();
+    document.getElementById('reset-result').textContent = 'HTTP ' + res.status + '\n' + body;
+  }
+</script>
+</body></html>

@@ -1,0 +1,11 @@
+Starting Nmap 7.95 ( https://nmap.org ) at 2026-08-11 13:12 UTC
+Nmap scan report for device-partial (172.30.0.6)
+Host is up (0.0000090s latency).
+rDNS record for 172.30.0.6: kaust-iot-lab-device-partial-1.kaust-iot-lab_audit-network
+Not shown: 65534 closed tcp ports (reset)
+PORT    STATE SERVICE   VERSION
+443/tcp open  ssl/https
+MAC Address: 42:3E:9C:6A:A0:44 (Unknown)
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 17.13 seconds

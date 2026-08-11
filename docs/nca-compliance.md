@@ -220,7 +220,7 @@ without ever bypassing the constraint.
 poll loop registered in `job_runner.py`'s main loop): Discovery scan → guess
 and register any new `iot_device`/`uncertain` host (mirrors
 `NetworkDiscoveryPanel.tsx`'s own prefill logic, reimplemented in Python) →
-every applicable Fingerprinting/SA-IOT-Compliance test per device, each
+every applicable Fingerprinting/NCA-Compliance collector per device, each
 job's already-deterministic `suggested_finding`/`suggested_confidence`
 auto-submitted with zero human review → `POST /verdicts/recompute` →
 Vulnerability Intelligence for any device that already has firmware
