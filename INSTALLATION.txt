@@ -68,8 +68,8 @@ Estimated time: 10-20 minutes (mostly Docker image downloads/builds).
   it). Create your own copy from the example file:
 
       cd lab
-      copy .env.example .env        (Windows / PowerShell)
-      cp .env.example .env          (Git Bash / macOS / Linux)
+      copy .env.example .env       (Windows / PowerShell)
+      cp .env.example .env         (Git Bash / macOS / Linux)
 
   Open lab/.env in a text editor. The defaults work as-is for everything
   except one optional feature:
